@@ -48,10 +48,14 @@ import java.util.List;
  * as, not as a cloud of beads.</p>
  *
  * <p><b>Known limit, deliberate for now:</b> the pose is only known at the tick the film is on. A
- * seek that re-simulates twenty ticks runs them all against the pose of the tick it is heading
+ * seek that re-simulates twenty ticks stands the bones still at the pose of the tick it is heading
  * for, because computing the pose of every tick in between would mean replaying the whole property
- * track per step. It shows as a rewind through fast movement settling slightly differently; making
- * it exact means sampling the pose per tick, which belongs with the ragdoll work in Э2.</p>
+ * track per step. So a tick arrived at by scrubbing is not bit-for-bit the tick arrived at by
+ * playing, for any actor that moves — the props are exact either way, the character's shoving of
+ * them is not. Making it exact means sampling the pose per tick, which belongs with the ragdoll
+ * work in Э2. What it must never do is <em>steer</em> across a jump: a kinematic body keeps the
+ * velocity it was given, so a target one tick away, integrated over twenty, throws the bone
+ * twentyfold across the scene, raking everything on the way. Hence {@code place}.</p>
  */
 public class ActorRig
 {
@@ -60,6 +64,9 @@ public class ActorRig
 
     /** Jolt's corner rounding, clamped small so thin bones (a finger, a strap) still fit it. */
     private static final float CONVEX_RADIUS = 0.02F;
+
+    /** Shared, never written to — the velocity a placed bone is stopped with. */
+    private static final Vec3 ZERO = new Vec3(0F, 0F, 0F);
 
     private final IEntity entity;
     private final Form form;
@@ -122,7 +129,7 @@ public class ActorRig
                 continue;
             }
 
-            BodyCreationSettings settings = new BodyCreationSettings(shape, new RVec3(0D, 0D, 0D), Quat.sIdentity(), EMotionType.Kinematic, PhysicsLayers.MOVING);
+            BodyCreationSettings settings = new BodyCreationSettings(shape, new RVec3(0D, 0D, 0D), Quat.sIdentity(), EMotionType.Kinematic, PhysicsLayers.BONE);
 
             settings.setFriction(0.6F);
 
@@ -220,11 +227,13 @@ public class ActorRig
      * form-local, so the actor's world placement is applied on top — the same transform BBS's own
      * bone physics resolves gravity against, so both agree on where the character stands.
      *
-     * @param teleport whether to place the bones outright instead of steering them there. True
-     *                 when the rig is first built — the bodies start at the origin, and letting
-     *                 them travel from there would sweep a character-sized rake through the scene
+     * @param place whether to set the bones down where they belong and stop them, instead of
+     *              steering them there over the coming tick. True whenever the world is about to
+     *              run more (or fewer) than the one step a steer is aimed at: the rig's first
+     *              placement, and every scrub — see the class note on what steering across a jump
+     *              does
      */
-    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean teleport)
+    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean place)
     {
         if (this.bones.isEmpty() || matrices == null)
         {
@@ -256,9 +265,15 @@ public class ActorRig
                 this.translation.z - scene.getOriginZ());
             this.targetRotation.set(this.orientation.x, this.orientation.y, this.orientation.z, this.orientation.w);
 
-            if (teleport)
+            if (place)
             {
                 bodies.setPositionAndRotation(bone.id, this.target, this.targetRotation, EActivation.Activate);
+
+                /* And stop it there. A kinematic body's velocity is state like any other: left
+                 * over from the last steer — or restored along with the rest of the world from a
+                 * checkpoint — it would carry the bone away from where it was just put, once per
+                 * step, for the whole of the re-simulation. */
+                bodies.setLinearAndAngularVelocity(bone.id, ZERO, ZERO);
             }
             else
             {

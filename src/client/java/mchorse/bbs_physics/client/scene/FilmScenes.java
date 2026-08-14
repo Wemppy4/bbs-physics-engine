@@ -68,6 +68,11 @@ public class FilmScenes
     {
         if (!isEnabled())
         {
+            /* Switched off while a film was running. The scene goes now rather than at shutdown:
+             * a Jolt world is native memory, and "physics is off" should mean the addon is not
+             * holding any. It builds itself again on the next tick if it is switched back on. */
+            drop(controller);
+
             return;
         }
 

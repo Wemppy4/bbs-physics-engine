@@ -50,6 +50,7 @@ public class PhysicsWorld implements AutoCloseable
     private final ObjectVsBroadPhaseLayerFilterTable broadPhaseFilter;
 
     private final PhysicsSystem system;
+    private final BodyInterface bodies;
     private final TempAllocator temp;
     private final JobSystem jobs;
 
@@ -64,6 +65,7 @@ public class PhysicsWorld implements AutoCloseable
         this.system = new PhysicsSystem();
         this.system.init(MAX_BODIES, 0, MAX_BODY_PAIRS, MAX_CONTACTS, this.broadPhaseLayers, this.broadPhaseFilter, this.pairFilter);
         this.system.setGravity(0F, -9.81F, 0F);
+        this.bodies = this.system.getBodyInterface();
 
         this.temp = new TempAllocatorImpl(TEMP_ALLOCATOR_BYTES);
 
@@ -81,7 +83,7 @@ public class PhysicsWorld implements AutoCloseable
 
     public BodyInterface getBodies()
     {
-        return this.system.getBodyInterface();
+        return this.bodies;
     }
 
     public int getBodyCount()

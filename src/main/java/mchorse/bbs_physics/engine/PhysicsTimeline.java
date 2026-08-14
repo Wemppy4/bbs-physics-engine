@@ -31,10 +31,11 @@ public class PhysicsTimeline
     /**
      * How many ticks a single seek may simulate before it gives up. A drag of the cursor across a
      * long film would otherwise freeze the game for as long as the film lasts. When the budget is
-     * exhausted the world is left where it got to and the timeline says so — the alternative is a
-     * frozen editor, which is worse than physics that is visibly behind.
+     * exhausted the world stops where it got to, keeps saying that is where it is, and the next
+     * call carries on from there — a jump across a whole film catches up over a handful of frames
+     * instead of in one stall.
      */
-    private static final int MAX_SEEK_STEPS = 1200;
+    private static final int MAX_SEEK_STEPS = 240;
 
     /** Snapshots are cheap but not free, so old ones are dropped once there are too many. */
     private static final int MAX_CHECKPOINTS = 512;
@@ -89,9 +90,26 @@ public class PhysicsTimeline
 
     /**
      * Brings the world to {@code target}, however far away and in whichever direction that is.
-     * Repeating the current tick does nothing, which is what a paused editor does every frame.
+     *
+     * <p>Split in two on purpose, and callers that drive kinematic bodies must use the halves
+     * rather than this: between the rewind and the re-simulation is the only moment at which the
+     * animated part of the scene can be put where the target tick wants it. Doing it before the
+     * rewind writes into a world that is about to be thrown away, and doing it after leaves the
+     * whole re-simulation to run against a stale pose.</p>
      */
     public void seek(int target)
+    {
+        this.rewind(target);
+        this.advance(target);
+    }
+
+    /**
+     * Restores the newest snapshot at or before {@code target}, if the world is ahead of it. There
+     * is always one, because {@link #start()} put a snapshot at tick 0 and a target is never
+     * negative — unless the world has changed shape underneath us, in which case Jolt refuses the
+     * state and the caller has to rebuild the scene.
+     */
+    public void rewind(int target)
     {
         if (target < 0)
         {
@@ -101,27 +119,11 @@ public class PhysicsTimeline
         this.lastSeekSteps = 0;
         this.behind = false;
 
-        if (target == this.tick)
+        if (target >= this.tick)
         {
             return;
         }
 
-        if (target < this.tick)
-        {
-            this.rewind(target);
-        }
-
-        this.advance(target);
-    }
-
-    /**
-     * Restores the newest snapshot at or before {@code target}. There is always one, because
-     * {@link #start()} put a snapshot at tick 0 and a target is never negative — unless the world
-     * has changed shape underneath us, in which case Jolt refuses the state and the caller has to
-     * rebuild the scene.
-     */
-    private void rewind(int target)
-    {
         Map.Entry<Integer, byte[]> entry = this.checkpoints.floorEntry(target);
 
         if (entry == null)
@@ -139,8 +141,12 @@ public class PhysicsTimeline
         {
             BBSPhysics.LOGGER.warn("Jolt refused a checkpoint at tick {}; the scene changed under it.", entry.getKey());
 
+            /* Every kept snapshot describes the shape the world no longer has, so they all go —
+             * and the world as it stands becomes the anchor for the next rewind, because a
+             * timeline with no snapshot at all re-simulates from nothing on every jump back. */
             this.checkpoints.clear();
             this.tick = target;
+            this.checkpoints.put(target, this.world.saveState());
 
             return;
         }
@@ -153,7 +159,8 @@ public class PhysicsTimeline
         this.checkpoints.tailMap(target, false).clear();
     }
 
-    private void advance(int target)
+    /** Steps the world forward to {@code target}, within one jump's budget. */
+    public void advance(int target)
     {
         while (this.tick < target)
         {
@@ -163,10 +170,9 @@ public class PhysicsTimeline
 
                 BBSPhysics.LOGGER.warn("Physics seek to tick {} stopped at {} — {} steps is the limit for one jump.", target, this.tick, MAX_SEEK_STEPS);
 
-                /* Claim the target anyway. Insisting on catching up would spend the same budget
-                 * again on every following frame and never arrive. */
-                this.tick = target;
-
+                /* The tick stays where the world really is. Claiming the target instead would file
+                 * the next snapshot under a tick it does not describe, and every later rewind
+                 * through it would restore the wrong moment without anything looking wrong. */
                 return;
             }
 

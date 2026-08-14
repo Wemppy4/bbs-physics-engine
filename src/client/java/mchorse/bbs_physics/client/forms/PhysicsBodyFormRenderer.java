@@ -99,8 +99,10 @@ public class PhysicsBodyFormRenderer extends FormRenderer<PhysicsBodyForm>
         stack.multiply(state.getRotation(transition, ROTATION));
 
         /* Scale stays the author's: physics has no opinion about how big the thing is drawn, only
-         * about where it is and which way up. */
-        Vector3f scale = this.form.transform.get().scale;
+         * about where it is and which way up. Taken through createTransform, like the base class
+         * does, so that overlays and additional transforms still count — reading the form's own
+         * transform alone would drop a scale that came from a state or an animation. */
+        Vector3f scale = this.createTransform().scale;
 
         stack.scale(scale.x, scale.y, scale.z);
     }
@@ -117,7 +119,7 @@ public class PhysicsBodyFormRenderer extends FormRenderer<PhysicsBodyForm>
             return;
         }
 
-        Vector3f scale = this.form.transform.get().scale;
+        Vector3f scale = this.createTransform().scale;
 
         matrix.translate(state.getPosition(transition, POSITION));
         matrix.rotate(state.getRotation(transition, ROTATION));

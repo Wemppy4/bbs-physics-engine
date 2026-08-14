@@ -40,15 +40,21 @@ import org.joml.Vector3f;
  * carried back through the <em>parent frame</em> the renderer captured during the walk, because
  * the renderer substitutes a local transform and only the walk knows the chain above it.</p>
  *
- * <p>Known approximation: a released nested body is re-anchored to its parent frame every tick, so
+ * <p>Known approximations. A released nested body is re-anchored to its parent frame every tick, so
  * on a fast-moving parent the draw interpolation composes two lerps and can wobble a touch. A body
- * nested inside <em>another physics body</em> additionally reads its parent's frame a tick late —
- * the outer body works, the inner one follows approximately.</p>
+ * nested inside <em>another physics body</em> reads its parent's frame a tick late — the outer body
+ * works, the inner one follows approximately. And the throw only carries its speed when the film
+ * <em>played</em> into the release: a scrub lands the body on the release tick with no velocity to
+ * inherit, because the tick before it was never simulated, so the object drops instead of flying.
+ * Play the shot and it throws; that is the same per-tick pose sampling Э2 owes {@link ActorRig}.</p>
  */
 public class PhysicsBodyRig
 {
     /** Reference density before the mass override rescales it; any positive value works. */
     private static final float DENSITY = 1000F;
+
+    /** Shared, never written to — the velocity a placed body is stopped with. */
+    private static final Vec3 ZERO = new Vec3(0F, 0F, 0F);
 
     private final IEntity entity;
     private final PhysicsBodyForm form;
@@ -69,6 +75,14 @@ public class PhysicsBodyRig
 
     private boolean kinematic;
 
+    /**
+     * Whether the next read is the first since the simulation took the body over. The drawn
+     * transform is interpolated between the last two ticks, and until this read there is no last
+     * tick — the form was being drawn from its keyframes. Interpolating from that empty slot draws
+     * the object streaking in from the actor's own origin on the very frame it is let go.
+     */
+    private boolean justReleased;
+
     /* What the body in Jolt was last told. Compared against the form every tick, because the
      * author edits these while the film is open — and a setting that only took effect when the
      * scene happened to be rebuilt would read as a setting that does nothing. */
@@ -86,6 +100,7 @@ public class PhysicsBodyRig
         this.path = path;
         this.bodyId = bodyId;
         this.kinematic = kinematic;
+        this.justReleased = !kinematic;
         this.debug = debug;
 
         this.lastSizeX = form.sizeX.get();
@@ -151,8 +166,11 @@ public class PhysicsBodyRig
      * than from the form's transform alone. The walk also just captured the parent frame through
      * the renderer, which is copied out here for {@link #read} to carry the simulation's answer
      * back through.</p>
+     *
+     * @param place whether to set the body down and stop it rather than steer it over the coming
+     *              tick — see {@link ActorRig#update} for why steering across a jump is ruinous
      */
-    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean teleport)
+    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean place)
     {
         this.actorWorld.set(actorWorld);
 
@@ -174,6 +192,13 @@ public class PhysicsBodyRig
             bodies.setMotionType(this.bodyId, wanted ? EMotionType.Kinematic : EMotionType.Dynamic, EActivation.Activate);
 
             this.kinematic = wanted;
+            this.justReleased = !wanted;
+
+            /* Taken back by the animation, after however long living its own life: it is nowhere
+             * near its keyframe any more. Steering it back over a single tick would send it there
+             * at the whole distance divided by a twentieth of a second, scattering everything in
+             * between. Put down, not driven. */
+            place |= wanted;
         }
 
         if (!this.kinematic)
@@ -202,9 +227,10 @@ public class PhysicsBodyRig
             this.position.z - scene.getOriginZ());
         this.scratchRotation.set(this.rotation.x, this.rotation.y, this.rotation.z, this.rotation.w);
 
-        if (teleport)
+        if (place)
         {
             bodies.setPositionAndRotation(this.bodyId, this.scratchPosition, this.scratchRotation, EActivation.Activate);
+            bodies.setLinearAndAngularVelocity(this.bodyId, ZERO, ZERO);
         }
         else
         {
@@ -313,6 +339,9 @@ public class PhysicsBodyRig
             return;
         }
 
+        teleport |= this.justReleased;
+        this.justReleased = false;
+
         physics.getBodies().getPositionAndRotation(this.bodyId, this.scratchPosition, this.scratchRotation);
 
         this.rotation.set(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW());
@@ -333,9 +362,25 @@ public class PhysicsBodyRig
         this.form.state.set(this.position, this.rotation, teleport);
     }
 
-    /** Pins the drawn transform to where it is, for a film that is not advancing. */
-    public void freeze()
+    /**
+     * Lets go of the form, so it goes back to being drawn from its keyframes. Called when the
+     * scene is closed: the body behind this rig is about to stop existing.
+     */
+    public void release()
     {
+        this.form.state = null;
+    }
+
+    /**
+     * Pins the drawn transform to where it is, for a film that is not advancing — and takes the
+     * author's edits to the body while it is standing still, which is exactly when they are made.
+     * A collider resized on a paused film has to change under the cursor, or the slider reads as
+     * doing nothing until playback is nudged.
+     */
+    public void freeze(PhysicsWorld physics)
+    {
+        this.applySettings(physics, physics.getBodies());
+
         if (this.form.state != null)
         {
             this.form.state.freeze();

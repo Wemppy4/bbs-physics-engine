@@ -36,6 +36,12 @@ public class FormCategoriesMixin
 
         this.sections.add(section);
 
+        /* setup() reads the saved show/hide state of every category as its last act, and this
+         * category only comes into existence after that — so it is read again. The read applies
+         * saved values to whatever exists and does nothing else, which makes the second one a
+         * no-op for BBS's own categories and the difference between our heading remembering that
+         * it was collapsed and forgetting it on every launch. */
+        categories.visibility.read();
         categories.markDirty();
     }
 }

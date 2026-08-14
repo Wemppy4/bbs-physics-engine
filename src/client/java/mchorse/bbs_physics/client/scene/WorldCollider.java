@@ -67,7 +67,11 @@ public final class WorldCollider
     /**
      * Adds the world's collision around {@code origin} to the scene.
      *
-     * @return the body's id, or 0 when there was nothing solid to add
+     * @return how many boxes went in; zero means there was nothing solid to add and no body was
+     *         created. Deliberately not the body's id: Jolt hands out ids from zero, and the world
+     *         is the first body a scene creates, so "0" would be both the id it gets and the
+     *         answer meaning "nothing" — and the scene would lay its fallback floor through the
+     *         real ground
      */
     public static int build(PhysicsWorld physics, World world, double originX, double originY, double originZ)
     {
@@ -78,14 +82,32 @@ public final class WorldCollider
 
         StaticCompoundShapeSettings compound = new StaticCompoundShapeSettings();
         BlockPos.Mutable pos = new BlockPos.Mutable();
-        BlockPos.Mutable probe = new BlockPos.Mutable();
 
         int baseX = (int) Math.floor(originX);
         int baseY = (int) Math.floor(originY);
         int baseZ = (int) Math.floor(originZ);
+
+        int minY = Math.max(baseY - BELOW, world.getBottomY());
+        int maxY = Math.min(baseY + ABOVE, world.getTopY() - 1);
+
+        if (minY > maxY)
+        {
+            return 0;
+        }
+
+        int spanX = RADIUS * 2 + 1;
+        int spanY = maxY - minY + 1;
+        int spanZ = RADIUS * 2 + 1;
+
+        /* Which blocks of the region are full cubes, measured once. The burial test asks about six
+         * neighbours per block, and asking the world for them would re-read and re-shape most of
+         * the region six times over — a million lookups for a region this size, every time a scene
+         * is built, which in the editor is every change to the cast. */
+        boolean[] full = new boolean[spanX * spanY * spanZ];
+        BlockPos.Mutable probe = new BlockPos.Mutable();
         int boxes = 0;
 
-        for (int y = baseY - BELOW; y <= baseY + ABOVE; y++)
+        for (int y = minY; y <= maxY; y++)
         {
             for (int x = baseX - RADIUS; x <= baseX + RADIUS; x++)
             {
@@ -100,14 +122,35 @@ public final class WorldCollider
                         continue;
                     }
 
-                    VoxelShape shape = state.getCollisionShape(world, pos);
+                    full[index(x - baseX, y - minY, z - baseZ, spanX, spanZ)] = Block.isShapeFullCube(state.getCollisionShape(world, pos));
+                }
+            }
+        }
 
-                    if (shape.isEmpty())
+        for (int y = minY; y <= maxY; y++)
+        {
+            for (int x = baseX - RADIUS; x <= baseX + RADIUS; x++)
+            {
+                for (int z = baseZ - RADIUS; z <= baseZ + RADIUS; z++)
+                {
+                    if (full[index(x - baseX, y - minY, z - baseZ, spanX, spanZ)]
+                        && isBuried(world, probe, full, baseX, minY, baseZ, x, y, z, spanX, spanY, spanZ))
                     {
                         continue;
                     }
 
-                    if (Block.isShapeFullCube(shape) && isBuried(world, probe, x, y, z))
+                    pos.set(x, y, z);
+
+                    BlockState state = world.getBlockState(pos);
+
+                    if (state.isAir())
+                    {
+                        continue;
+                    }
+
+                    VoxelShape shape = state.getCollisionShape(world, pos);
+
+                    if (shape.isEmpty())
                     {
                         continue;
                     }
@@ -144,25 +187,53 @@ public final class WorldCollider
 
         settings.setFriction(0.6F);
 
-        int id = physics.getBodies().createAndAddBody(settings, EActivation.DontActivate);
+        physics.getBodies().createAndAddBody(settings, EActivation.DontActivate);
 
         BBSPhysics.LOGGER.info("World collision built from {} boxes around ({}, {}, {}).", boxes, baseX, baseY, baseZ);
 
-        return id;
+        return boxes;
+    }
+
+    private static int index(int x, int y, int z, int spanX, int spanZ)
+    {
+        return ((y * spanX) + (x + RADIUS)) * spanZ + (z + RADIUS);
     }
 
     /**
      * Whether every side of this block is covered by a full cube, which makes it unreachable and
      * so not worth simulating. Checked only for blocks that are full cubes themselves — a slab or
      * a fence is part of the surface however it is surrounded.
+     *
+     * <p>Answered from the measured grid, and only from the world for a neighbour just outside it
+     * — the region's own outer shell, a few per cent of it. Treating those as open instead would
+     * wall the whole region in boxes nothing can ever reach.</p>
      */
-    private static boolean isBuried(World world, BlockPos.Mutable probe, int x, int y, int z)
+    private static boolean isBuried(World world, BlockPos.Mutable probe, boolean[] full, int baseX, int minY, int baseZ, int x, int y, int z, int spanX, int spanY, int spanZ)
     {
         for (Direction direction : Direction.values())
         {
-            probe.set(x + direction.getOffsetX(), y + direction.getOffsetY(), z + direction.getOffsetZ());
+            int nx = x + direction.getOffsetX();
+            int ny = y + direction.getOffsetY();
+            int nz = z + direction.getOffsetZ();
 
-            if (!Block.isShapeFullCube(world.getBlockState(probe).getCollisionShape(world, probe)))
+            int lx = nx - baseX;
+            int ly = ny - minY;
+            int lz = nz - baseZ;
+
+            boolean neighbour;
+
+            if (lx < -RADIUS || lx > RADIUS || lz < -RADIUS || lz > RADIUS || ly < 0 || ly >= spanY)
+            {
+                probe.set(nx, ny, nz);
+
+                neighbour = Block.isShapeFullCube(world.getBlockState(probe).getCollisionShape(world, probe));
+            }
+            else
+            {
+                neighbour = full[index(lx, ly, lz, spanX, spanZ)];
+            }
+
+            if (!neighbour)
             {
                 return false;
             }
