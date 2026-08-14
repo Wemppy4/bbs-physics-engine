@@ -1,0 +1,37 @@
+{
+    "schemaVersion": 1,
+    "id": "bbs_physics",
+    "version": "${version}",
+    "name": "BBS Physics Engine",
+    "description": "A physics engine addon for the BBS mod",
+    "authors": [
+        "Wemppy"
+    ],
+    "license": "MIT",
+    "environment": "*",
+    "entrypoints": {
+        "main": [
+            "mchorse.bbs_physics.BBSPhysics"
+        ],
+        "client": [
+            "mchorse.bbs_physics.client.BBSPhysicsClient"
+        ],
+        "bbs-addon": [
+            "mchorse.bbs_physics.BBSPhysicsAddon"
+        ]
+    },
+    "mixins": [
+        "bbs_physics.mixins.json",
+        {
+            "config": "bbs_physics.client.mixins.json",
+            "environment": "client"
+        }
+    ],
+    "depends": {
+        "fabricloader": ">=0.15.0",
+        "minecraft": "~1.20.4",
+        "java": ">=17",
+        "fabric-api": "*",
+        "bbs": "*"
+    }
+}
