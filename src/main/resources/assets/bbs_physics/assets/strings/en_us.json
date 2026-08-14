@@ -5,5 +5,13 @@
     "bbs_physics.config.general.enabled": "Enable physics",
     "bbs_physics.config.general.enabled-comment": "The master switch of the physics engine. With it off, nothing is simulated and the addon costs nothing.",
     "bbs_physics.config.general.debug": "Debug overlay",
-    "bbs_physics.config.general.debug-comment": "Draws the shapes the simulation actually works with, on top of the rendered scene."
+    "bbs_physics.config.general.debug-comment": "Draws the shapes the simulation actually works with, on top of the rendered scene.",
+
+    "bbs_physics.forms.category": "Physics",
+    "bbs_physics.forms.body.title": "Body",
+    "bbs_physics.forms.body.authority": "Animation authority",
+    "bbs_physics.forms.body.size": "Collider size (blocks)",
+    "bbs_physics.forms.body.mass": "Mass (kg)",
+    "bbs_physics.forms.body.friction": "Friction",
+    "bbs_physics.forms.body.restitution": "Bounciness"
 }

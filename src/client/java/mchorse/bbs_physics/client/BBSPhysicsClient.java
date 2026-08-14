@@ -1,7 +1,9 @@
 package mchorse.bbs_physics.client;
 
+import mchorse.bbs_physics.client.scene.FilmScenes;
 import mchorse.bbs_physics.engine.JoltEngine;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 
 /**
  * The client entry point of the addon.
@@ -20,5 +22,10 @@ public class BBSPhysicsClient implements ClientModInitializer
          * is a library load; the alternative is finding out that physics is missing at the worst
          * possible moment. */
         JoltEngine.available();
+
+        /* Leaving a world drops the film controllers without shutting them down, and a Jolt world
+         * is native memory that no garbage collector will come back for. This is the one place
+         * that is guaranteed to run in that case. */
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> FilmScenes.clear());
     }
 }

@@ -5,5 +5,13 @@
     "bbs_physics.config.general.enabled": "Включить физику",
     "bbs_physics.config.general.enabled-comment": "Главный выключатель движка. Когда выключен, ничего не считается и аддон не стоит ничего.",
     "bbs_physics.config.general.debug": "Отладочный слой",
-    "bbs_physics.config.general.debug-comment": "Рисует поверх сцены те формы, с которыми на самом деле работает симуляция."
+    "bbs_physics.config.general.debug-comment": "Рисует поверх сцены те формы, с которыми на самом деле работает симуляция.",
+
+    "bbs_physics.forms.category": "Физика",
+    "bbs_physics.forms.body.title": "Тело",
+    "bbs_physics.forms.body.authority": "Сила анимации",
+    "bbs_physics.forms.body.size": "Размер коллайдера (блоки)",
+    "bbs_physics.forms.body.mass": "Масса (кг)",
+    "bbs_physics.forms.body.friction": "Трение",
+    "bbs_physics.forms.body.restitution": "Упругость"
 }

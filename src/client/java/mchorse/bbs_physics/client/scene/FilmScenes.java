@@ -1,0 +1,196 @@
+package mchorse.bbs_physics.client.scene;
+
+import mchorse.bbs_mod.film.BaseFilmController;
+import mchorse.bbs_physics.BBSPhysics;
+import mchorse.bbs_physics.BBSPhysicsSettings;
+import mchorse.bbs_physics.engine.JoltEngine;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
+
+import java.util.IdentityHashMap;
+import java.util.Iterator;
+import java.util.Map;
+
+/**
+ * Keeps one {@link FilmScene} per running film and takes the four calls the mixins make.
+ *
+ * <p>Scenes are keyed by the controller object rather than by the film's id, because the editor
+ * throws its controller away and builds a new one whenever the cast changes — two controllers for
+ * the same film are two different scenes, and treating them as one would hand a rebuilt cast the
+ * old simulation.</p>
+ *
+ * <p>Nothing in here is allowed to take BBS down with it. The calls arrive from inside BBS's own
+ * tick and render, injected there by a mixin, so an exception would land in the middle of the
+ * host's frame. Every entry point therefore catches, reports once and drops the scene: a film
+ * without physics is a far better outcome than a film that crashes the game.</p>
+ */
+public class FilmScenes
+{
+    private static final Map<BaseFilmController, FilmScene> SCENES = new IdentityHashMap<>();
+
+    private FilmScenes()
+    {}
+
+    private static boolean isEnabled()
+    {
+        return BBSPhysicsSettings.enabled != null && BBSPhysicsSettings.enabled.get() && JoltEngine.available();
+    }
+
+    /** The film's cast was assembled or rebuilt: the old simulation no longer describes it. */
+    public static void onSetup(BaseFilmController controller)
+    {
+        drop(controller);
+        dropOthersOf(controller);
+
+        if (!isEnabled())
+        {
+            return;
+        }
+
+        try
+        {
+            FilmScene scene = new FilmScene(controller);
+
+            SCENES.put(controller, scene);
+
+            BBSPhysics.LOGGER.info("Physics scene is up for film \"{}\": {} bodies around ({}, {}, {}).",
+                controller.film == null ? "?" : controller.film.getId(),
+                scene.getWorld().getBodyCount(),
+                scene.getOriginX(), scene.getOriginY(), scene.getOriginZ());
+        }
+        catch (Throwable e)
+        {
+            BBSPhysics.LOGGER.error("Failed to build a physics scene for a film, it will play without physics.", e);
+        }
+    }
+
+    /** The film reached {@code tick} and every actor is already updated to it. */
+    public static void onTick(BaseFilmController controller, int tick)
+    {
+        if (!isEnabled())
+        {
+            return;
+        }
+
+        FilmScene scene = SCENES.get(controller);
+
+        if (scene == null)
+        {
+            /* A controller that started ticking without ever announcing its cast — build the scene
+             * on first sight rather than never. */
+            onSetup(controller);
+
+            scene = SCENES.get(controller);
+
+            if (scene == null)
+            {
+                return;
+            }
+        }
+
+        try
+        {
+            scene.tick(tick);
+        }
+        catch (Throwable e)
+        {
+            BBSPhysics.LOGGER.error("A physics scene failed to reach tick {} and was dropped.", tick, e);
+
+            drop(controller);
+        }
+    }
+
+    /** The film's actors have been drawn; the scene may draw its own things into the same pass. */
+    public static void onRender(BaseFilmController controller, WorldRenderContext context)
+    {
+        if (!isEnabled() || BBSPhysicsSettings.debug == null || !BBSPhysicsSettings.debug.get())
+        {
+            return;
+        }
+
+        FilmScene scene = SCENES.get(controller);
+
+        if (scene == null)
+        {
+            return;
+        }
+
+        try
+        {
+            SceneDebugRenderer.render(scene, context);
+        }
+        catch (Throwable e)
+        {
+            BBSPhysics.LOGGER.error("A physics scene failed to draw its debug overlay and was dropped.", e);
+
+            drop(controller);
+        }
+    }
+
+    /** The film is gone. */
+    public static void onShutdown(BaseFilmController controller)
+    {
+        drop(controller);
+    }
+
+    private static void drop(BaseFilmController controller)
+    {
+        FilmScene scene = SCENES.remove(controller);
+
+        if (scene != null)
+        {
+            scene.close();
+        }
+    }
+
+    /**
+     * Closes scenes belonging to earlier controllers of the same film.
+     *
+     * <p>The film editor does not reuse its controller: every rebuild of the cast constructs a
+     * brand new {@code FilmEditorController} and drops the previous one on the floor, without ever
+     * shutting it down. Keyed by controller identity, that would leave a Jolt world — native
+     * memory a garbage collector will never come back for — behind on every edit. One film has one
+     * live controller, so any other controller holding a scene for this film is a leftover.</p>
+     */
+    private static void dropOthersOf(BaseFilmController controller)
+    {
+        if (controller.film == null)
+        {
+            return;
+        }
+
+        String filmId = controller.film.getId();
+
+        SCENES.entrySet().removeIf((entry) ->
+        {
+            BaseFilmController other = entry.getKey();
+            boolean stale = other != controller && other.film != null && filmId.equals(other.film.getId());
+
+            if (stale)
+            {
+                entry.getValue().close();
+            }
+
+            return stale;
+        });
+    }
+
+    /**
+     * Closes every scene. Called when the client leaves a world, where controllers are dropped
+     * without shutting down and their native worlds would otherwise be left behind.
+     */
+    public static void clear()
+    {
+        Iterator<FilmScene> it = SCENES.values().iterator();
+
+        while (it.hasNext())
+        {
+            it.next().close();
+            it.remove();
+        }
+    }
+
+    public static int getSceneCount()
+    {
+        return SCENES.size();
+    }
+}
