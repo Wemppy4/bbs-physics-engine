@@ -14,7 +14,16 @@ repositories {
 	// BBS is not published to any public repository, so it is taken from the local Maven
 	// one, which `gradlew publishToMavenLocal` in the bbs-fs checkout fills.
 	mavenLocal()
+
+	// Where Jolt comes from. Loom brings in the Fabric and Mojang repositories on its own,
+	// but not this one.
+	mavenCentral()
 }
+
+// The platforms the Jolt native library is bundled for. Anything outside this list still runs
+// the mod — the addon reports that physics is unavailable and stays out of the way — so the
+// list is about who gets physics, not about who can launch.
+def joltPlatforms = ["Windows64", "Linux64", "Linux_ARM64", "MacOSX64", "MacOSX_ARM64"]
 
 // Loom keys its cache of remapped mod dependencies by coordinates, and BBS keeps the same
 // version string while it is being developed — so after republishing it, this project would
@@ -60,6 +69,24 @@ dependencies {
 	// but a slower launch and failure modes that have nothing to do with physics.
 	modImplementation("mchorse:bbs:${project.bbs_version}") {
 		transitive = false
+	}
+
+	// Jolt Physics. Every platform artifact of jolt-jni carries the same Java classes, so one
+	// of them is taken for the API and the rest contribute nothing but their native library,
+	// which sits under a classifier of its own.
+	//
+	// `ReleaseSp` is single precision: the double-precision build exists for worlds measured in
+	// kilometres, while physics here runs in model space around a character, where floats are
+	// exact enough and half the memory traffic.
+	//
+	// All of it rides into the mod jar through Fabric's jar-in-jar — a mod has no other channel
+	// to ship a native library through, and asking people to install one by hand is not a channel.
+	implementation "com.github.stephengold:jolt-jni-Windows64:${project.jolt_version}"
+	include "com.github.stephengold:jolt-jni-Windows64:${project.jolt_version}"
+
+	joltPlatforms.each { platform ->
+		runtimeOnly "com.github.stephengold:jolt-jni-${platform}:${project.jolt_version}:ReleaseSp"
+		include "com.github.stephengold:jolt-jni-${platform}:${project.jolt_version}:ReleaseSp"
 	}
 }
 

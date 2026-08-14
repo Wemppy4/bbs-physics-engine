@@ -46,3 +46,24 @@ methods annotated with `@Subscribe`, which then receive BBS's registration event
 Beyond the events, BBS's factories are reachable statically — `BBSMod.getForms()`,
 `BBSMod.getFactoryCameraClips()`, `BBSMod.getFactoryActionClips()` — so new form types and clip
 types can be registered from the addon's own initializer, which Fabric runs after BBS's.
+
+## The engine
+
+[Jolt Physics](https://github.com/jrouwe/JoltPhysics), through
+[jolt-jni](https://github.com/stephengold/jolt-jni). It was picked over PhysX, Bullet and ode4j
+for three things an animation tool needs and the others don't have together:
+
+* it drives a ragdoll towards an animated pose (`Ragdoll.driveToPoseUsingKinematics`), which is
+  what physics in BBS is *for* — the animator owns the pose, physics only adds to it;
+* it saves and restores the whole world's state (`PhysicsSystem.saveState`), which is what makes
+  scrubbing a timeline honest: a tick has to look the same however it was arrived at;
+* it simulates soft bodies on the CPU, so cloth and rope don't depend on the graphics card.
+
+The native library is bundled for Windows, Linux, Linux on ARM and both Macs, and rides into the
+mod jar through jar-in-jar. `JoltNatives` unpacks the one this platform needs into
+`<game>/bbs_physics/natives` — under a name carrying a hash of its content, so it is written once
+and a new build of Jolt never has to overwrite a library another copy of the game holds open.
+
+Anywhere else — an unsupported platform, an unwritable disk — `JoltEngine.available()` reports it
+once and answers `false` forever after. A missing feature is a much better outcome than a game
+that will not start, so nothing here is allowed to be fatal.
