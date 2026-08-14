@@ -16,6 +16,24 @@ repositories {
 	mavenLocal()
 }
 
+// Loom keys its cache of remapped mod dependencies by coordinates, and BBS keeps the same
+// version string while it is being developed — so after republishing it, this project would
+// quietly go on compiling against the previous remap. `--refresh-dependencies` clears it, but
+// a flag one has to remember is a flag one forgets, and forgetting it here looks like the
+// changes to BBS simply not existing. So the stale remap is dropped by the build itself.
+def bbsArtifact = file("${System.properties['user.home']}/.m2/repository/mchorse/bbs/${bbs_version}/bbs-${bbs_version}.jar")
+def bbsRemaps = file("${projectDir}/.gradle/loom-cache/remapped_mods/remapped/mchorse")
+
+if (bbsArtifact.isFile() && bbsRemaps.isDirectory()) {
+	bbsRemaps.listFiles().each { remap ->
+		if (remap.isDirectory() && fileTree(remap).files.any { it.lastModified() < bbsArtifact.lastModified() }) {
+			logger.lifecycle("BBS has been republished since it was last remapped — dropping ${remap.name} from Loom's cache.")
+
+			remap.deleteDir()
+		}
+	}
+}
+
 loom {
 	splitEnvironmentSourceSets()
 

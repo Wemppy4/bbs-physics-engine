@@ -1,5 +1,6 @@
 package mchorse.bbs_physics.client;
 
+import mchorse.bbs_mod.events.BBSAddonMod;
 import mchorse.bbs_mod.events.Subscribe;
 import mchorse.bbs_mod.events.register.RegisterClientSettingsEvent;
 import mchorse.bbs_mod.events.register.RegisterL10nEvent;
@@ -11,21 +12,18 @@ import mchorse.bbs_physics.BBSPhysicsSettings;
 import java.util.Collections;
 
 /**
- * The client half of {@link mchorse.bbs_physics.BBSPhysicsAddon}, split off so that the events
- * declared in BBS's client source set are never touched on a dedicated server.
+ * The client half of {@link mchorse.bbs_physics.BBSPhysicsAddon}, declared under the
+ * {@code bbs-client-addon} entry point.
+ *
+ * <p>It is split off and kept in the client source set so that BBS's client-only event classes
+ * are never loaded on a dedicated server.</p>
  */
-public class BBSPhysicsClientAddon
+public class BBSPhysicsClientAddon implements BBSAddonMod
 {
     @Subscribe
     public void onRegisterL10n(RegisterL10nEvent event)
     {
         event.l10n.register((lang) -> Collections.singletonList(new Link(BBSPhysics.ASSETS, "strings/" + lang + ".json")));
-
-        /* BBS loads its language files just before posting this event, so registering alone would
-         * leave the addon's strings unread until the next language switch — every label would show
-         * its raw key on the first launch. One extra pass over a handful of small JSON files at
-         * start up is the cheapest way to have them right from the first frame. */
-        event.l10n.reload();
     }
 
     @Subscribe
