@@ -254,7 +254,7 @@ public class ActorRagdoll
             }
 
             RagdollJoint joint = config.get(part.bone);
-            TwoBodyConstraintSettings settings = ragdoll.jointSettings(joint, part, parent, groups, matrices, actorWorld);
+            TwoBodyConstraintSettings settings = ragdoll.jointSettings(joint, part, parent, groups, matrices, actorWorld, scene);
 
             if (settings == null)
             {
@@ -300,7 +300,7 @@ public class ActorRagdoll
      * One joint, set up in world space at the build pose — the bodies are already standing on it,
      * so Jolt converts to each body's local frame correctly on its own.
      */
-    private TwoBodyConstraintSettings jointSettings(RagdollJoint joint, Part part, Part parent, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld)
+    private TwoBodyConstraintSettings jointSettings(RagdollJoint joint, Part part, Part parent, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene)
     {
         MatrixCacheEntry entry = matrices.get(part.path);
 
@@ -312,9 +312,15 @@ public class ActorRagdoll
         this.worldMatrix.set(actorWorld).mul(entry.matrix());
         this.worldMatrix.getTranslation(this.translation);
 
-        /* The joint sits at the child bone's pivot: the elbow is where the forearm turns. Scene
-         * coordinates, like everything in the world. */
-        RVec3 point = new RVec3(this.translation.x, this.translation.y, this.translation.z);
+        /* The joint sits at the child bone's pivot: the elbow is where the forearm turns. In the
+         * scene's own coordinates, because the bodies live there — "world space" to Jolt is the
+         * space the bodies are in, and a point left in raw world coordinates sits hundreds of
+         * blocks from the bodies it is meant to join. The lever arm of that mistake is the whole
+         * distance to the scene's origin, and the parts scatter as if they were never joined. */
+        RVec3 point = new RVec3(
+            this.translation.x - scene.getOriginX(),
+            this.translation.y - scene.getOriginY(),
+            this.translation.z - scene.getOriginZ());
 
         switch (joint.kind())
         {
