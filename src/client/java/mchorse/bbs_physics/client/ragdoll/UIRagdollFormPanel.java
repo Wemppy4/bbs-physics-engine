@@ -21,6 +21,7 @@ import mchorse.bbs_mod.ui.utils.PickedBone;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
 import mchorse.bbs_mod.ui.utils.bones.UIBoneTreeList;
+import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_mod.ui.utils.presets.UIDataContextMenu;
 import mchorse.bbs_mod.utils.colors.Colors;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
@@ -67,6 +68,7 @@ public class UIRagdollFormPanel extends UIFormPanel<Form>
     public UITrackpad hingeMin;
     public UITrackpad hingeMax;
 
+    public UIButton attachTo;
     public UIButton resetBone;
 
     private FormRagdoll ragdoll = FormRagdoll.EMPTY;
@@ -160,6 +162,9 @@ public class UIRagdollFormPanel extends UIFormPanel<Form>
         this.hingeMin = this.degrees(-180D, 180D, (joint, v) -> joint.withHinge(v, joint.hingeMax()));
         this.hingeMax = this.degrees(-180D, 180D, (joint, v) -> joint.withHinge(joint.hingeMin(), v));
 
+        this.attachTo = new UIButton(PhysicsKeys.RAGDOLL_ATTACH_AUTO, (b) -> this.openAttachMenu());
+        this.attachTo.tooltip(PhysicsKeys.RAGDOLL_ATTACH_TOOLTIP);
+
         this.resetBone = new UIButton(PhysicsKeys.RAGDOLL_RESET_BONE, (b) ->
         {
             this.editJoint((joint) -> RagdollJoint.DEFAULT);
@@ -178,6 +183,8 @@ public class UIRagdollFormPanel extends UIFormPanel<Form>
             UI.labelRow(PhysicsKeys.RAGDOLL_HINGE_AXIS, this.hingeAxis),
             UI.label(PhysicsKeys.RAGDOLL_HINGE),
             UI.row(this.hingeMin, this.hingeMax),
+            UI.label(PhysicsKeys.RAGDOLL_ATTACH),
+            this.attachTo,
             this.resetBone
         );
 
@@ -234,6 +241,44 @@ public class UIRagdollFormPanel extends UIFormPanel<Form>
         {
             FormRagdolls.set(this.form, ragdoll);
         }
+    }
+
+    /**
+     * The attachment picker: automatic, or any marked-up bone. Only marked bones are offered —
+     * an unmarked one has no body, and a joint to a body that does not exist is not a thing that
+     * can be wanted.
+     */
+    private void openAttachMenu()
+    {
+        if (this.model == null || this.form == null || this.bone.isEmpty())
+        {
+            return;
+        }
+
+        String current = this.joint().attachTo();
+
+        this.getContext().replaceContextMenu((menu) ->
+        {
+            menu.action(Icons.REFRESH, PhysicsKeys.RAGDOLL_ATTACH_AUTO, current.isEmpty(), () ->
+            {
+                this.editJoint((joint) -> joint.withAttachTo(""));
+                this.updateLabels();
+            });
+
+            for (String bone : this.bones.getList())
+            {
+                if (bone.equals(this.bone) || FormCollisions.get(this.form).get(bone).mode() == CollisionMode.NONE)
+                {
+                    continue;
+                }
+
+                menu.action(Icons.LIMB, IKey.constant(bone), bone.equals(current), () ->
+                {
+                    this.editJoint((joint) -> joint.withAttachTo(bone));
+                    this.updateLabels();
+                });
+            }
+        });
     }
 
     /* Presets */
@@ -356,6 +401,8 @@ public class UIRagdollFormPanel extends UIFormPanel<Form>
         this.hingeAxis.setEnabled(editable && hinge);
         this.hingeMin.setEnabled(editable && hinge);
         this.hingeMax.setEnabled(editable && hinge);
+        this.attachTo.label = joint.attachTo().isEmpty() ? PhysicsKeys.RAGDOLL_ATTACH_AUTO : IKey.constant(joint.attachTo());
+        this.attachTo.setEnabled(editable);
         this.resetBone.setEnabled(editable);
     }
 

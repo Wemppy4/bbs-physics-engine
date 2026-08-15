@@ -26,6 +26,7 @@ public final class RagdollIO
     private static final String KEY_HINGE_AXIS = "hinge_axis";
     private static final String KEY_HINGE_MIN = "hinge_min";
     private static final String KEY_HINGE_MAX = "hinge_max";
+    private static final String KEY_ATTACH_TO = "attach_to";
 
     private RagdollIO()
     {}
@@ -104,7 +105,8 @@ public final class RagdollIO
             map.getFloat(KEY_TWIST_MAX, fallback.twistMax()),
             map.getInt(KEY_HINGE_AXIS, fallback.hingeAxis()),
             map.getFloat(KEY_HINGE_MIN, fallback.hingeMin()),
-            map.getFloat(KEY_HINGE_MAX, fallback.hingeMax()));
+            map.getFloat(KEY_HINGE_MAX, fallback.hingeMax()),
+            map.getString(KEY_ATTACH_TO, fallback.attachTo()));
     }
 
     private static MapType jointToData(RagdollJoint joint)
@@ -118,6 +120,11 @@ public final class RagdollIO
         map.putInt(KEY_HINGE_AXIS, joint.hingeAxis());
         map.putFloat(KEY_HINGE_MIN, joint.hingeMin());
         map.putFloat(KEY_HINGE_MAX, joint.hingeMax());
+
+        if (!joint.attachTo().isEmpty())
+        {
+            map.putString(KEY_ATTACH_TO, joint.attachTo());
+        }
 
         return map;
     }

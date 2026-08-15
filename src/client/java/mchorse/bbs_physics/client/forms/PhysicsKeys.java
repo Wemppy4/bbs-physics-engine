@@ -91,6 +91,9 @@ public class PhysicsKeys
     public static final IKey RAGDOLL_HINGE_AXIS = L10n.lang("bbs_physics.forms.ragdoll.hinge_axis");
     public static final IKey RAGDOLL_HINGE_AXIS_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.hinge_axis_tooltip");
     public static final IKey RAGDOLL_HINGE = L10n.lang("bbs_physics.forms.ragdoll.hinge");
+    public static final IKey RAGDOLL_ATTACH = L10n.lang("bbs_physics.forms.ragdoll.attach");
+    public static final IKey RAGDOLL_ATTACH_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.attach_tooltip");
+    public static final IKey RAGDOLL_ATTACH_AUTO = L10n.lang("bbs_physics.forms.ragdoll.attach_auto");
     public static final IKey RAGDOLL_RESET_BONE = L10n.lang("bbs_physics.forms.ragdoll.reset_bone");
 
     public static final IKey RAGDOLL_ONLY_MODELS = L10n.lang("bbs_physics.forms.ragdoll.only_models");

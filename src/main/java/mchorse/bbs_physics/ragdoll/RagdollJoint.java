@@ -16,14 +16,18 @@ package mchorse.bbs_physics.ragdoll;
  * @param hingeAxis which local axis a hinge bends around: 0 = X, 1 = Y, 2 = Z
  * @param hingeMin  the hinge's reach, one way...
  * @param hingeMax  ...and the other
+ * @param attachTo  the bone this one is jointed to, or empty for automatic — the marked ancestor,
+ *                  and failing that the nearest marked body by geometry. The escape hatch for rigs
+ *                  whose skeleton runs through container bones: Minecraft's own player has the
+ *                  arms and the torso as <em>siblings</em>, so no ancestor walk can ever join them
  */
-public record RagdollJoint(RagdollJointKind kind, float swing, float twistMin, float twistMax, int hingeAxis, float hingeMin, float hingeMax)
+public record RagdollJoint(RagdollJointKind kind, float swing, float twistMin, float twistMax, int hingeAxis, float hingeMin, float hingeMax, String attachTo)
 {
     /**
      * The joint every bone gets until the author says otherwise: a soft cone. Wide enough that the
      * ragdoll moves freely, narrow enough that limbs do not wrap around themselves.
      */
-    public static final RagdollJoint DEFAULT = new RagdollJoint(RagdollJointKind.CONE, 45F, -30F, 30F, 0, 0F, 120F);
+    public static final RagdollJoint DEFAULT = new RagdollJoint(RagdollJointKind.CONE, 45F, -30F, 30F, 0, 0F, 120F, "");
 
     public RagdollJoint
     {
@@ -34,31 +38,37 @@ public record RagdollJoint(RagdollJointKind kind, float swing, float twistMin, f
         hingeAxis = Math.floorMod(hingeAxis, 3);
         hingeMin = clamp(hingeMin, -180F, 180F);
         hingeMax = clamp(hingeMax, hingeMin, 180F);
+        attachTo = attachTo == null ? "" : attachTo;
     }
 
     public RagdollJoint withKind(RagdollJointKind kind)
     {
-        return new RagdollJoint(kind, this.swing, this.twistMin, this.twistMax, this.hingeAxis, this.hingeMin, this.hingeMax);
+        return new RagdollJoint(kind, this.swing, this.twistMin, this.twistMax, this.hingeAxis, this.hingeMin, this.hingeMax, this.attachTo);
     }
 
     public RagdollJoint withSwing(float swing)
     {
-        return new RagdollJoint(this.kind, swing, this.twistMin, this.twistMax, this.hingeAxis, this.hingeMin, this.hingeMax);
+        return new RagdollJoint(this.kind, swing, this.twistMin, this.twistMax, this.hingeAxis, this.hingeMin, this.hingeMax, this.attachTo);
     }
 
     public RagdollJoint withTwist(float min, float max)
     {
-        return new RagdollJoint(this.kind, this.swing, min, max, this.hingeAxis, this.hingeMin, this.hingeMax);
+        return new RagdollJoint(this.kind, this.swing, min, max, this.hingeAxis, this.hingeMin, this.hingeMax, this.attachTo);
     }
 
     public RagdollJoint withHingeAxis(int axis)
     {
-        return new RagdollJoint(this.kind, this.swing, this.twistMin, this.twistMax, axis, this.hingeMin, this.hingeMax);
+        return new RagdollJoint(this.kind, this.swing, this.twistMin, this.twistMax, axis, this.hingeMin, this.hingeMax, this.attachTo);
     }
 
     public RagdollJoint withHinge(float min, float max)
     {
-        return new RagdollJoint(this.kind, this.swing, this.twistMin, this.twistMax, this.hingeAxis, min, max);
+        return new RagdollJoint(this.kind, this.swing, this.twistMin, this.twistMax, this.hingeAxis, min, max, this.attachTo);
+    }
+
+    public RagdollJoint withAttachTo(String attachTo)
+    {
+        return new RagdollJoint(this.kind, this.swing, this.twistMin, this.twistMax, this.hingeAxis, this.hingeMin, this.hingeMax, attachTo);
     }
 
     /** Whether this is exactly the default — and therefore not worth a line in the file. */
