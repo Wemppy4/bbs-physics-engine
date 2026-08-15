@@ -14,6 +14,7 @@ import mchorse.bbs_mod.forms.FormUtilsClient;
 import mchorse.bbs_mod.forms.entities.IEntity;
 import mchorse.bbs_mod.forms.forms.BodyPart;
 import mchorse.bbs_mod.forms.forms.Form;
+import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.utils.CollectionUtils;
@@ -21,10 +22,13 @@ import mchorse.bbs_mod.utils.Pair;
 import mchorse.bbs_mod.utils.StringUtils;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
+import mchorse.bbs_physics.client.collision.CollisionCollector;
+import mchorse.bbs_physics.client.ragdoll.RagdollPoseApplier;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsTimeline;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import mchorse.bbs_physics.forms.PhysicsBodyForm;
+import mchorse.bbs_physics.ragdoll.FormRagdolls;
 import net.minecraft.client.MinecraftClient;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -108,6 +112,7 @@ public class FilmScene implements AutoCloseable
 
         private final ActorRig bones;
         private final List<PhysicsBodyRig> bodyRigs;
+        private final List<ActorRagdoll> ragdolls;
 
         /**
          * Whether this actor's last evaluation failed, so the failure is reported once instead of
@@ -117,12 +122,13 @@ public class FilmScene implements AutoCloseable
          */
         private boolean broken;
 
-        private EntityRigs(IEntity entity, Replay replay, ActorRig bones, List<PhysicsBodyRig> bodyRigs)
+        private EntityRigs(IEntity entity, Replay replay, ActorRig bones, List<PhysicsBodyRig> bodyRigs, List<ActorRagdoll> ragdolls)
         {
             this.entity = entity;
             this.replay = replay;
             this.bones = bones;
             this.bodyRigs = bodyRigs;
+            this.ragdolls = ragdolls;
         }
     }
 
@@ -282,12 +288,17 @@ public class FilmScene implements AutoCloseable
 
     /**
      * Builds the simulated side of every actor: a kinematic body for every slot its forms mark up
-     * as collidable, and a rigid body for every physics body form anywhere in its tree. An actor
-     * with nothing marked up and no physics body is skipped entirely — that is the default state
-     * of a form, not a failure.
+     * as collidable, a ragdoll for every model that asked for one, and a rigid body for every
+     * physics body form anywhere in its tree. An actor with nothing marked up and no physics body
+     * is skipped entirely — that is the default state of a form, not a failure.
      */
     private void buildRigs()
     {
+        /* Distinct per ragdoll: parts within one collision group consult its filter (which excuses
+         * joined neighbours), parts of different groups collide normally. Two ragdolls sharing an
+         * id would consult each other's filters by subgroup index — nonsense pairs. */
+        int ragdollGroup = 0;
+
         for (CastMember member : this.cast)
         {
             IEntity entity = member.entity;
@@ -311,17 +322,43 @@ public class FilmScene implements AutoCloseable
                 continue;
             }
 
-            ActorRig bones = ActorRig.build(this.world, root, matrices, this);
+            Matrix4f actorWorld = this.actorWorld(entity);
+
+            /* One collection of the actor's markup, divided between owners: a ragdoll-enabled
+             * model claims its bone slots, everything left over becomes plain kinematic bones. */
+            List<CollisionCollector.Piece> pieces = CollisionCollector.collectActor(root, matrices);
+            List<ActorRagdoll> ragdolls = new ArrayList<>(0);
+
+            for (Pair<ModelForm, String> found : discoverRagdolls(root, "", new ArrayList<>(0)))
+            {
+                List<CollisionCollector.Piece> claimed = claimBonePieces(pieces, found.b);
+
+                ActorRagdoll ragdoll = ActorRagdoll.build(this.world, found.a, found.b, claimed, matrices, actorWorld, this, ragdollGroup);
+
+                if (ragdoll != null)
+                {
+                    ragdolls.add(ragdoll);
+                    ragdollGroup += 1;
+                }
+                else
+                {
+                    /* Nothing was built — a model type the pose cannot be handed back to, or no
+                     * marked bones. The claim is undone so the bones at least stay kinematic. */
+                    pieces.addAll(claimed);
+                }
+            }
+
+            ActorRig bones = ActorRig.build(this.world, root, matrices, this, pieces);
             List<PhysicsBodyRig> bodyRigs = new ArrayList<>(0);
 
             this.discoverBodies(root, "", matrices, bodyRigs);
 
-            if (bones == null && bodyRigs.isEmpty())
+            if (bones == null && bodyRigs.isEmpty() && ragdolls.isEmpty())
             {
                 continue;
             }
 
-            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs);
+            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls);
 
             this.rigs.add(rigs);
 
@@ -338,7 +375,71 @@ public class FilmScene implements AutoCloseable
             {
                 rig.read(this.world, this, true);
             }
+
+            for (ActorRagdoll ragdoll : ragdolls)
+            {
+                ragdoll.read(this.world, this, true);
+            }
         }
+    }
+
+    /**
+     * Finds every ragdoll-enabled model form in an actor's tree, with the path it lives at. Does
+     * not descend into physics body forms, mirroring the piece collection: what is inside a body
+     * belongs to the body.
+     */
+    private static List<Pair<ModelForm, String>> discoverRagdolls(Form form, String path, List<Pair<ModelForm, String>> out)
+    {
+        if (form instanceof PhysicsBodyForm)
+        {
+            return out;
+        }
+
+        if (form instanceof ModelForm modelForm && FormRagdolls.isEnabled(modelForm))
+        {
+            out.add(new Pair<>(modelForm, path));
+        }
+
+        int i = 0;
+
+        for (BodyPart part : form.parts.getAllTyped())
+        {
+            Form child = part.getForm();
+
+            if (child != null)
+            {
+                discoverRagdolls(child, StringUtils.combinePaths(path, String.valueOf(i)), out);
+            }
+
+            i += 1;
+        }
+
+        return out;
+    }
+
+    /**
+     * Takes one form's bone slots out of the actor's piece list and returns them. A bone piece of
+     * the form at {@code formPath} has the path {@code formPath/bone} with the bone as its label;
+     * the form's own slot (path equal to the form's) is deliberately left behind — it is a shape,
+     * not a bone, and stays a plain kinematic body.
+     */
+    private static List<CollisionCollector.Piece> claimBonePieces(List<CollisionCollector.Piece> pieces, String formPath)
+    {
+        List<CollisionCollector.Piece> claimed = new ArrayList<>(0);
+
+        for (int i = pieces.size() - 1; i >= 0; i--)
+        {
+            CollisionCollector.Piece piece = pieces.get(i);
+
+            if (!piece.path().equals(formPath) && piece.path().equals(StringUtils.combinePaths(formPath, piece.label())))
+            {
+                claimed.add(pieces.remove(i));
+            }
+        }
+
+        Collections.reverse(claimed);
+
+        return claimed;
     }
 
     /**
@@ -516,6 +617,11 @@ public class FilmScene implements AutoCloseable
             {
                 rig.read(this.world, this, jumped);
             }
+
+            for (ActorRagdoll ragdoll : rigs.ragdolls)
+            {
+                ragdoll.read(this.world, this, jumped);
+            }
         }
     }
 
@@ -555,13 +661,18 @@ public class FilmScene implements AutoCloseable
 
             try
             {
-                evaluatePose(rigs.entity, root);
+                MatrixCache matrices = evaluatePose(rigs.entity, root);
 
                 Matrix4f actorWorld = this.actorWorld(rigs.entity);
 
                 for (PhysicsBodyRig rig : rigs.bodyRigs)
                 {
                     rig.refresh(actorWorld);
+                }
+
+                for (ActorRagdoll ragdoll : rigs.ragdolls)
+                {
+                    ragdoll.refresh(matrices, actorWorld);
                 }
             }
             catch (Throwable e)
@@ -626,6 +737,11 @@ public class FilmScene implements AutoCloseable
                 {
                     rig.read(this.world, this, true);
                 }
+
+                for (ActorRagdoll ragdoll : rigs.ragdolls)
+                {
+                    ragdoll.read(this.world, this, true);
+                }
             }
         }
         finally
@@ -661,6 +777,11 @@ public class FilmScene implements AutoCloseable
                 rigs.bones.update(this.world, this, matrices, actorWorld, reset);
             }
 
+            for (ActorRagdoll ragdoll : rigs.ragdolls)
+            {
+                ragdoll.update(this.world, this, matrices, actorWorld, reset);
+            }
+
             for (PhysicsBodyRig rig : rigs.bodyRigs)
             {
                 rig.update(this.world, this, matrices, actorWorld, reset);
@@ -689,12 +810,25 @@ public class FilmScene implements AutoCloseable
      * authority handle, the form's transform, the pose, all of it — and the same film would come
      * out differently on a faster machine. The next frame writes them again for drawing, so nothing
      * is taken away from the render path.</p>
+     *
+     * <p>Flagged as the simulation's own walk while it runs: the renderer substitutes a ragdoll's
+     * simulated pose into this very walk for everyone else — anchors, gizmos — but the simulation
+     * must read pure animation here, because this pose is the target the muscles pull towards.</p>
      */
     private static MatrixCache evaluatePose(IEntity entity, Form root)
     {
         ensureAnimators(root);
 
-        return FormUtilsClient.getRenderer(root).collectMatrices(entity, 1F);
+        RagdollPoseApplier.setEvaluating(true);
+
+        try
+        {
+            return FormUtilsClient.getRenderer(root).collectMatrices(entity, 1F);
+        }
+        finally
+        {
+            RagdollPoseApplier.setEvaluating(false);
+        }
     }
 
     /**
@@ -781,6 +915,11 @@ public class FilmScene implements AutoCloseable
             {
                 rig.freeze(this.world);
             }
+
+            for (ActorRagdoll ragdoll : rigs.ragdolls)
+            {
+                ragdoll.freeze();
+            }
         }
     }
 
@@ -858,6 +997,11 @@ public class FilmScene implements AutoCloseable
             for (PhysicsBodyRig rig : rigs.bodyRigs)
             {
                 rig.release();
+            }
+
+            for (ActorRagdoll ragdoll : rigs.ragdolls)
+            {
+                ragdoll.release();
             }
         }
 

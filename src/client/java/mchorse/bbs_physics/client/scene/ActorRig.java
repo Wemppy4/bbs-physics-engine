@@ -66,12 +66,17 @@ public class ActorRig
     {}
 
     /**
-     * Builds a rig from the collision an actor's form tree describes, or returns null when it
-     * describes none — which is what an unmarked actor looks like, and is not an error.
+     * Builds a rig from the marked-up pieces handed to it, or returns null when there are none —
+     * which is what an unmarked actor looks like, and is not an error.
+     *
+     * <p>The pieces arrive collected rather than being collected here because the scene divides
+     * one actor's markup between owners: a ragdoll-enabled model's bones go to its
+     * {@link ActorRagdoll}, and only the rest — other forms' slots, the models' own shapes —
+     * become plain kinematic bones.</p>
      *
      * @param matrices the actor's pose, already evaluated for the tick the scene is being built at
      */
-    public static ActorRig build(PhysicsWorld physics, Form root, MatrixCache matrices, FilmScene scene)
+    public static ActorRig build(PhysicsWorld physics, Form root, MatrixCache matrices, FilmScene scene, List<CollisionCollector.Piece> pieces)
     {
         if (root == null)
         {
@@ -81,7 +86,7 @@ public class ActorRig
         ActorRig rig = new ActorRig();
         BodyInterface bodies = physics.getBodies();
 
-        for (CollisionCollector.Piece piece : CollisionCollector.collectActor(root, matrices))
+        for (CollisionCollector.Piece piece : pieces)
         {
             MatrixCacheEntry entry = matrices.get(piece.path());
 
