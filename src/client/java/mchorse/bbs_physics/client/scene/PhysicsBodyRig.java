@@ -14,6 +14,7 @@ import com.github.stephengold.joltjni.enumerate.EMotionQuality;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
 import com.github.stephengold.joltjni.enumerate.EOverrideMassProperties;
 import com.github.stephengold.joltjni.readonly.ConstShape;
+import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
@@ -22,8 +23,9 @@ import mchorse.bbs_physics.client.collision.JoltShapes;
 import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsWorld;
-import mchorse.bbs_physics.forms.PhysicsBodyForm;
+import mchorse.bbs_physics.forms.FormBody;
 import mchorse.bbs_physics.forms.PhysicsBodyState;
+import mchorse.bbs_physics.forms.PhysicsForms;
 import org.joml.AxisAngle4f;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -33,9 +35,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Ties one {@link PhysicsBodyForm} to its body in the simulation, in both directions: while the
- * animation owns the form, the keyframes drive the body; once it is let go, the body drives what
- * is drawn.
+ * Ties one form carrying the rigid body modifier to its body in the simulation, in both
+ * directions: while the animation owns the form, the keyframes drive the body; once it is let go,
+ * the body drives what is drawn.
  *
  * <p>The handover is what makes a thrown object work, and it costs nothing to arrange: a kinematic
  * body in Jolt carries the velocity {@code moveKinematic} gave it, so switching it to dynamic
@@ -83,7 +85,7 @@ public class PhysicsBodyRig
     /** Shared, never written to — the velocity a placed body is stopped with. */
     private static final Vec3 ZERO = new Vec3(0F, 0F, 0F);
 
-    private final PhysicsBodyForm form;
+    private final Form form;
     private final String path;
     private final int bodyId;
 
@@ -128,7 +130,7 @@ public class PhysicsBodyRig
     private float lastFriction;
     private float lastRestitution;
 
-    private PhysicsBodyRig(PhysicsBodyForm form, String path, int bodyId, int channel, List<CollisionCollector.Piece> pieces, boolean kinematic, SceneBody debug)
+    private PhysicsBodyRig(Form form, String path, int bodyId, int channel, List<CollisionCollector.Piece> pieces, boolean kinematic, SceneBody debug, FormBody settings)
     {
         this.form = form;
         this.path = path;
@@ -138,14 +140,16 @@ public class PhysicsBodyRig
         this.kinematic = kinematic;
         this.debug = debug;
 
-        this.lastMass = form.mass.get();
-        this.lastFriction = form.friction.get();
-        this.lastRestitution = form.restitution.get();
+        this.lastMass = settings.mass();
+        this.lastFriction = settings.friction();
+        this.lastRestitution = settings.restitution();
     }
 
-    /** Builds the body for a physics body form found at {@code path} in the actor's form tree. */
-    public static PhysicsBodyRig build(PhysicsWorld physics, PhysicsBodyForm form, String path, MatrixCache matrices, FilmScene scene)
+    /** Builds the body for a form carrying the rigid body modifier, found at {@code path}. */
+    public static PhysicsBodyRig build(PhysicsWorld physics, Form form, String path, MatrixCache matrices, FilmScene scene)
     {
+        FormBody body = PhysicsForms.getBody(form);
+
         List<CollisionCollector.Piece> pieces = CollisionCollector.collectBody(form, path, matrices);
         List<CollisionShapes.SubShape> subs = compose(pieces, path, matrices, new Matrix4f(), new ArrayList<>());
 
@@ -157,7 +161,7 @@ public class PhysicsBodyRig
             shape = JoltShapes.speck();
         }
 
-        boolean kinematic = form.isKinematic();
+        boolean kinematic = PhysicsForms.isKinematic(form);
 
         BodyCreationSettings settings = new BodyCreationSettings(
             shape,
@@ -165,8 +169,8 @@ public class PhysicsBodyRig
             kinematic ? EMotionType.Kinematic : EMotionType.Dynamic,
             ghost ? PhysicsLayers.GHOST : PhysicsLayers.MOVING);
 
-        settings.setFriction(form.friction.get());
-        settings.setRestitution(form.restitution.get());
+        settings.setFriction(body.friction());
+        settings.setRestitution(body.restitution());
 
         /* Swept collision rather than the default, which only asks where a body is at the end of a
          * step. A film tick is fifty milliseconds — long — so anything thrown or dropped from a
@@ -180,7 +184,7 @@ public class PhysicsBodyRig
          * heavy and a small one weightless. The author gives a mass; the inertia is worked out
          * from the assembled shape and scaled to it, so the thing tumbles like what it looks like
          * rather than like the box it used to be given. */
-        settings.setMassPropertiesOverride(new MassProperties().setMass(form.mass.get()));
+        settings.setMassPropertiesOverride(new MassProperties().setMass(body.mass()));
         settings.setOverrideMassProperties(EOverrideMassProperties.CalculateInertia);
 
         int id = physics.getBodies().createAndAddBody(settings, EActivation.Activate);
@@ -199,9 +203,9 @@ public class PhysicsBodyRig
 
         scene.addDebugBody(debug);
 
-        form.state = new PhysicsBodyState();
+        PhysicsForms.setState(form, new PhysicsBodyState());
 
-        PhysicsBodyRig rig = new PhysicsBodyRig(form, path, id, scene.addChannel(), ghost ? List.of() : pieces, kinematic, debug);
+        PhysicsBodyRig rig = new PhysicsBodyRig(form, path, id, scene.addChannel(), ghost ? List.of() : pieces, kinematic, debug, body);
 
         compose(rig.pieces, path, matrices, rig.inverse, rig.builtFrom);
 
@@ -273,17 +277,22 @@ public class PhysicsBodyRig
      */
     public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset)
     {
+        PhysicsBodyState state = PhysicsForms.getState(this.form);
+
         this.actorWorld.set(actorWorld);
 
-        if (this.form.state != null)
+        if (state != null)
         {
-            this.parentFrame.set(this.form.state.getWalkParentFrame());
+            this.parentFrame.set(state.getWalkParentFrame());
         }
 
         BodyInterface bodies = physics.getBodies();
 
-        float authority = this.form.getAuthority();
-        boolean wanted = this.form.isKinematic();
+        /* Read once per tick rather than per question: every one of these parses the form's stored
+         * map, and the author can be editing them while the film is open. */
+        FormBody body = PhysicsForms.getBody(this.form);
+        float authority = PhysicsForms.getAuthority(this.form);
+        boolean wanted = authority >= 1F;
 
         /* Whether the body is to be stood at its pose and stopped rather than moved towards it over
          * the coming tick. Every step is exactly one tick now, so this is no longer about jumps: it
@@ -310,7 +319,7 @@ public class PhysicsBodyRig
             this.reshape(bodies, matrices);
         }
 
-        this.applySettings(physics, bodies);
+        this.applySettings(physics, bodies, body);
 
         if (!put && !this.kinematic && authority <= 0F)
         {
@@ -469,9 +478,9 @@ public class PhysicsBodyRig
      * picked up by the re-recording that follows rather than by a special case here — which is what
      * the old {@code freeze()} was.</p>
      */
-    private void applySettings(PhysicsWorld physics, BodyInterface bodies)
+    private void applySettings(PhysicsWorld physics, BodyInterface bodies, FormBody body)
     {
-        float friction = this.form.friction.get();
+        float friction = body.friction();
 
         if (friction != this.lastFriction)
         {
@@ -480,7 +489,7 @@ public class PhysicsBodyRig
             this.lastFriction = friction;
         }
 
-        float restitution = this.form.restitution.get();
+        float restitution = body.restitution();
 
         if (restitution != this.lastRestitution)
         {
@@ -489,7 +498,7 @@ public class PhysicsBodyRig
             this.lastRestitution = restitution;
         }
 
-        float mass = this.form.mass.get();
+        float mass = body.mass();
 
         if (mass != this.lastMass)
         {
@@ -570,7 +579,7 @@ public class PhysicsBodyRig
         this.local.getTranslation(this.position);
         this.local.getUnnormalizedRotation(this.rotation);
 
-        cache.write(tick, this.channel, this.position, this.rotation, this.form.getAuthority());
+        cache.write(tick, this.channel, this.position, this.rotation, PhysicsForms.getAuthority(this.form));
     }
 
     /**
@@ -581,7 +590,7 @@ public class PhysicsBodyRig
      */
     public void readCache(PhysicsCache cache, int tick, boolean teleport)
     {
-        PhysicsBodyState state = this.form.state;
+        PhysicsBodyState state = PhysicsForms.getState(this.form);
 
         if (state == null)
         {
@@ -620,6 +629,6 @@ public class PhysicsBodyRig
      */
     public void release()
     {
-        this.form.state = null;
+        PhysicsForms.setState(this.form, null);
     }
 }

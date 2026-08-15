@@ -5,9 +5,9 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 /**
- * Where the simulation put a {@link PhysicsBodyForm}, expressed <em>relative to the actor the form
- * hangs on</em> — which is the frame the renderer draws in, so the renderer can apply it without
- * knowing anything about world coordinates or the physics origin.
+ * Where the simulation put a form carrying the rigid body modifier, expressed <em>relative to the
+ * actor the form hangs on</em> — which is the frame the renderer draws in, so the renderer can
+ * apply it without knowing anything about world coordinates or the physics origin.
  *
  * <p>Two ticks are kept so the frame between them can be drawn: physics runs at the film's 20 Hz
  * and the game draws far faster. The same reason {@link mchorse.bbs_physics.client.scene.SceneBody}

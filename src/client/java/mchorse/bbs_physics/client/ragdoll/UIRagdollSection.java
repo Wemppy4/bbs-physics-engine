@@ -7,8 +7,7 @@ import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.l10n.keys.IKey;
 import mchorse.bbs_mod.ui.UIKeys;
-import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
-import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
+import mchorse.bbs_physics.client.forms.UIPhysicsSection;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.framework.elements.UISection;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
@@ -50,7 +49,7 @@ import java.util.function.UnaryOperator;
  * job. The presets live beside the model, keyed to its rig — set the knees up once, apply it to
  * every character that shares the skeleton.</p>
  */
-public class UIRagdollFormPanel extends UIFormPanel<Form>
+public class UIRagdollSection extends UIPhysicsSection
 {
     public UIToggle enabled;
 
@@ -77,9 +76,8 @@ public class UIRagdollFormPanel extends UIFormPanel<Form>
     private String presetGroup = "";
     private boolean syncing;
 
-    public UIRagdollFormPanel(UIForm editor)
+    public UIRagdollSection()
     {
-        super(editor);
 
         this.enabled = new UIToggle(PhysicsKeys.RAGDOLL_ENABLED, (b) ->
         {
@@ -108,7 +106,7 @@ public class UIRagdollFormPanel extends UIFormPanel<Form>
             {
                 super.renderListElement(context, element, i, x, y, hover, selected);
 
-                UIRagdollFormPanel.this.renderBoneMark(context, element, y);
+                UIRagdollSection.this.renderBoneMark(context, element, y);
             }
         };
         this.bones.background();
@@ -188,7 +186,7 @@ public class UIRagdollFormPanel extends UIFormPanel<Form>
             this.resetBone
         );
 
-        this.options.add(
+        this.add(
             this.enabled,
             this.bonesSearch,
             joints
@@ -208,12 +206,6 @@ public class UIRagdollFormPanel extends UIFormPanel<Form>
         pad.limit(min, max).increment(5D).values(1D, 0.5D, 5D);
 
         return pad;
-    }
-
-    @Override
-    protected float getDefaultOptionsWidth()
-    {
-        return 0.3F;
     }
 
     /* Editing */
@@ -297,9 +289,9 @@ public class UIRagdollFormPanel extends UIFormPanel<Form>
     /* Syncing the UI */
 
     @Override
-    public void startEdit(Form form)
+    public void setForm(Form form)
     {
-        super.startEdit(form);
+        super.setForm(form);
 
         this.ragdoll = FormRagdolls.get(form);
         this.model = form instanceof ModelForm modelForm ? ModelFormRenderer.getModel(modelForm) : null;
@@ -334,7 +326,7 @@ public class UIRagdollFormPanel extends UIFormPanel<Form>
         }
 
         this.updateLabels();
-        this.options.resize();
+        this.resize();
     }
 
     @Override

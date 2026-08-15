@@ -3,8 +3,7 @@ package mchorse.bbs_physics.ragdoll;
 import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.settings.values.core.ValueData;
-import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
-import mchorse.bbs_mod.utils.MathUtils;
+import mchorse.bbs_physics.forms.PhysicsForms;
 
 /**
  * Reading and writing a model form's ragdoll setup — the same arrangement as
@@ -15,9 +14,6 @@ public final class FormRagdolls
 {
     /** The key the setup is stored under, prefixed for the same reason the collision key is. */
     public static final String KEY = "bbs_physics_ragdoll";
-
-    /** The key of the authority handle — visible, so it is a timeline track when the ragdoll is on. */
-    public static final String AUTHORITY_KEY = "bbs_physics_authority";
 
     private FormRagdolls()
     {}
@@ -53,20 +49,14 @@ public final class FormRagdolls
     }
 
     /**
-     * The animation authority of {@code form} right now, clamped to 0..1 — the keyframed track has
-     * already been written into the value by the property track for whatever tick is being worked
-     * on. 1 for a form that has no handle at all, because that is what "not simulated" means.
+     * The animation authority of {@code form} right now, clamped to 0..1.
+     *
+     * <p>Kept as a name here because the ragdoll code reads it everywhere, but the handle itself
+     * belongs to the form rather than to the ragdoll — one handle for both modifiers (§4).</p>
      */
     public static float getAuthority(Form form)
     {
-        if (!(form instanceof IRagdollForm ragdoll))
-        {
-            return 1F;
-        }
-
-        ValueFloat authority = ragdoll.bbs_physics$getAuthority();
-
-        return authority == null ? 1F : MathUtils.clamp(authority.get(), 0F, 1F);
+        return PhysicsForms.getAuthority(form);
     }
 
     public static RagdollState getState(Form form)

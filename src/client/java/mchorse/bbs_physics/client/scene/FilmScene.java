@@ -29,7 +29,7 @@ import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsTimeline;
 import mchorse.bbs_physics.engine.PhysicsWorld;
-import mchorse.bbs_physics.forms.PhysicsBodyForm;
+import mchorse.bbs_physics.forms.PhysicsForms;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 import net.minecraft.client.MinecraftClient;
 import org.joml.Matrix4f;
@@ -436,8 +436,10 @@ public class FilmScene implements AutoCloseable
      */
     private static List<Pair<ModelForm, String>> discoverRagdolls(Form form, String path, List<Pair<ModelForm, String>> out)
     {
-        if (form instanceof PhysicsBodyForm)
+        if (PhysicsForms.isBody(form))
         {
+            /* A form welded into one falling lump is not a ragdoll, whatever its bones say — and
+             * what is nested inside it belongs to that lump too. */
             return out;
         }
 
@@ -489,15 +491,19 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
-     * Finds every physics body form in an actor's form tree, however deep — a crate in a hand, a
-     * helmet on a head — and gives each one a body. The path mirrors the matrix walk's convention
-     * exactly, because it is the key the body's evaluated placement is read back by.
+     * Finds every form carrying the rigid body modifier in an actor's tree, however deep — a crate
+     * in a hand, a helmet on a head — and gives each one a body. The path mirrors the matrix walk's
+     * convention exactly, because it is the key the body's evaluated placement is read back by.
+     *
+     * <p>Nested bodies are still visited: a crate with a body, holding a lid with a body of its
+     * own, is two bodies. What the outer one <em>collides</em> as stops at the inner one, which is
+     * the collector's business, not this walk's.</p>
      */
     private void discoverBodies(Form form, String path, MatrixCache matrices, List<PhysicsBodyRig> out)
     {
-        if (form instanceof PhysicsBodyForm body)
+        if (PhysicsForms.isBody(form))
         {
-            out.add(PhysicsBodyRig.build(this.world, body, path, matrices, this));
+            out.add(PhysicsBodyRig.build(this.world, form, path, matrices, this));
         }
 
         int i = 0;

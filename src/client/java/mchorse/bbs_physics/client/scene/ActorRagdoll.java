@@ -28,13 +28,11 @@ import mchorse.bbs_mod.utils.MathUtils;
 import mchorse.bbs_mod.utils.StringUtils;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
-import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
-import mchorse.bbs_physics.collision.CollisionKind;
+import mchorse.bbs_physics.client.ragdoll.RagdollAttachment;
 import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsWorld;
-import mchorse.bbs_physics.forms.PhysicsBodyForm;
 import mchorse.bbs_physics.ragdoll.FormRagdoll;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 import mchorse.bbs_physics.ragdoll.RagdollJoint;
@@ -247,16 +245,13 @@ public class ActorRagdoll
             return null;
         }
 
-        /* Who hangs off whom. In order of authority: the author's explicit attachment, the nearest
-         * marked ancestor in the bone tree, and — for bones whose skeleton runs through container
-         * bones nobody can mark — the nearest marked body by geometry. Minecraft's own player rig
-         * is the reason the third exists: its arms, head, legs and torso are all children of empty
-         * containers, so no ancestor walk can join any of them to anything. */
-        Map<Part, Part> parents = resolveParents(ragdoll, config, groups, byBone, pieces, matrices, actorWorld);
+        /* Who hangs off whom — the three-step answer, shared with the viewport preview so that the
+         * lines an author sees are the joints that will actually be built (§7.6). */
+        Map<String, String> attachment = RagdollAttachment.resolve(config, pieces, model, matrices, actorWorld);
 
         for (Part part : ragdoll.parts)
         {
-            Part parent = parents.get(part);
+            Part parent = byBone.get(attachment.get(part.bone));
 
             if (parent == null)
             {
@@ -284,231 +279,6 @@ public class ActorRagdoll
         FormRagdolls.setState(form, ragdoll.state);
 
         return ragdoll;
-    }
-
-    /**
-     * Decides every part's joint parent. Explicit attachments and marked ancestors are taken
-     * first; whatever is left unattached is joined by proximity — each loose part, nearest first,
-     * hangs onto the closest already-attached body (measured from its pivot to the other's
-     * shapes), which grows the skeleton outward like a minimum spanning tree and cannot loop.
-     * When <em>nothing</em> is attached — the whole rig hangs off containers — the bulkiest loose
-     * part is declared the trunk and stays without a joint, which for a humanoid is the torso.
-     */
-    private static Map<Part, Part> resolveParents(ActorRagdoll ragdoll, FormRagdoll config, Map<String, ModelGroup> groups, Map<String, Part> byBone, List<CollisionCollector.Piece> pieces, MatrixCache matrices, Matrix4f actorWorld)
-    {
-        Map<Part, Part> parents = new HashMap<>();
-        List<Part> loose = new ArrayList<>();
-
-        for (Part part : ragdoll.parts)
-        {
-            String attachTo = config.get(part.bone).attachTo();
-            Part chosen = attachTo.isEmpty() || attachTo.equals(part.bone) ? null : byBone.get(attachTo);
-
-            if (chosen == null)
-            {
-                chosen = nearestMarkedAncestor(groups.get(part.bone), byBone);
-            }
-
-            if (chosen != null)
-            {
-                parents.put(part, chosen);
-            }
-            else
-            {
-                loose.add(part);
-            }
-        }
-
-        if (loose.isEmpty())
-        {
-            return parents;
-        }
-
-        /* The bodies loose parts may hang onto: everything already part of the skeleton. With the
-         * whole rig loose there is no skeleton yet, so the bulkiest part seeds it. */
-        List<Part> attached = new ArrayList<>(ragdoll.parts);
-
-        attached.removeAll(loose);
-
-        if (attached.isEmpty())
-        {
-            Part trunk = null;
-            float best = -1F;
-
-            for (Part part : loose)
-            {
-                float volume = shapesVolume(pieceOf(pieces, part));
-
-                if (volume > best)
-                {
-                    best = volume;
-                    trunk = part;
-                }
-            }
-
-            loose.remove(trunk);
-            attached.add(trunk);
-        }
-
-        /* Nearest loose part first, so a hand two steps from the torso can arrive through an arm
-         * that gets attached before it — and no part can ever join a body that is not, by then,
-         * already connected: that is what makes a cycle impossible. */
-        while (!loose.isEmpty())
-        {
-            Part bestPart = null;
-            Part bestTarget = null;
-            float bestDistance = Float.MAX_VALUE;
-
-            for (Part part : loose)
-            {
-                Vector3f pivot = pivotWorld(part, matrices, actorWorld);
-
-                if (pivot == null)
-                {
-                    continue;
-                }
-
-                for (Part target : attached)
-                {
-                    float distance = distanceToShapes(pivot, target, pieceOf(pieces, target), matrices, actorWorld);
-
-                    if (distance < bestDistance)
-                    {
-                        bestDistance = distance;
-                        bestPart = part;
-                        bestTarget = target;
-                    }
-                }
-            }
-
-            if (bestPart == null)
-            {
-                /* Nothing measurable is left — parts whose frames the cache lost. No joints. */
-                break;
-            }
-
-            parents.put(bestPart, bestTarget);
-            loose.remove(bestPart);
-            attached.add(bestPart);
-        }
-
-        return parents;
-    }
-
-    /** Walks up the model's bone tree to the first ancestor that is itself a ragdoll part. */
-    private static Part nearestMarkedAncestor(ModelGroup group, Map<String, Part> byBone)
-    {
-        ModelGroup parent = group == null ? null : group.parent;
-
-        while (parent != null)
-        {
-            Part part = byBone.get(parent.id);
-
-            if (part != null)
-            {
-                return part;
-            }
-
-            parent = parent.parent;
-        }
-
-        return null;
-    }
-
-    private static CollisionCollector.Piece pieceOf(List<CollisionCollector.Piece> pieces, Part part)
-    {
-        for (CollisionCollector.Piece piece : pieces)
-        {
-            if (piece.path().equals(part.path))
-            {
-                return piece;
-            }
-        }
-
-        return null;
-    }
-
-    private static Vector3f pivotWorld(Part part, MatrixCache matrices, Matrix4f actorWorld)
-    {
-        MatrixCacheEntry entry = matrices.get(part.path);
-
-        if (entry == null || entry.matrix() == null)
-        {
-            return null;
-        }
-
-        return new Matrix4f(actorWorld).mul(entry.matrix()).getTranslation(new Vector3f());
-    }
-
-    /**
-     * A rough volume, for picking the trunk: every shape taken as its box. Exact volumes would
-     * change the answer only when two candidates are within a third of each other, and a rig that
-     * close to a tie has no meaningful trunk anyway.
-     */
-    private static float shapesVolume(CollisionCollector.Piece piece)
-    {
-        if (piece == null)
-        {
-            return 0F;
-        }
-
-        float volume = 0F;
-
-        for (CollisionShapes.SubShape sub : piece.shapes())
-        {
-            volume += 8F * sub.half().x * sub.half().y * sub.half().z;
-        }
-
-        return volume;
-    }
-
-    /**
-     * How far {@code point} (world) is from a part's shapes: through the part's frame into each
-     * shape's own space, clamped against its extents. Boxes are exact; capsules and cylinders are
-     * treated as their boxes, which for choosing the nearest neighbour is as good as exact.
-     */
-    private static float distanceToShapes(Vector3f point, Part target, CollisionCollector.Piece piece, MatrixCache matrices, Matrix4f actorWorld)
-    {
-        if (piece == null || piece.shapes().isEmpty())
-        {
-            return Float.MAX_VALUE;
-        }
-
-        MatrixCacheEntry entry = matrices.get(target.path);
-
-        if (entry == null || entry.matrix() == null)
-        {
-            return Float.MAX_VALUE;
-        }
-
-        Vector3f local = new Matrix4f(actorWorld).mul(entry.matrix()).invert().transformPosition(new Vector3f(point));
-        float best = Float.MAX_VALUE;
-
-        for (CollisionShapes.SubShape sub : piece.shapes())
-        {
-            Vector3f p = new Vector3f(local).sub(sub.offset());
-
-            new Quaternionf(sub.rotation()).conjugate().transform(p);
-
-            float distance;
-
-            if (sub.kind() == CollisionKind.SPHERE)
-            {
-                distance = Math.max(0F, p.length() - sub.half().x);
-            }
-            else
-            {
-                float dx = Math.max(0F, Math.abs(p.x) - sub.half().x);
-                float dy = Math.max(0F, Math.abs(p.y) - sub.half().y);
-                float dz = Math.max(0F, Math.abs(p.z) - sub.half().z);
-
-                distance = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-            }
-
-            best = Math.min(best, distance);
-        }
-
-        return best;
     }
 
     /**

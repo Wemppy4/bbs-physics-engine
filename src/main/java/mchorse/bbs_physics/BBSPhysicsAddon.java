@@ -1,12 +1,8 @@
 package mchorse.bbs_physics;
 
-import mchorse.bbs_mod.BBSMod;
 import mchorse.bbs_mod.events.BBSAddonMod;
 import mchorse.bbs_mod.events.Subscribe;
-import mchorse.bbs_mod.events.register.RegisterSettingsEvent;
 import mchorse.bbs_mod.events.register.RegisterSourcePacksEvent;
-import mchorse.bbs_mod.resources.Link;
-import mchorse.bbs_physics.forms.PhysicsBodyForm;
 import net.fabricmc.loader.api.FabricLoader;
 
 /**
@@ -34,23 +30,18 @@ public class BBSPhysicsAddon implements BBSAddonMod
         event.registerAddon(BBSPhysics.ASSETS, BBSPhysicsAddon.class);
     }
 
-    /**
-     * Registers the addon's form types.
+    /*
+     * The addon registers no form types of its own any more.
      *
-     * <p>Hooked to the settings event for one reason: <b>timing</b>. BBS builds its form factory
-     * partway through its own initialization, and the addon's Fabric entry point runs before it
-     * gets there — registering from there finds {@code getForms()} still null and takes the game
-     * down at startup. Of the events BBS posts, this is the first one after the factories exist.
-     * There is no "register forms" event to use instead; when there is, this moves.</p>
-     *
-     * <p>Registered on both sides, not just the client: a film carries its forms across the
-     * network, and a server handed one has to be able to read it.</p>
+     * <p>It used to register one — "physics body", the wrapper you dropped a crate into. Р7 removed
+     * it: physics is a modifier on an existing form now (a value the {@code Form} mixin adds), which
+     * is how Blender, Unity and Godot all do it, and it spares the author three levels of nesting to
+     * make a box fall. The timing lesson that made this method exist is worth keeping, though, in
+     * case a form type is ever wanted again: BBS builds its form factory partway through its own
+     * initialization, after the addon's Fabric entry point has already run, so a registration there
+     * finds {@code getForms()} null and takes the game down at startup. The settings event is the
+     * first one BBS posts after the factories exist.
      */
-    @Subscribe
-    public void onRegisterSettings(RegisterSettingsEvent event)
-    {
-        BBSMod.getForms().register(new Link(BBSPhysics.MOD_ID, "body"), PhysicsBodyForm.class, null);
-    }
 
     private static String version(String modId)
     {

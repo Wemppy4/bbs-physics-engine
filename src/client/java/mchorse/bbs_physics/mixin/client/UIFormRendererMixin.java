@@ -3,6 +3,7 @@ package mchorse.bbs_physics.mixin.client;
 import mchorse.bbs_mod.ui.forms.editors.utils.UIFormRenderer;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_physics.client.collision.CollisionPreview;
+import mchorse.bbs_physics.client.ragdoll.RagdollPreview;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -29,6 +30,12 @@ public class UIFormRendererMixin
         UIFormRenderer renderer = (UIFormRenderer) (Object) this;
 
         CollisionPreview.render(
+            renderer.form,
+            renderer.getEntity(),
+            context.batcher.getContext().getMatrices(),
+            context.getTransition());
+
+        RagdollPreview.render(
             renderer.form,
             renderer.getEntity(),
             context.batcher.getContext().getMatrices(),

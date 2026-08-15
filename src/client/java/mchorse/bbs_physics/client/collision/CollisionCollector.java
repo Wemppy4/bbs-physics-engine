@@ -13,7 +13,7 @@ import mchorse.bbs_physics.collision.CollisionMode;
 import mchorse.bbs_physics.collision.CollisionSlot;
 import mchorse.bbs_physics.collision.FormCollision;
 import mchorse.bbs_physics.collision.FormCollisions;
-import mchorse.bbs_physics.forms.PhysicsBodyForm;
+import mchorse.bbs_physics.forms.PhysicsForms;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -63,14 +63,18 @@ public final class CollisionCollector
     }
 
     /**
-     * Everything one physics body is made of: the markup of the forms nested inside it. The body
-     * itself contributes no shape of its own — it is a mark saying "this falls", and what it looks
-     * like (and therefore what it collides as) is whatever was put in it.
+     * Everything one rigid body is made of: the markup of the form the modifier sits on, plus the
+     * markup of everything nested inside it (§5.1).
+     *
+     * <p>The form's own markup counts now, which it could not when a body was a wrapper with
+     * nothing in it of its own (Р7). A crate with a box marked on it is a body the moment the
+     * modifier is added — no nesting, no second form.</p>
      */
-    public static List<Piece> collectBody(PhysicsBodyForm body, String path, MatrixCache matrices)
+    public static List<Piece> collectBody(Form body, String path, MatrixCache matrices)
     {
         List<Piece> pieces = new ArrayList<>();
 
+        collectForm(body, path, matrices, pieces);
         walkParts(body, path, matrices, pieces, true);
 
         return pieces;
@@ -97,7 +101,7 @@ public final class CollisionCollector
             return;
         }
 
-        if (stopAtBodies && form instanceof PhysicsBodyForm)
+        if (stopAtBodies && PhysicsForms.isBody(form))
         {
             return;
         }

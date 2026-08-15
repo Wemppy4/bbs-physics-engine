@@ -3,6 +3,7 @@ package mchorse.bbs_physics.mixin.client;
 import mchorse.bbs_mod.ui.forms.editors.utils.UIPickableFormRenderer;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_physics.client.collision.CollisionPreview;
+import mchorse.bbs_physics.client.ragdoll.RagdollPreview;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -33,6 +34,12 @@ public class UIPickableFormRendererMixin
          * the preview is posed by the actor it belongs to, and the markup has to be measured
          * against the same pose the model is drawn in. */
         CollisionPreview.render(
+            renderer.form,
+            renderer.getTargetEntity(),
+            context.batcher.getContext().getMatrices(),
+            context.getTransition());
+
+        RagdollPreview.render(
             renderer.form,
             renderer.getTargetEntity(),
             context.batcher.getContext().getMatrices(),

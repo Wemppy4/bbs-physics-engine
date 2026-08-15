@@ -8,8 +8,7 @@ import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.l10n.keys.IKey;
 import mchorse.bbs_mod.ui.UIKeys;
-import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
-import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
+import mchorse.bbs_physics.client.forms.UIPhysicsSection;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.framework.elements.UISection;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
@@ -57,7 +56,7 @@ import java.util.function.UnaryOperator;
  * nothing about it, deliberately: BBS without the addon has to stay BBS without the addon, and a
  * tab that does nothing at all would be worse than no tab.</p>
  */
-public class UICollisionFormPanel extends UIFormPanel<Form>
+public class UICollisionSection extends UIPhysicsSection
 {
     /** One model pixel, in blocks — the step every distance here scrolls by. */
     private static final double PIXEL = 1D / 16D;
@@ -106,9 +105,8 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
     private String presetGroup = "";
     private boolean syncing;
 
-    public UICollisionFormPanel(UIForm editor)
+    public UICollisionSection()
     {
-        super(editor);
 
         this.preview = new UIToggle(PhysicsKeys.COLLISION_PREVIEW, (b) -> BBSPhysicsSettings.collisionPreview.set(b.getValue()));
 
@@ -130,7 +128,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             {
                 super.renderListElement(context, element, i, x, y, hover, selected);
 
-                UICollisionFormPanel.this.renderSlotMark(context, element, y);
+                UICollisionSection.this.renderSlotMark(context, element, y);
             }
         };
         this.bones.background();
@@ -219,7 +217,11 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             this.summary
         );
 
-        UISection primitives = this.section(PhysicsKeys.COLLISION_SHAPES, "collision.shapes", true);
+        /* Folded by default, and below the automatic pass. The order used to be the other way round
+         * — nine trackpads open on arrival, the button most authors actually want tucked away in a
+         * folded section underneath (§7.2). Automation is the answer for the common case; hand
+         * placement is the correction. */
+        UISection primitives = this.section(PhysicsKeys.COLLISION_SHAPES, "collision.shapes", false);
 
         primitives.fields.add(
             this.shapes,
@@ -233,7 +235,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             UI.row(this.sizeX, this.sizeY, this.sizeZ)
         );
 
-        UISection auto = this.section(PhysicsKeys.COLLISION_AUTO, "collision.auto", false);
+        UISection auto = this.section(PhysicsKeys.COLLISION_AUTO, "collision.auto", true);
 
         auto.fields.add(
             UI.labelRow(PhysicsKeys.COLLISION_AUTO_THRESHOLD, this.autoThreshold),
@@ -242,12 +244,12 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             this.clearAll
         );
 
-        this.options.add(
+        this.add(
             this.preview,
             this.bonesSearch,
             markup,
-            primitives,
-            auto
+            auto,
+            primitives
         );
     }
 
@@ -290,14 +292,6 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
                 this.editShape((shape) -> edit.apply(shape, v.floatValue()));
             }
         };
-    }
-
-    @Override
-    protected float getDefaultOptionsWidth()
-    {
-        /* Three-column rows of trackpads and a bone list want more air than the generic 20%; the
-         * divider drag still overrides for the session. */
-        return 0.3F;
     }
 
     /* Editing */
@@ -468,9 +462,9 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
     /* Syncing the UI */
 
     @Override
-    public void startEdit(Form form)
+    public void setForm(Form form)
     {
-        super.startEdit(form);
+        super.setForm(form);
 
         this.preview.setValue(BBSPhysicsSettings.collisionPreview.get());
         this.collision = FormCollisions.get(form);
@@ -508,7 +502,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         this.autoThreshold.setValue(threshold);
         this.selectShape(0);
         this.updateLabels();
-        this.options.resize();
+        this.resize();
     }
 
     @Override
