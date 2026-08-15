@@ -10,6 +10,7 @@ import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
 import mchorse.bbs_physics.BBSPhysics;
+import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import net.minecraft.block.Block;
@@ -38,18 +39,28 @@ import java.util.List;
 public final class WorldCollider
 {
     /**
-     * Horizontal reach around the origin, in blocks. Sized for a thrown object: at a hard throw's
-     * ~20 blocks a second this is over a second and a half of flight before the edge. A moving
-     * window is deliberately NOT attempted — swapping world bodies changes the body set, and Jolt
-     * refuses to restore a checkpoint whose bodies no longer match, which would break every rewind.
+     * The region of the world a scene collected its collision from, and how many boxes came out.
+     *
+     * <p>Kept by the scene rather than recomputed from the settings, because the settings can be
+     * changed while a film is open and the region a body is being judged against has to be the one
+     * that was actually built.</p>
      */
-    private static final int RADIUS = 32;
-
-    /** How far down to look — enough for the ground the scene stands on and a drop off a ledge. */
-    private static final int BELOW = 12;
-
-    /** And up, for ceilings, overhangs and anything dropped from a height. */
-    private static final int ABOVE = 24;
+    public record Window(int radius, int below, int above, int boxes)
+    {
+        /**
+         * Whether a point in the scene's own coordinates still has blocks under it. Outside this
+         * region there is nothing to land on and a body falls forever, which from the viewport is
+         * indistinguishable from a body that fell through the floor — telling the two apart is the
+         * whole reason this is asked. Approximate at the world's ceiling and bedrock, where the
+         * region is clamped to what exists; a distinction that does not matter to the question.
+         */
+        public boolean contains(double x, double y, double z)
+        {
+            return x >= -this.radius && x <= this.radius + 1
+                && z >= -this.radius && z <= this.radius + 1
+                && y >= -this.below && y <= this.above + 1;
+        }
+    }
 
     /**
      * Jolt rounds a box's corners by this much to make contacts cheaper, and the radius may not
@@ -67,17 +78,21 @@ public final class WorldCollider
     /**
      * Adds the world's collision around {@code origin} to the scene.
      *
-     * @return how many boxes went in; zero means there was nothing solid to add and no body was
-     *         created. Deliberately not the body's id: Jolt hands out ids from zero, and the world
-     *         is the first body a scene creates, so "0" would be both the id it gets and the
-     *         answer meaning "nothing" — and the scene would lay its fallback floor through the
-     *         real ground
+     * @return the region that was collected, with the number of boxes in it — zero boxes meaning
+     *         there was nothing solid to add and no body was created. Deliberately not the body's
+     *         id: Jolt hands out ids from zero, and the world is the first body a scene creates, so
+     *         "0" would be both the id it gets and the answer meaning "nothing" — and the scene
+     *         would lay its fallback floor through the real ground
      */
-    public static int build(PhysicsWorld physics, World world, double originX, double originY, double originZ)
+    public static Window build(PhysicsWorld physics, World world, double originX, double originY, double originZ)
     {
+        int radius = BBSPhysicsSettings.worldRadius.get();
+        int below = BBSPhysicsSettings.worldBelow.get();
+        int above = BBSPhysicsSettings.worldAbove.get();
+
         if (world == null)
         {
-            return 0;
+            return new Window(radius, below, above, 0);
         }
 
         StaticCompoundShapeSettings compound = new StaticCompoundShapeSettings();
@@ -87,17 +102,17 @@ public final class WorldCollider
         int baseY = (int) Math.floor(originY);
         int baseZ = (int) Math.floor(originZ);
 
-        int minY = Math.max(baseY - BELOW, world.getBottomY());
-        int maxY = Math.min(baseY + ABOVE, world.getTopY() - 1);
+        int minY = Math.max(baseY - below, world.getBottomY());
+        int maxY = Math.min(baseY + above, world.getTopY() - 1);
 
         if (minY > maxY)
         {
-            return 0;
+            return new Window(radius, below, above, 0);
         }
 
-        int spanX = RADIUS * 2 + 1;
+        int spanX = radius * 2 + 1;
         int spanY = maxY - minY + 1;
-        int spanZ = RADIUS * 2 + 1;
+        int spanZ = radius * 2 + 1;
 
         /* Which blocks of the region are full cubes, measured once. The burial test asks about six
          * neighbours per block, and asking the world for them would re-read and re-shape most of
@@ -109,9 +124,9 @@ public final class WorldCollider
 
         for (int y = minY; y <= maxY; y++)
         {
-            for (int x = baseX - RADIUS; x <= baseX + RADIUS; x++)
+            for (int x = baseX - radius; x <= baseX + radius; x++)
             {
-                for (int z = baseZ - RADIUS; z <= baseZ + RADIUS; z++)
+                for (int z = baseZ - radius; z <= baseZ + radius; z++)
                 {
                     pos.set(x, y, z);
 
@@ -122,19 +137,19 @@ public final class WorldCollider
                         continue;
                     }
 
-                    full[index(x - baseX, y - minY, z - baseZ, spanX, spanZ)] = Block.isShapeFullCube(state.getCollisionShape(world, pos));
+                    full[index(x - baseX, y - minY, z - baseZ, spanX, spanZ, radius)] = Block.isShapeFullCube(state.getCollisionShape(world, pos));
                 }
             }
         }
 
         for (int y = minY; y <= maxY; y++)
         {
-            for (int x = baseX - RADIUS; x <= baseX + RADIUS; x++)
+            for (int x = baseX - radius; x <= baseX + radius; x++)
             {
-                for (int z = baseZ - RADIUS; z <= baseZ + RADIUS; z++)
+                for (int z = baseZ - radius; z <= baseZ + radius; z++)
                 {
-                    if (full[index(x - baseX, y - minY, z - baseZ, spanX, spanZ)]
-                        && isBuried(world, probe, full, baseX, minY, baseZ, x, y, z, spanX, spanY, spanZ))
+                    if (full[index(x - baseX, y - minY, z - baseZ, spanX, spanZ, radius)]
+                        && isBuried(world, probe, full, baseX, minY, baseZ, x, y, z, spanX, spanY, spanZ, radius))
                     {
                         continue;
                     }
@@ -170,7 +185,7 @@ public final class WorldCollider
 
         if (boxes == 0)
         {
-            return 0;
+            return new Window(radius, below, above, 0);
         }
 
         ShapeResult result = compound.create();
@@ -179,7 +194,7 @@ public final class WorldCollider
         {
             BBSPhysics.LOGGER.error("Could not build world collision for a physics scene: {}", result.getError());
 
-            return 0;
+            return new Window(radius, below, above, 0);
         }
 
         /* One body at the scene's origin; every block sits inside it as a child shape. */
@@ -191,12 +206,12 @@ public final class WorldCollider
 
         BBSPhysics.LOGGER.info("World collision built from {} boxes around ({}, {}, {}).", boxes, baseX, baseY, baseZ);
 
-        return boxes;
+        return new Window(radius, below, above, boxes);
     }
 
-    private static int index(int x, int y, int z, int spanX, int spanZ)
+    private static int index(int x, int y, int z, int spanX, int spanZ, int radius)
     {
-        return ((y * spanX) + (x + RADIUS)) * spanZ + (z + RADIUS);
+        return ((y * spanX) + (x + radius)) * spanZ + (z + radius);
     }
 
     /**
@@ -208,7 +223,7 @@ public final class WorldCollider
      * — the region's own outer shell, a few per cent of it. Treating those as open instead would
      * wall the whole region in boxes nothing can ever reach.</p>
      */
-    private static boolean isBuried(World world, BlockPos.Mutable probe, boolean[] full, int baseX, int minY, int baseZ, int x, int y, int z, int spanX, int spanY, int spanZ)
+    private static boolean isBuried(World world, BlockPos.Mutable probe, boolean[] full, int baseX, int minY, int baseZ, int x, int y, int z, int spanX, int spanY, int spanZ, int radius)
     {
         for (Direction direction : Direction.values())
         {
@@ -222,7 +237,7 @@ public final class WorldCollider
 
             boolean neighbour;
 
-            if (lx < -RADIUS || lx > RADIUS || lz < -RADIUS || lz > RADIUS || ly < 0 || ly >= spanY)
+            if (lx < -radius || lx > radius || lz < -radius || lz > radius || ly < 0 || ly >= spanY)
             {
                 probe.set(nx, ny, nz);
 
@@ -230,7 +245,7 @@ public final class WorldCollider
             }
             else
             {
-                neighbour = full[index(lx, ly, lz, spanX, spanZ)];
+                neighbour = full[index(lx, ly, lz, spanX, spanZ, radius)];
             }
 
             if (!neighbour)

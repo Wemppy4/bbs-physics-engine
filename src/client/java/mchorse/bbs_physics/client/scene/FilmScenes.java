@@ -92,6 +92,21 @@ public class FilmScenes
             }
         }
 
+        if (scene.needsRebuild())
+        {
+            /* The author changed how much of the world takes part. That is the set of bodies, not
+             * their state, so no amount of re-simulating fixes it — the scene is assembled again,
+             * here, rather than at the next time the cast happens to change. */
+            onSetup(controller);
+
+            scene = SCENES.get(controller);
+
+            if (scene == null)
+            {
+                return;
+            }
+        }
+
         try
         {
             scene.tick(tick);
@@ -145,6 +160,17 @@ public class FilmScenes
 
             drop(controller);
         }
+    }
+
+    /**
+     * What the simulation of this film is doing, or null when it has none — physics switched off,
+     * a controller without a scene, or a film that failed to build one.
+     */
+    public static SceneStatus getStatus(BaseFilmController controller)
+    {
+        FilmScene scene = controller == null ? null : SCENES.get(controller);
+
+        return scene == null ? null : scene.getStatus();
     }
 
     /** The film is gone. */

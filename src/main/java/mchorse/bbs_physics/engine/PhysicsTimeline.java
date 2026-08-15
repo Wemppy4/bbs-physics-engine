@@ -4,6 +4,7 @@ import mchorse.bbs_physics.BBSPhysics;
 
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.IntConsumer;
 
 /**
  * Makes a physics world a function of the film's tick rather than of how the film was played.
@@ -22,11 +23,12 @@ import java.util.TreeMap;
 public class PhysicsTimeline
 {
     /**
-     * Ticks between snapshots. A backward jump therefore costs at most this many steps, which at
-     * one second of film is well under a frame's worth of work. Smaller would spend memory to save
-     * time nobody notices.
+     * Ticks between snapshots. A backward jump costs at most this many steps, and a step is no
+     * longer cheap — since the cast is posed on every tick it re-simulates, a step costs a full
+     * pose evaluation per actor. Halved from twenty when that became true: snapshots are bytes and
+     * steps are milliseconds.
      */
-    public static final int CHECKPOINT_INTERVAL = 20;
+    public static final int CHECKPOINT_INTERVAL = 10;
 
     /**
      * How many ticks a single seek may simulate before it gives up. A drag of the cursor across a
@@ -34,8 +36,14 @@ public class PhysicsTimeline
      * exhausted the world stops where it got to, keeps saying that is where it is, and the next
      * call carries on from there — a jump across a whole film catches up over a handful of frames
      * instead of in one stall.
+     *
+     * <p>Lowered along with the interval and for the same reason: a step that poses the whole cast
+     * is an order of magnitude dearer than one that does not, so the same budget in steps became a
+     * far longer stall in milliseconds. Fewer steps per frame means more frames to arrive, which is
+     * the better trade — the viewport says it is catching up, and it stays interactive while it
+     * does.</p>
      */
-    private static final int MAX_SEEK_STEPS = 240;
+    private static final int MAX_SEEK_STEPS = 120;
 
     /** Snapshots are cheap but not free, so old ones are dropped once there are too many. */
     private static final int MAX_CHECKPOINTS = 512;
@@ -89,18 +97,14 @@ public class PhysicsTimeline
     }
 
     /**
-     * Brings the world to {@code target}, however far away and in whichever direction that is.
-     *
-     * <p>Split in two on purpose, and callers that drive kinematic bodies must use the halves
-     * rather than this: between the rewind and the re-simulation is the only moment at which the
-     * animated part of the scene can be put where the target tick wants it. Doing it before the
-     * rewind writes into a world that is about to be thrown away, and doing it after leaves the
-     * whole re-simulation to run against a stale pose.</p>
+     * Brings the world to {@code target}, however far away and in whichever direction that is: the
+     * newest snapshot at or before it is restored, and the remainder is simulated tick by tick with
+     * {@code pose} standing the animated part of the scene on each tick in turn.
      */
-    public void seek(int target)
+    public void seek(int target, IntConsumer pose)
     {
         this.rewind(target);
-        this.advance(target);
+        this.advance(target, pose);
     }
 
     /**
@@ -159,8 +163,22 @@ public class PhysicsTimeline
         this.checkpoints.tailMap(target, false).clear();
     }
 
-    /** Steps the world forward to {@code target}, within one jump's budget. */
-    public void advance(int target)
+    /**
+     * Steps the world forward to {@code target}, within one jump's budget, standing the cast on
+     * each tick before the step that simulates it.
+     *
+     * <p>That per-tick posing is the whole difference between physics in an editor and physics that
+     * merely runs. Simulating twenty ticks against the pose of the twentieth means the hand that
+     * was pushing a crate through those ticks is already at its destination and pushes nothing — so
+     * the frame reached by scrubbing is not the frame reached by playing, and an animator cannot
+     * trust the viewport. Posing each tick costs a pose evaluation per actor per step, which is why
+     * the budget above is what it is, and it buys the one property this whole design exists for.
+     * </p>
+     *
+     * @param pose stands the animated part of the scene on the tick it is given — the tick that is
+     *             about to be simulated, not the one being left
+     */
+    public void advance(int target, IntConsumer pose)
     {
         while (this.tick < target)
         {
@@ -175,6 +193,8 @@ public class PhysicsTimeline
                  * through it would restore the wrong moment without anything looking wrong. */
                 return;
             }
+
+            pose.accept(this.tick + 1);
 
             this.world.step();
 

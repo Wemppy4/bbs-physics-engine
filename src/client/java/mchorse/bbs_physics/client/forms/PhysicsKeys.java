@@ -18,6 +18,12 @@ public class PhysicsKeys
     public static final IKey SHAPE_NONE = L10n.lang("bbs_physics.forms.body.shape_none");
     public static final IKey SHAPE_FROM = L10n.lang("bbs_physics.forms.body.shape_from");
 
+    public static final IKey HUD_TICK = L10n.lang("bbs_physics.hud.tick");
+    public static final IKey HUD_OFF_TICK = L10n.lang("bbs_physics.hud.off_tick");
+    public static final IKey HUD_CATCHING_UP = L10n.lang("bbs_physics.hud.catching_up");
+    public static final IKey HUD_GHOSTS = L10n.lang("bbs_physics.hud.ghosts");
+    public static final IKey HUD_OUTSIDE = L10n.lang("bbs_physics.hud.outside");
+
     public static final IKey COLLISION_TITLE = L10n.lang("bbs_physics.forms.collision.title");
     public static final IKey COLLISION_PREVIEW = L10n.lang("bbs_physics.forms.collision.preview");
 

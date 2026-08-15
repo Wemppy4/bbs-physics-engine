@@ -5,6 +5,7 @@
     "client": [
         "BaseFilmControllerMixin",
         "FormCategoriesMixin",
+        "UIFilmControllerMixin",
         "UIFormMixin",
         "UIFormRendererMixin",
         "UIFormUndoHandlerMixin",

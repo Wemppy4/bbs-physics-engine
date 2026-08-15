@@ -8,6 +8,18 @@
     "bbs_physics.config.general.debug-comment": "Рисует поверх сцены те формы, с которыми на самом деле работает симуляция.",
     "bbs_physics.config.general.collision_preview": "Показывать разметку в редакторе",
     "bbs_physics.config.general.collision_preview-comment": "Рисует коллизию поверх модели в редакторе форм, чтобы её можно было расставлять на глаз.",
+    "bbs_physics.config.general.world_radius": "Блоки вокруг сцены",
+    "bbs_physics.config.general.world_radius-comment": "Сколько блоков мира вокруг сцены участвуют в физике. За этой границей опоры нет и тело падает бесконечно. Больше — надёжнее и дороже при сборке сцены.",
+    "bbs_physics.config.general.world_below": "Блоки вниз",
+    "bbs_physics.config.general.world_below-comment": "Как глубоко под сценой собирается пол. Мало — и всё, что улетело с обрыва или со стола, проваливается в пустоту.",
+    "bbs_physics.config.general.world_above": "Блоки вверх",
+    "bbs_physics.config.general.world_above-comment": "Как высоко над сценой собираются потолки и навесы.",
+
+    "bbs_physics.hud.tick": "Физика: тик %s · тел %s · чекпойнтов %s",
+    "bbs_physics.hud.off_tick": "Мир стоит не на кадре фильма (%s) — картинка не от этого кадра",
+    "bbs_physics.hud.catching_up": "Догоняет кадр %s, шагов за раз: %s",
+    "bbs_physics.hud.ghosts": "Без разметки: %s — проваливаются сквозь всё",
+    "bbs_physics.hud.outside": "Вне блоков сцены: %s — под ними ничего нет",
 
     "bbs_physics.forms.category": "Физика",
     "bbs_physics.forms.body.title": "Тело",

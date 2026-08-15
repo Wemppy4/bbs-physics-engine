@@ -10,6 +10,7 @@ import com.github.stephengold.joltjni.RVec3;
 import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EAllowedDofs;
+import com.github.stephengold.joltjni.enumerate.EMotionQuality;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
 import com.github.stephengold.joltjni.enumerate.EOverrideMassProperties;
 import com.github.stephengold.joltjni.readonly.ConstShape;
@@ -162,6 +163,14 @@ public class PhysicsBodyRig
         settings.setFriction(form.friction.get());
         settings.setRestitution(form.restitution.get());
 
+        /* Swept collision rather than the default, which only asks where a body is at the end of a
+         * step. A film tick is fifty milliseconds — long — so anything thrown or dropped from a
+         * height covers more than its own thickness in one step and, tested only at the ends,
+         * appears on the far side of the floor having touched nothing. That is most of what an
+         * author reports as things falling through the world, and it costs a few percent of a step
+         * to stop happening. */
+        settings.setMotionQuality(EMotionQuality.LinearCast);
+
         /* Jolt would otherwise weigh the shape by its volume, which makes a big prop absurdly
          * heavy and a small one weightless. The author gives a mass; the inertia is worked out
          * from the assembled shape and scaled to it, so the thing tumbles like what it looks like
@@ -252,14 +261,12 @@ public class PhysicsBodyRig
      * the renderer, which is copied out here for {@link #read} to carry the simulation's answer
      * back through.</p>
      *
-     * @param place whether to set the body down and stop it rather than steer it over the coming
-     *              tick — see {@link ActorRig#update} for why steering across a jump is ruinous
      * @param reset whether the scene itself is starting over at this tick, in which case
      *              <em>every</em> body, simulated ones included, is stood at its animated pose and
      *              stopped. This is the only moment a released body's keyframes are read: from
      *              there on its placement is the simulation's answer, not the author's
      */
-    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean place, boolean reset)
+    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset)
     {
         this.actorWorld.set(actorWorld);
 
@@ -273,6 +280,11 @@ public class PhysicsBodyRig
         float authority = this.form.getAuthority();
         boolean wanted = this.form.isKinematic();
 
+        /* Whether the body is to be stood at its pose and stopped rather than moved towards it over
+         * the coming tick. Every step is exactly one tick now, so this is no longer about jumps: it
+         * is the scene starting over, or a body the animation has just taken back. */
+        boolean put = reset;
+
         if (wanted != this.kinematic)
         {
             /* The moment of release (or of being grabbed back). Jolt keeps the velocity across the
@@ -285,7 +297,7 @@ public class PhysicsBodyRig
              * near its keyframe any more. Steering it back over a single tick would send it there
              * at the whole distance divided by a twentieth of a second, scattering everything in
              * between. Put down, not driven. */
-            place |= wanted;
+            put |= wanted;
         }
 
         if (this.kinematic)
@@ -295,16 +307,9 @@ public class PhysicsBodyRig
 
         this.applySettings(physics, bodies);
 
-        /* An animated body is put down when the film jumps; a simulated one never is, because a
-         * jump has just restored it from a checkpoint and that restored state is its history. The
-         * scene starting over is the exception, and the only one. */
-        boolean put = reset || (this.kinematic && place);
-
-        if (!put && !this.kinematic && (place || authority <= 0F))
+        if (!put && !this.kinematic && authority <= 0F)
         {
-            /* Either the body is entirely on its own, or the film jumped and the pulling would be
-             * integrated over every re-simulated step at once — the same disease as steering
-             * across a jump, and cured the same way, by not doing it. */
+            /* Nothing to say to a body that is entirely on its own. */
             return;
         }
 
@@ -557,6 +562,41 @@ public class PhysicsBodyRig
         this.local.getUnnormalizedRotation(this.rotation);
 
         this.form.state.set(this.position, this.rotation, teleport);
+    }
+
+    /**
+     * Takes the frames the body's answer is carried back through, without touching the body.
+     *
+     * <p>Needed for the one seek that simulates nothing: a rewind landing exactly on a checkpoint
+     * restores the world and has no tick left to play, so no step poses the cast and nothing
+     * refreshes what {@link #read} composes against. Left stale, a body hanging on a moving actor
+     * is drawn against where that actor stood several ticks ago — and stays there, because a paused
+     * film never steps again.</p>
+     */
+    public void refresh(Matrix4f actorWorld)
+    {
+        this.actorWorld.set(actorWorld);
+
+        if (this.form.state != null)
+        {
+            this.parentFrame.set(this.form.state.getWalkParentFrame());
+        }
+    }
+
+    /**
+     * Whether nothing inside this body was marked up as collidable, so it collides with nothing and
+     * falls through the world. Deliberate (§5.1) and reported rather than hidden — it is one of the
+     * few states that looks exactly like the engine being broken.
+     */
+    public boolean isGhost()
+    {
+        return this.pieces.isEmpty();
+    }
+
+    /** Where the body stands, in the scene's own coordinates — for the status readout. */
+    public Vector3f getScenePosition(Vector3f out)
+    {
+        return this.debug.getPosition(1F, out);
     }
 
     /**

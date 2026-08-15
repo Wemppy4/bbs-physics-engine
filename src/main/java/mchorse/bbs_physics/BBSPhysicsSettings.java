@@ -2,6 +2,7 @@ package mchorse.bbs_physics;
 
 import mchorse.bbs_mod.settings.SettingsBuilder;
 import mchorse.bbs_mod.settings.values.numeric.ValueBoolean;
+import mchorse.bbs_mod.settings.values.numeric.ValueInt;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 
 /**
@@ -24,6 +25,23 @@ public class BBSPhysicsSettings
      */
     public static ValueBoolean collisionPreview;
 
+    /**
+     * How far around the scene the world's blocks are collected, in blocks.
+     *
+     * <p>Author-facing because there is no right answer: a shot in a room needs a fraction of what
+     * a shot over a canyon does, and the cost is a block scan whose volume is this cubed. Beyond
+     * the region there is simply no ground, and a body that leaves it falls forever — which looks
+     * exactly like falling through the floor, so the status readout names it rather than leaving it
+     * to be guessed at.</p>
+     *
+     * <p>Down reaches further than the default used to by a wide margin. Things fall; a scene set
+     * on a ledge, a rooftop or a table over a drop had barely a dozen blocks of ground beneath it,
+     * and anything that went over the edge left the world's collision within a second.</p>
+     */
+    public static ValueInt worldRadius;
+    public static ValueInt worldBelow;
+    public static ValueInt worldAbove;
+
     public static void register(SettingsBuilder builder)
     {
         builder.category("general", Icons.PHYSICS);
@@ -31,5 +49,9 @@ public class BBSPhysicsSettings
         enabled = builder.getBoolean("enabled", true);
         debug = builder.getBoolean("debug", false);
         collisionPreview = builder.getBoolean("collision_preview", true);
+
+        worldRadius = builder.getInt("world_radius", 32, 8, 96);
+        worldBelow = builder.getInt("world_below", 32, 4, 128);
+        worldAbove = builder.getInt("world_above", 24, 4, 128);
     }
 }

@@ -8,6 +8,18 @@
     "bbs_physics.config.general.debug-comment": "Draws the shapes the simulation actually works with, on top of the rendered scene.",
     "bbs_physics.config.general.collision_preview": "Show markup in the editor",
     "bbs_physics.config.general.collision_preview-comment": "Draws collision over the model in the form editor, so shapes can be placed by eye.",
+    "bbs_physics.config.general.world_radius": "Blocks around the scene",
+    "bbs_physics.config.general.world_radius-comment": "How much of the world around the scene takes part in physics. Past that edge there is nothing to land on and a body falls forever. Larger is safer and costs more to assemble.",
+    "bbs_physics.config.general.world_below": "Blocks below",
+    "bbs_physics.config.general.world_below-comment": "How deep under the scene the ground is collected. Too little and anything going over a ledge or off a table drops into nothing.",
+    "bbs_physics.config.general.world_above": "Blocks above",
+    "bbs_physics.config.general.world_above-comment": "How high over the scene ceilings and overhangs are collected.",
+
+    "bbs_physics.hud.tick": "Physics: tick %s · %s bodies · %s checkpoints",
+    "bbs_physics.hud.off_tick": "The world is not on the film's tick (%s) — this is not this frame's picture",
+    "bbs_physics.hud.catching_up": "Catching up to tick %s, %s steps at a time",
+    "bbs_physics.hud.ghosts": "Nothing marked up: %s — they fall through everything",
+    "bbs_physics.hud.outside": "Past the scene's blocks: %s — there is no ground under them",
 
     "bbs_physics.forms.category": "Physics",
     "bbs_physics.forms.body.title": "Body",
