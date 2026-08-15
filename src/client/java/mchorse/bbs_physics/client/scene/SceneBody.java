@@ -5,6 +5,7 @@ import com.github.stephengold.joltjni.Quat;
 import com.github.stephengold.joltjni.RVec3;
 import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.collision.CollisionKind;
+import mchorse.bbs_physics.engine.PhysicsCache;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
@@ -18,6 +19,11 @@ import java.util.List;
  * body drawn straight from Jolt would visibly stutter. Keeping the previous tick's transform next
  * to the current one lets the frame be drawn between them — the same trick Minecraft plays on its
  * own entities with {@code tickDelta}.</p>
+ *
+ * <p>Both transforms come out of {@link PhysicsCache} rather than out of Jolt: the world is a
+ * recorder now, not a source of pictures, and it may be hundreds of ticks ahead of the cursor. The
+ * body writes itself into the recording as each tick is simulated and reads itself back out as each
+ * frame is drawn.</p>
  *
  * <p>The debug overlay draws each of the body's {@link Shape}s in the body's frame — a compound
  * collider is several of them, a plain body is one. What is drawn is exactly what the simulation
@@ -34,6 +40,12 @@ public class SceneBody
     public final float blue;
 
     private final List<Shape> shapes = new ArrayList<>(1);
+
+    /** This body's slot in the recording, handed out when the scene registers it. */
+    private int channel = -1;
+
+    /** Whether the frame being drawn has a recorded transform at all — see {@link #isKnown()}. */
+    private boolean known;
 
     private final Vector3f previousPosition = new Vector3f();
     private final Vector3f position = new Vector3f();
@@ -90,43 +102,57 @@ public class SceneBody
         this.addShapes(subs);
     }
 
-    /**
-     * Pulls the body's transform out of Jolt.
-     *
-     * @param teleport whether to drop the previous transform on top of the new one, so the body is
-     *                 drawn where it is instead of sliding there from where it used to be. True
-     *                 after a scrub, a restore or any jump of more than one tick
-     */
-    public void sample(BodyInterface bodies, boolean teleport)
+    public void setChannel(int channel)
     {
-        this.previousPosition.set(this.position);
-        this.previousRotation.set(this.rotation);
+        this.channel = channel;
+    }
 
+    /**
+     * Whether this body has a transform for the frame being drawn. False on a frame the recording
+     * has not reached, where the debug overlay draws nothing for it rather than a shape sitting at
+     * a stale place — an overlay exists to say where the engine thinks things are, and a shape left
+     * over from another tick would say something untrue.
+     */
+    public boolean isKnown()
+    {
+        return this.known;
+    }
+
+    /** Writes where the body stands into the recording, for the tick that has just been simulated. */
+    public void record(BodyInterface bodies, PhysicsCache cache, int tick)
+    {
         bodies.getPositionAndRotation(this.id, this.scratchPosition, this.scratchRotation);
 
         this.position.set(this.scratchPosition.x(), this.scratchPosition.y(), this.scratchPosition.z());
         this.rotation.set(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW());
 
-        if (teleport)
+        cache.write(tick, this.channel, this.position, this.rotation, 1F);
+    }
+
+    /**
+     * Takes the body's transform for {@code tick} out of the recording.
+     *
+     * <p>A paused film needs nothing special from this. Reading the same tick again lands the same
+     * numbers in both slots, so the interpolation collapses on its own — the old {@code freeze()},
+     * and the shaking-while-frozen bug it was written for, are gone with the checkpoint design.</p>
+     *
+     * @param teleport whether the film jumped rather than advanced one tick, in which case there is
+     *                 no meaningful previous transform to be drawn sliding out of
+     */
+    public void readCache(PhysicsCache cache, int tick, boolean teleport)
+    {
+        this.previousPosition.set(this.position);
+        this.previousRotation.set(this.rotation);
+
+        boolean had = this.known;
+
+        this.known = cache.read(tick, this.channel, this.position, this.rotation);
+
+        if (this.known && (teleport || !had))
         {
             this.previousPosition.set(this.position);
             this.previousRotation.set(this.rotation);
         }
-    }
-
-    /**
-     * Collapses the interpolation onto the current transform, so the body is drawn exactly where
-     * it stands instead of being swung between the last two ticks.
-     *
-     * <p>Needed the moment the simulation stops advancing — a paused editor. The frame's
-     * {@code tickDelta} keeps sweeping 0 to 1 whether or not physics moved, so a body left with
-     * two different transforms goes on rocking between them forever, which reads as a frozen
-     * scene that is somehow still shaking.</p>
-     */
-    public void freeze()
-    {
-        this.previousPosition.set(this.position);
-        this.previousRotation.set(this.rotation);
     }
 
     public Vector3f getPosition(float transition, Vector3f out)

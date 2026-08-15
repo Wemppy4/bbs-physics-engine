@@ -23,6 +23,18 @@ public class PhysicsBodyState
     private final Quaternionf rotation = new Quaternionf();
 
     /**
+     * Whether the recording actually has this body on the frame being drawn.
+     *
+     * <p>It does not while the physics of a film is still being worked out ahead of the cursor, and
+     * the answer there is deliberate (Р8.1): an unrecorded frame shows <b>plain animation</b> — the
+     * form stands exactly on its keyframes, as though it had no physics at all. Blender shows the
+     * last computed state instead, which leaves a crate hanging in mid-air detached from everything
+     * around it and reads as a bug. Showing the animation is honest about there being no answer yet,
+     * and it costs nothing: no substitution, the renderer's ordinary path.</p>
+     */
+    private boolean simulated;
+
+    /**
      * The frame this form's own transform is applied in, captured by the renderer as the matrix
      * walk passes through — for a nested body that is the whole chain above it (parent forms, the
      * bone it hangs on, the part transform), for a root form it is the identity. In actor-local
@@ -48,18 +60,27 @@ public class PhysicsBodyState
         this.position.set(position);
         this.rotation.set(rotation);
 
-        if (teleport)
+        if (teleport || !this.simulated)
         {
+            /* Also when the body was not simulated a moment ago: the frame before an unrecorded one
+             * is not a place this body travelled from, so interpolating out of it would draw the
+             * thing sliding in from wherever the animation had left it. */
             this.previousPosition.set(this.position);
             this.previousRotation.set(this.rotation);
         }
+
+        this.simulated = true;
     }
 
-    /** Pins the body to where it is, so a paused film does not rock it between two stale ticks. */
-    public void freeze()
+    /** No recorded answer for this frame — the renderer draws the keyframes instead (Р8.1). */
+    public void setUnsimulated()
     {
-        this.previousPosition.set(this.position);
-        this.previousRotation.set(this.rotation);
+        this.simulated = false;
+    }
+
+    public boolean isSimulated()
+    {
+        return this.simulated;
     }
 
     public void captureWalkParentFrame(Matrix4f frame)

@@ -9,6 +9,7 @@ import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
 import io.netty.util.collection.IntObjectMap;
 import mchorse.bbs_mod.film.BaseFilmController;
+import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_mod.film.replays.Replay;
 import mchorse.bbs_mod.forms.FormUtilsClient;
 import mchorse.bbs_mod.forms.entities.IEntity;
@@ -24,6 +25,7 @@ import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.ragdoll.RagdollPoseApplier;
+import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsTimeline;
 import mchorse.bbs_physics.engine.PhysicsWorld;
@@ -38,9 +40,17 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * The physics of one film: a single Jolt world, a timeline that keeps it honest under scrubbing,
- * and the bodies in it — the world's blocks, everything the cast's forms mark up as collidable,
- * and every physics body form anywhere in their trees.
+ * The physics of one film: a single Jolt world, a recording of what it did on every tick, and the
+ * bodies in it — the world's blocks, everything the cast's forms mark up as collidable, and every
+ * physics body form anywhere in their trees.
+ *
+ * <p><b>The world is a recorder, not a source of pictures</b> (§2.5, §6). It only ever moves
+ * forwards, one tick at a time, writing each tick's answers into {@link PhysicsCache}; a drawn
+ * frame reads that recording and never asks the world anything. Scrubbing therefore costs an array
+ * lookup, an edit costs a counter reset, and a frame the recording has not reached yet is drawn as
+ * plain animation (Р8.1) until the background catch-up gets there. What this replaced — snapshots,
+ * rewinds, a re-simulation budget, a scene that could be "behind" the cursor — is gone entirely,
+ * along with the class of bugs where the viewport and the exported video disagreed.</p>
  *
  * <p><b>Everything is simulated around an origin</b> rather than in raw world coordinates. Jolt is
  * built here in single precision, where a float's resolution at a hundred thousand blocks out is
@@ -63,11 +73,44 @@ import java.util.List;
  */
 public class FilmScene implements AutoCloseable
 {
+    /**
+     * How long a frame may spend simulating while the cursor is ahead of the recording, and how
+     * long it may spend running ahead of the cursor once it has caught up.
+     *
+     * <p>A budget in <em>time</em>, not in steps, which is the correction the old design needed:
+     * the cost of a step is a pose evaluation per actor and varies by an order of magnitude between
+     * a crate and a cast of models, so a fixed step count meant a stall of unpredictable length.
+     * Catching up is worth a visible fraction of a frame because the author is waiting for it;
+     * running ahead is not, because nobody is.</p>
+     */
+    private static final long CATCHUP_BUDGET = 12_000_000L;
+    private static final long LOOKAHEAD_BUDGET = 4_000_000L;
+
+    /**
+     * How long after the last edit the background catch-up stays out of the way. An author dragging
+     * a slider invalidates the recording on every batch of changes, and re-simulating between the
+     * batches would be work thrown away — worse, work thrown away inside the frames they are
+     * dragging in.
+     */
+    private static final long IDLE_AFTER_EDIT = 200_000_000L;
+
+    /** How far past the film's own length the recording is allowed to run. */
+    private static final int LOOKAHEAD_PAST_END = 40;
+
     private final PhysicsWorld world;
     private final PhysicsTimeline timeline;
 
+    /**
+     * The film as a recording: what every body was doing on every tick that has been simulated.
+     * This, and not the Jolt world, is what a drawn frame reads (§6).
+     */
+    private final PhysicsCache cache = new PhysicsCache();
+
     /** The film's cast, as the anchor resolution needs it — an anchor points at another actor. */
     private final IntObjectMap<IEntity> entities;
+
+    /** The film being simulated, for its length — the recording has no reason to run past the end. */
+    private final Film film;
 
     /** The world-space block this scene's physics is centred on — see the class note. */
     private double originX;
@@ -84,8 +127,17 @@ public class FilmScene implements AutoCloseable
      */
     private boolean stale;
 
+    /** When the last edit arrived — the background catch-up keeps clear for a moment after one. */
+    private long editedAt;
+
+    /** Whether the recording has hit its ceiling, so the fact is reported once rather than per tick. */
+    private boolean full;
+
     /** The tick the film last asked for, against which the simulation's own tick is reported. */
     private int filmTick;
+
+    /** The tick the bodies were last handed, so a jump can be told from a step forward. */
+    private int drawnTick = -1;
 
     /** The region the world's blocks were collected from — see {@link #buildGround()}. */
     private WorldCollider.Window window;
@@ -160,6 +212,7 @@ public class FilmScene implements AutoCloseable
         this.world = new PhysicsWorld();
         this.timeline = new PhysicsTimeline(this.world);
         this.entities = controller.getEntities();
+        this.film = controller.film;
 
         List<Integer> order = castOrder(controller);
 
@@ -185,11 +238,15 @@ public class FilmScene implements AutoCloseable
 
         this.world.optimize();
 
-        /* Everything the scene will ever contain has to exist before the first snapshot: Jolt
-         * refuses to restore a state whose set of bodies no longer matches, so a body added later
-         * would break every rewind past this point. */
+        /* The recording's shape is fixed here: every channel exists, so a tick is a fixed number of
+         * floats and can be indexed arithmetically. A body appearing later would shift every
+         * channel after it, which is why a change to the set of bodies rebuilds the scene. */
+        this.cache.seal();
+
+        /* The world as assembled is tick 0 of the film — the opening frame, whatever the cursor
+         * happened to be on — and that is the recording's first entry. */
         this.timeline.start();
-        this.sampleBodies(true);
+        this.record(0);
     }
 
     /** The cast in simulation order, with the replay each actor is played from. */
@@ -367,19 +424,8 @@ public class FilmScene implements AutoCloseable
              * tick. Simulated bodies too, which is what {@code reset} adds — a crate that is
              * already released at the film's opening frame has only its keyframes to say where it
              * starts, and without this it would begin its fall from the scene's origin instead,
-             * with the author's coordinates never read at all. The read right after hands the
-             * placement to the renderer too. */
+             * with the author's coordinates never read at all. */
             this.updateRigs(rigs, 0, true);
-
-            for (PhysicsBodyRig rig : bodyRigs)
-            {
-                rig.read(this.world, this, true);
-            }
-
-            for (ActorRagdoll ragdoll : ragdolls)
-            {
-                ragdoll.read(this.world, this, true);
-            }
         }
     }
 
@@ -470,10 +516,18 @@ public class FilmScene implements AutoCloseable
         }
     }
 
-    /** Registers a body to be drawn by the debug overlay. */
+    /** Registers a body to be drawn by the debug overlay, with a channel of its own to be read from. */
     public void addDebugBody(SceneBody body)
     {
+        body.setChannel(this.cache.addChannel());
+
         this.bodies.add(body);
+    }
+
+    /** Claims a slot in the recording. Only valid while the scene is being assembled. */
+    public int addChannel()
+    {
+        return this.cache.addChannel();
     }
 
     public PhysicsWorld getWorld()
@@ -484,6 +538,11 @@ public class FilmScene implements AutoCloseable
     public PhysicsTimeline getTimeline()
     {
         return this.timeline;
+    }
+
+    public PhysicsCache getCache()
+    {
+        return this.cache;
     }
 
     public List<SceneBody> getBodies()
@@ -520,11 +579,10 @@ public class FilmScene implements AutoCloseable
         }
 
         return new SceneStatus(
-            this.timeline.getTick(),
             this.filmTick,
-            this.timeline.isBehind(),
-            this.timeline.getLastSeekSteps(),
-            this.timeline.getCheckpointCount(),
+            this.cache.getComputed() - 1,
+            this.recordingEnd(this.filmTick),
+            this.cache.has(this.filmTick),
             this.world.getBodyCount(),
             ghosts,
             outside);
@@ -546,14 +604,14 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
-     * The film moved to {@code tick}. Anything but a repeat of the current tick makes the timeline
-     * bring the world there, forwards by stepping or backwards through a checkpoint.
+     * The film moved to {@code tick}: record whatever of the film still needs recording, then hand
+     * every body the frame it is to be drawn in.
      *
-     * <p>Every re-simulated tick is simulated <em>as itself</em>: the cast is stood on it before the
-     * step that plays it out (see {@link #poseTick}). That is what makes a scrubbed frame the frame
-     * that was played, and it is why the seek is a single call now — there is no longer a moment
-     * "between the halves" at which the animated part of the scene is placed, because it is placed
-     * on every step.</p>
+     * <p>Two halves that no longer have anything to do with each other, and that separation is the
+     * whole of Э3. Recording only ever moves forwards, one tick at a time, in whatever time this
+     * frame can spare. Drawing reads an array. A scrub to tick 900 does not make the world go
+     * anywhere — it reads entry 900 if there is one, and shows plain animation if there is not
+     * (Р8.1). Nothing can be "behind" any more, because nothing is chasing anything.</p>
      */
     public void tick(int tick)
     {
@@ -568,61 +626,167 @@ public class FilmScene implements AutoCloseable
         {
             this.stale = false;
 
-            this.restart();
+            this.rewind();
         }
 
-        int before = this.timeline.getTick();
+        this.compute(tick);
+        this.distribute(tick);
+    }
 
-        if (tick == before)
+    /**
+     * Records as much of the film as this frame can afford, nearest need first.
+     *
+     * <p>Priority is the cursor: while the recording has not reached the frame the author is
+     * looking at, the whole catch-up budget goes there, because that is the one frame somebody is
+     * waiting for. Once it has, the same loop keeps running ahead on a much smaller budget so that
+     * playing forwards never catches up with the recording — that is our one departure from
+     * Blender, which simply waits to be told to compute (§6). Both stop at the film's length: past
+     * the end there is nothing to look at.</p>
+     */
+    private void compute(int cursor)
+    {
+        int end = this.recordingEnd(cursor);
+
+        if (this.cache.getComputed() > end)
         {
-            /* The world stood still — a paused editor asking for the same tick again. The bodies
-             * have to be pinned to it, because the frame's transition goes on sweeping 0 to 1
-             * regardless, and interpolating a body between two ticks that are no longer being
-             * advanced leaves it visibly shaking in a scene that is supposed to be frozen. */
-            this.freezeBodies();
-
             return;
         }
 
-        /* A jump is anything but the one step forward that playback makes. The drawn transform is
-         * interpolated between the last two ticks, and across a jump there is no meaningful
-         * previous tick — the body would be drawn sliding the whole way. */
-        boolean jumped = tick != before + 1;
+        boolean catchup = !this.cache.has(cursor);
 
+        if (!catchup && !this.backgroundAllowed())
+        {
+            return;
+        }
+
+        long deadline = System.nanoTime() + (catchup ? CATCHUP_BUDGET : LOOKAHEAD_BUDGET);
+
+        /* The cast is the film's own entities, and standing them on the ticks being recorded moves
+         * the very objects BBS is about to draw. Borrowed for the whole run and handed back in a
+         * finally, on the cursor's tick — an exception halfway through would otherwise leave the
+         * actors standing wherever the last recorded step put them. */
         this.borrowCast();
 
         try
         {
-            this.timeline.seek(tick, this::poseTick);
-
-            if (this.timeline.getLastSeekSteps() == 0)
+            while (this.cache.getComputed() <= end)
             {
-                /* The one seek that simulates nothing: a rewind that landed exactly on a
-                 * checkpoint. The world is right, but no step ran to stand the cast on this tick,
-                 * and the frames a body's answer is carried back through would be left describing
-                 * wherever the film was last playing. */
-                this.refreshFrames(tick);
+                if (!this.cache.canWrite(this.timeline.getTick() + 1))
+                {
+                    /* The recording hit its memory ceiling. Everything past this point draws as
+                     * plain animation — said once, because this condition holds for every tick from
+                     * here on and a line per tick would bury the log it belongs in. */
+                    if (!this.full)
+                    {
+                        this.full = true;
+
+                        BBSPhysics.LOGGER.warn("The physics recording is full at tick {}; later frames of this film show animation only.", this.cache.getComputed());
+                    }
+
+                    break;
+                }
+
+                this.step();
+
+                if (System.nanoTime() >= deadline)
+                {
+                    break;
+                }
             }
         }
         finally
         {
-            this.returnCast(tick);
+            this.returnCast(cursor);
         }
+    }
 
-        this.sampleBodies(jumped);
+    /** Simulates the next tick of the film and writes it into the recording. */
+    private void step()
+    {
+        int tick = this.timeline.step(this::poseTick);
+
+        this.record(tick);
+    }
+
+    /**
+     * Writes every channel's answer for a tick that has just been simulated, then declares the tick
+     * whole. Nothing may read a half-written tick — a frame drawn with half the bodies on it and
+     * half on the tick before would be a glitch nobody could explain.
+     */
+    private void record(int tick)
+    {
+        BodyInterface bodies = this.world.getBodies();
+
+        for (SceneBody body : this.bodies)
+        {
+            body.record(bodies, this.cache, tick);
+        }
 
         for (EntityRigs rigs : this.rigs)
         {
             for (PhysicsBodyRig rig : rigs.bodyRigs)
             {
-                rig.read(this.world, this, jumped);
+                rig.record(this.world, this, this.cache, tick);
             }
 
             for (ActorRagdoll ragdoll : rigs.ragdolls)
             {
-                ragdoll.read(this.world, this, jumped);
+                ragdoll.record(this.world, this, this.cache, tick);
             }
         }
+
+        this.cache.commit(tick);
+    }
+
+    /** Hands every body the recorded frame for {@code tick}, or the news that there is not one. */
+    private void distribute(int tick)
+    {
+        /* A jump is anything but the one step forward that playback makes: across one there is no
+         * meaningful previous tick, and interpolating out of it would draw bodies sliding the whole
+         * way. Asking for the same tick again — a paused editor — is not a jump and needs nothing
+         * special: both slots end up holding the same numbers, so the interpolation collapses. */
+        boolean jumped = tick != this.drawnTick && tick != this.drawnTick + 1;
+
+        for (SceneBody body : this.bodies)
+        {
+            body.readCache(this.cache, tick, jumped);
+        }
+
+        for (EntityRigs rigs : this.rigs)
+        {
+            for (PhysicsBodyRig rig : rigs.bodyRigs)
+            {
+                rig.readCache(this.cache, tick, jumped);
+            }
+
+            for (ActorRagdoll ragdoll : rigs.ragdolls)
+            {
+                ragdoll.readCache(this.cache, tick, jumped);
+            }
+        }
+
+        this.drawnTick = tick;
+    }
+
+    /**
+     * The last tick worth recording: the film's own length, plus a little, and never less than the
+     * cursor — an author scrubbing past the end still expects the frame they are on.
+     */
+    private int recordingEnd(int cursor)
+    {
+        int duration = this.film == null ? 0 : this.film.camera.calculateDuration();
+
+        return Math.max(cursor, duration + LOOKAHEAD_PAST_END);
+    }
+
+    /**
+     * Whether the recording may run ahead of the cursor right now. It may not for a moment after an
+     * edit: the author is probably still dragging, and every batch of changes throws the recording
+     * away again.
+     */
+    private boolean backgroundAllowed()
+    {
+        return System.nanoTime() - this.editedAt >= IDLE_AFTER_EDIT;
     }
 
     /**
@@ -643,51 +807,11 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
-     * Stands the film on {@code tick} and hands the resulting frames to the bodies, without moving
-     * anything. For the seek that had nothing to simulate — see the caller.
-     */
-    private void refreshFrames(int tick)
-    {
-        this.applyCast(tick);
-
-        for (EntityRigs rigs : this.rigs)
-        {
-            Form root = rigs.entity.getForm();
-
-            if (root == null)
-            {
-                continue;
-            }
-
-            try
-            {
-                MatrixCache matrices = evaluatePose(rigs.entity, root);
-
-                Matrix4f actorWorld = this.actorWorld(rigs.entity);
-
-                for (PhysicsBodyRig rig : rigs.bodyRigs)
-                {
-                    rig.refresh(actorWorld);
-                }
-
-                for (ActorRagdoll ragdoll : rigs.ragdolls)
-                {
-                    ragdoll.refresh(matrices, actorWorld);
-                }
-            }
-            catch (Throwable e)
-            {
-                /* Reported by the pose evaluation that follows on the next simulated tick; a frame
-                 * drawn against yesterday's is a far smaller matter than a log line per frame. */
-            }
-        }
-    }
-
-    /**
      * Whether the region of the world this scene collected no longer matches what the settings ask
-     * for, which is the one change a restart cannot answer: the blocks are a body, and a different
-     * set of blocks is a different body — Jolt refuses every checkpoint taken against the old one.
-     * So the scene is rebuilt from scratch instead, and the caller is the one who can do that.
+     * for, which is the one change a rewind cannot answer: the blocks are a body, and a different
+     * set of blocks is a different set of bodies — a different shape of recording, since a channel
+     * is fixed when the scene is sealed. So the scene is rebuilt from scratch instead, and the
+     * caller is the one who can do that.
      */
     public boolean needsRebuild()
     {
@@ -698,30 +822,29 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
-     * The film was edited, so this simulation describes a film that no longer exists.
+     * The film was edited, so this recording describes a film that no longer exists.
      *
-     * <p>Nothing is thrown away here: a scene is native memory and a cast, and rebuilding it on
-     * every touch of a slider would cost far more than it saves. The tick that follows starts the
-     * simulation over instead, which is all an edit actually invalidates — the history.</p>
+     * <p>This used to be the expensive call in the addon: it restarted the world and re-simulated
+     * up to the cursor on the spot, on every batch of edits, which is what made dragging a slider
+     * feel like the scene was fighting back. Now it costs a flag and a timestamp. The recording is
+     * thrown away on the next tick, the bar under the timeline turns grey, and the frames come back
+     * as the background catch-up refills them.</p>
      */
     public void invalidate()
     {
         this.stale = true;
+        this.editedAt = System.nanoTime();
     }
 
     /**
-     * Runs the simulation from the beginning again, because what it had worked out came from
-     * keyframes the author has since changed.
+     * Puts the world back to the film's opening frame and empties the recording.
      *
-     * <p>Physics is a consequence of everything that happened before, and nothing in a world of
-     * checkpoints can be edited in the middle: moving a crate's starting corner does not nudge
-     * where it ended up, it changes the whole fall. So the answer to an edit is the same one the
-     * author reaches for by leaving the film and coming back — every body stood at the pose its
-     * keyframes now describe on the film's <em>opening</em> frame, every checkpoint dropped, the
-     * clock back to zero. The tick that asked for this then re-simulates up to the cursor, in the
-     * seek budget's own time.</p>
+     * <p>Physics is a consequence of everything that happened before, so an edit in the middle
+     * cannot be patched into a result: moving a crate's starting corner does not nudge where it
+     * landed, it changes the whole fall. Every body therefore goes back to the pose its keyframes
+     * now describe on tick 0, and the recording starts again from there.</p>
      */
-    private void restart()
+    private void rewind()
     {
         this.borrowCast();
 
@@ -732,16 +855,6 @@ public class FilmScene implements AutoCloseable
             for (EntityRigs rigs : this.rigs)
             {
                 this.updateRigs(rigs, 0, true);
-
-                for (PhysicsBodyRig rig : rigs.bodyRigs)
-                {
-                    rig.read(this.world, this, true);
-                }
-
-                for (ActorRagdoll ragdoll : rigs.ragdolls)
-                {
-                    ragdoll.read(this.world, this, true);
-                }
             }
         }
         finally
@@ -750,7 +863,9 @@ public class FilmScene implements AutoCloseable
         }
 
         this.timeline.start();
-        this.sampleBodies(true);
+        this.cache.clear();
+        this.full = false;
+        this.record(0);
     }
 
     /**
@@ -899,44 +1014,6 @@ public class FilmScene implements AutoCloseable
             {
                 ensureAnimators(child);
             }
-        }
-    }
-
-    private void freezeBodies()
-    {
-        for (SceneBody body : this.bodies)
-        {
-            body.freeze();
-        }
-
-        for (EntityRigs rigs : this.rigs)
-        {
-            for (PhysicsBodyRig rig : rigs.bodyRigs)
-            {
-                rig.freeze(this.world);
-            }
-
-            for (ActorRagdoll ragdoll : rigs.ragdolls)
-            {
-                ragdoll.freeze();
-            }
-        }
-    }
-
-    /**
-     * Reads every body's transform out of Jolt into the render-side snapshot.
-     *
-     * @param teleport whether the move was a jump rather than a single step. A seek that crossed
-     *                 many ticks (or a restore) has no meaningful "previous" position, and
-     *                 interpolating from the old one would draw the body sliding across the scene
-     */
-    private void sampleBodies(boolean teleport)
-    {
-        BodyInterface bodyInterface = this.world.getBodies();
-
-        for (SceneBody body : this.bodies)
-        {
-            body.sample(bodyInterface, teleport);
         }
     }
 

@@ -15,8 +15,7 @@ import net.minecraft.util.math.Vec3d;
  * <p>Both halves of every value are kept, the previous tick's as well as the current one's. The
  * renderer draws between them, and BBS sets the pair differently depending on whether the film is
  * playing or paused — so putting back only what is visible would leave a paused actor rocking
- * between two ticks, which is the exact disease the scene's own {@code freeze} exists to cure.
- * Copying the pair verbatim needs no opinion about which rule was in force.</p>
+ * between two ticks. Copying the pair verbatim needs no opinion about which rule was in force.</p>
  */
 public final class ActorState
 {

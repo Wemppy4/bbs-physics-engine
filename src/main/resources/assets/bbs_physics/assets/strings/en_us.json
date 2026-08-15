@@ -15,9 +15,8 @@
     "bbs_physics.config.general.world_above": "Blocks above",
     "bbs_physics.config.general.world_above-comment": "How high over the scene ceilings and overhangs are collected.",
 
-    "bbs_physics.hud.tick": "Physics: tick %s · %s bodies · %s checkpoints",
-    "bbs_physics.hud.off_tick": "The world is not on the film's tick (%s) — this is not this frame's picture",
-    "bbs_physics.hud.catching_up": "Catching up to tick %s, %s steps at a time",
+    "bbs_physics.hud.tick": "Physics: tick %s · %s bodies · recorded to %s of %s",
+    "bbs_physics.hud.not_recorded": "Tick %s is not computed yet — showing plain animation",
     "bbs_physics.hud.ghosts": "Nothing marked up: %s — they fall through everything",
     "bbs_physics.hud.outside": "Past the scene's blocks: %s — there is no ground under them",
 

@@ -20,8 +20,7 @@ public class PhysicsKeys
     public static final IKey SHAPE_FROM = L10n.lang("bbs_physics.forms.body.shape_from");
 
     public static final IKey HUD_TICK = L10n.lang("bbs_physics.hud.tick");
-    public static final IKey HUD_OFF_TICK = L10n.lang("bbs_physics.hud.off_tick");
-    public static final IKey HUD_CATCHING_UP = L10n.lang("bbs_physics.hud.catching_up");
+    public static final IKey HUD_NOT_RECORDED = L10n.lang("bbs_physics.hud.not_recorded");
     public static final IKey HUD_GHOSTS = L10n.lang("bbs_physics.hud.ghosts");
     public static final IKey HUD_OUTSIDE = L10n.lang("bbs_physics.hud.outside");
 

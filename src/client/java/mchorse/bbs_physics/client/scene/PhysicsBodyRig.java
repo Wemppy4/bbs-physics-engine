@@ -19,6 +19,7 @@ import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
+import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import mchorse.bbs_physics.forms.PhysicsBodyForm;
@@ -61,7 +62,7 @@ import java.util.List;
  * relative to the body, so a model welded into one lump keeps up with its own animation; the
  * moment it is let go it stops, and the lump keeps the shape it had at that instant — the pose it
  * was released in. Rebuilding is a shape swap on the same body, which leaves the world's set of
- * bodies untouched and therefore leaves every checkpoint restorable.</p>
+ * bodies untouched and therefore leaves the recording's channels where they are.</p>
  *
  * <p>A body can sit anywhere in an actor's form tree, not just at its root — a crate in a hand, a
  * helmet on a head. It is addressed by its <em>path</em> in the tree (the same path convention the
@@ -72,10 +73,10 @@ import java.util.List;
  * <p>Known approximations. A released nested body is re-anchored to its parent frame every tick, so
  * on a fast-moving parent the draw interpolation composes two lerps and can wobble a touch. A body
  * nested inside <em>another physics body</em> reads its parent's frame a tick late — the outer body
- * works, the inner one follows approximately. And the throw only carries its speed when the film
- * <em>played</em> into the release: a scrub lands the body on the release tick with no velocity to
- * inherit, because the tick before it was never simulated, so the object drops instead of flying.
- * Play the shot and it throws; that is the same per-tick pose sampling Э2 owes {@link ActorRig}.</p>
+ * works, the inner one follows approximately. The throw, on the other hand, is no longer an
+ * approximation of anything: every tick of the film is simulated exactly once, in order, so the
+ * velocity a body inherits on release is the velocity the keyframes actually gave it — arriving at
+ * that frame by scrubbing and arriving by playing are the same arrival now (§6).</p>
  */
 public class PhysicsBodyRig
 {
@@ -85,6 +86,9 @@ public class PhysicsBodyRig
     private final PhysicsBodyForm form;
     private final String path;
     private final int bodyId;
+
+    /** This body's slot in the film's recording — see {@link PhysicsCache}. */
+    private final int channel;
 
     /** The marked-up slots this body is made of, each in its own frame. Empty for a ghost. */
     private final List<CollisionCollector.Piece> pieces;
@@ -124,11 +128,12 @@ public class PhysicsBodyRig
     private float lastFriction;
     private float lastRestitution;
 
-    private PhysicsBodyRig(PhysicsBodyForm form, String path, int bodyId, List<CollisionCollector.Piece> pieces, boolean kinematic, SceneBody debug)
+    private PhysicsBodyRig(PhysicsBodyForm form, String path, int bodyId, int channel, List<CollisionCollector.Piece> pieces, boolean kinematic, SceneBody debug)
     {
         this.form = form;
         this.path = path;
         this.bodyId = bodyId;
+        this.channel = channel;
         this.pieces = pieces;
         this.kinematic = kinematic;
         this.debug = debug;
@@ -196,7 +201,7 @@ public class PhysicsBodyRig
 
         form.state = new PhysicsBodyState();
 
-        PhysicsBodyRig rig = new PhysicsBodyRig(form, path, id, ghost ? List.of() : pieces, kinematic, debug);
+        PhysicsBodyRig rig = new PhysicsBodyRig(form, path, id, scene.addChannel(), ghost ? List.of() : pieces, kinematic, debug);
 
         compose(rig.pieces, path, matrices, rig.inverse, rig.builtFrom);
 
@@ -456,8 +461,13 @@ public class PhysicsBodyRig
     /**
      * Pushes any setting the author has changed into the live body. Everything here can be changed
      * on a body that is already in the world, which matters: rebuilding it would hand it a new
-     * identity, and Jolt refuses to restore a snapshot whose bodies no longer match — every rewind
-     * past that point would break.
+     * identity and a new slot in the recording, and the whole film would have to be re-recorded for
+     * a change of friction.
+     *
+     * <p>Run while recording, which is the only time the body is touched at all. An edit throws the
+     * recording away (see {@link FilmScene#invalidate()}), so a slider moved on a paused film is
+     * picked up by the re-recording that follows rather than by a special case here — which is what
+     * the old {@code freeze()} was.</p>
      */
     private void applySettings(PhysicsWorld physics, BodyInterface bodies)
     {
@@ -525,25 +535,24 @@ public class PhysicsBodyRig
     }
 
     /**
-     * Runs after the world stepped: hands the body's transform back to the form, expressed in the
-     * parent frame the walk captured, because that is the frame the renderer substitutes the
-     * form's transform in.
+     * Runs right after the world stepped: works out where the body ended up, in the frame the
+     * renderer will substitute it into, and writes that into the recording under {@code tick}.
      *
-     * <p>Done every tick, including while the animation still owns the body — even though the
-     * renderer ignores the answer for as long as it does. This is what keeps the release smooth. A
-     * drawn frame sits between two ticks, so the tick the body is let go on needs the tick before
-     * it to be interpolated from; taken only from the moment of release, that slot is empty and the
-     * body has to be pinned to where it is, which reads as it jumping a tick forward at the exact
-     * instant the author is looking at. While the body is kinematic it stands at its keyframed pose
-     * anyway, so what is recorded here is precisely what was being drawn.</p>
+     * <p><b>The conversion happens here, not at draw time, and that is what makes the recording
+     * cheap.</b> The frame a body's answer is expressed in — the actor's placement times the chain
+     * of forms above it — is a function of the tick, and the tick has just been posed to be
+     * simulated, so both are at hand for free. Storing the converted numbers means playing a
+     * recorded film back evaluates no poses at all: the renderer takes seven floats and applies
+     * them.</p>
+     *
+     * <p>Written on every tick, the kinematic ones included, even though the renderer ignores the
+     * answer while the animation is in charge. That is what keeps a release smooth: a drawn frame
+     * sits between two ticks, so the tick a body is let go on needs the tick before it to be
+     * interpolated from, and while the body is kinematic what is recorded is exactly what was being
+     * drawn anyway.</p>
      */
-    public void read(PhysicsWorld physics, FilmScene scene, boolean teleport)
+    public void record(PhysicsWorld physics, FilmScene scene, PhysicsCache cache, int tick)
     {
-        if (this.form.state == null)
-        {
-            return;
-        }
-
         physics.getBodies().getPositionAndRotation(this.bodyId, this.scratchPosition, this.scratchRotation);
 
         this.rotation.set(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW());
@@ -561,25 +570,31 @@ public class PhysicsBodyRig
         this.local.getTranslation(this.position);
         this.local.getUnnormalizedRotation(this.rotation);
 
-        this.form.state.set(this.position, this.rotation, teleport);
+        cache.write(tick, this.channel, this.position, this.rotation, this.form.getAuthority());
     }
 
     /**
-     * Takes the frames the body's answer is carried back through, without touching the body.
+     * Hands the form the recorded transform for the frame being drawn, or tells it there is none.
      *
-     * <p>Needed for the one seek that simulates nothing: a rewind landing exactly on a checkpoint
-     * restores the world and has no tick left to play, so no step poses the cast and nothing
-     * refreshes what {@link #read} composes against. Left stale, a body hanging on a moving actor
-     * is drawn against where that actor stood several ticks ago — and stays there, because a paused
-     * film never steps again.</p>
+     * <p>No recording for this tick means plain animation (Р8.1): the form is drawn from its
+     * keyframes, as though it had no physics, until the background catch-up reaches it.</p>
      */
-    public void refresh(Matrix4f actorWorld)
+    public void readCache(PhysicsCache cache, int tick, boolean teleport)
     {
-        this.actorWorld.set(actorWorld);
+        PhysicsBodyState state = this.form.state;
 
-        if (this.form.state != null)
+        if (state == null)
         {
-            this.parentFrame.set(this.form.state.getWalkParentFrame());
+            return;
+        }
+
+        if (cache.read(tick, this.channel, this.position, this.rotation))
+        {
+            state.set(this.position, this.rotation, teleport);
+        }
+        else
+        {
+            state.setUnsimulated();
         }
     }
 
@@ -606,21 +621,5 @@ public class PhysicsBodyRig
     public void release()
     {
         this.form.state = null;
-    }
-
-    /**
-     * Pins the drawn transform to where it is, for a film that is not advancing — and takes the
-     * author's edits to the body while it is standing still, which is exactly when they are made.
-     * A mass or a bounce changed on a paused film has to take under the cursor, or the slider reads
-     * as doing nothing until playback is nudged.
-     */
-    public void freeze(PhysicsWorld physics)
-    {
-        this.applySettings(physics, physics.getBodies());
-
-        if (this.form.state != null)
-        {
-            this.form.state.freeze();
-        }
     }
 }

@@ -66,16 +66,6 @@ public class RagdollState
         state.rotation.set(rotation);
     }
 
-    /** Pins every bone where it is — for a paused film, whose transition keeps sweeping anyway. */
-    public void freeze()
-    {
-        for (BoneState state : this.bones.values())
-        {
-            state.prevPosition.set(state.position);
-            state.prevRotation.set(state.rotation);
-        }
-    }
-
     public boolean has(String bone)
     {
         return this.bones.containsKey(bone);

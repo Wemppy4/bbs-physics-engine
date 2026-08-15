@@ -15,12 +15,16 @@ import java.util.List;
  * simulation thinks things are, and this says whether the simulation is where the film is. Together
  * they are the difference between "physics is being weird" and a named cause.</p>
  *
- * <p>Two kinds of line. The first is always there and states the plain facts. The rest appear only
- * when something is wrong and are written in the colour of a warning, because each of them is a
- * specific, known reason for a specific complaint: the simulation standing on a different tick than
- * the cursor is why a frame does not look the way it did last time, a body with nothing marked up
- * is why it fell through the floor, and a body past the collected blocks is why it fell through
- * <em>everything</em>.</p>
+ * <p>Two kinds of line. The first is always there and states the plain facts, the recording's reach
+ * among them. The rest appear only when something is wrong and are written in the colour of a
+ * warning, because each of them is a specific, known reason for a specific complaint: a frame the
+ * recording has not reached is why the picture is animation rather than physics, a body with
+ * nothing marked up is why it fell through the floor, and a body past the collected blocks is why
+ * it fell through <em>everything</em>.</p>
+ *
+ * <p>This is the readout's shape until the cache bar lands under the timeline (Р8.2), which is
+ * where "how far is it computed" really belongs — visible without the debug overlay, and legible at
+ * a glance instead of as a number.</p>
  */
 public final class SceneStatusHUD
 {
@@ -34,17 +38,14 @@ public final class SceneStatusHUD
         List<String> lines = new ArrayList<>();
         List<Integer> colors = new ArrayList<>();
 
-        lines.add(PhysicsKeys.HUD_TICK.format(status.physicsTick(), status.bodies(), status.checkpoints()).get());
+        lines.add(PhysicsKeys.HUD_TICK.format(status.filmTick(), status.bodies(), Math.max(0, status.computed()), status.end()).get());
         colors.add(Colors.WHITE);
 
-        if (status.physicsTick() != status.filmTick())
+        if (!status.ready())
         {
-            /* The one number an author has to be able to trust. While these differ, the viewport is
-             * showing a moment the film is not on — usually a seek still catching up, and the frame
-             * is simply not finished. */
-            lines.add(status.behind()
-                ? PhysicsKeys.HUD_CATCHING_UP.format(status.filmTick(), status.steps()).get()
-                : PhysicsKeys.HUD_OFF_TICK.format(status.filmTick()).get());
+            /* The frame on screen is animation, not simulation — correct, and deliberately so
+             * (Р8.1), but an author who is not told reads it as physics having stopped. */
+            lines.add(PhysicsKeys.HUD_NOT_RECORDED.format(status.filmTick()).get());
             colors.add(Colors.A100 | Colors.YELLOW);
         }
 

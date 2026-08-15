@@ -15,9 +15,8 @@
     "bbs_physics.config.general.world_above": "Блоки вверх",
     "bbs_physics.config.general.world_above-comment": "Как высоко над сценой собираются потолки и навесы.",
 
-    "bbs_physics.hud.tick": "Физика: тик %s · тел %s · чекпойнтов %s",
-    "bbs_physics.hud.off_tick": "Мир стоит не на кадре фильма (%s) — картинка не от этого кадра",
-    "bbs_physics.hud.catching_up": "Догоняет кадр %s, шагов за раз: %s",
+    "bbs_physics.hud.tick": "Физика: тик %s · тел %s · посчитано до %s из %s",
+    "bbs_physics.hud.not_recorded": "Кадр %s ещё не посчитан — показана чистая анимация",
     "bbs_physics.hud.ghosts": "Без разметки: %s — проваливаются сквозь всё",
     "bbs_physics.hud.outside": "Вне блоков сцены: %s — под ними ничего нет",
 

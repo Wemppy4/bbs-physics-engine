@@ -31,6 +31,7 @@ import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
 import mchorse.bbs_physics.collision.CollisionKind;
+import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import mchorse.bbs_physics.forms.PhysicsBodyForm;
@@ -60,7 +61,7 @@ import java.util.Map;
  *
  * <p><b>The skeleton is held by Jolt's own joints</b> — {@code SwingTwistConstraint} for the cone,
  * {@code HingeConstraint} for knees and elbows, {@code FixedConstraint} for welds — created once at
- * scene build and living as long as the world, which keeps every checkpoint restorable. Adjacent
+ * scene build and living as long as the world, so the recording's shape never changes. Adjacent
  * parts are excused from colliding with each other through a group filter; everything else
  * collides normally, which is what keeps an arm from folding through the chest.</p>
  *
@@ -108,6 +109,9 @@ public class ActorRagdoll
 
     /** Whether the parts are currently kinematic — the cached side of the motion type switch. */
     private boolean kinematic = true;
+
+    /** Whether the frame drawn last had a recorded pose, so a gap in the recording reads as a jump. */
+    private boolean recorded;
 
     /* The frame the simulation's answer is expressed against: the model's flipped group space,
      * captured per tick because the actor moves. See read(). */
@@ -227,7 +231,7 @@ public class ActorRagdoll
 
             bodies.addBody(body.getId(), EActivation.Activate);
 
-            Part part = new Part(piece.label(), piece.path(), body.getId(), body, sub);
+            Part part = new Part(piece.label(), piece.path(), body.getId(), body, sub, scene.addChannel());
 
             ragdoll.parts.add(part);
             byBone.put(piece.label(), part);
@@ -740,10 +744,6 @@ public class ActorRagdoll
                 this.drive(bodies, part.id, authority);
             }
         }
-
-        /* Below a full 1 the drawn pose is the simulation's; at 1 the animation draws itself and
-         * the bodies merely stand on it, which is the smoother path while it is in charge. */
-        this.state.setActive(authority < 1F);
     }
 
     /**
@@ -795,22 +795,38 @@ public class ActorRagdoll
     }
 
     /**
-     * Runs after the world stepped: reads where the simulation put every part and hands it to the
-     * renderer, expressed in the model's own group space so the renderer can substitute it without
-     * knowing where the actor stands.
+     * Runs right after the world stepped: reads where the simulation put every part, expresses it
+     * in the model's own group space, and writes that into the recording under {@code tick}.
+     *
+     * <p>The conversion is done here rather than at draw time for the same reason
+     * {@link PhysicsBodyRig#record} does it: the frame it is expressed against is a function of the
+     * tick, which has just been posed, so a recorded film draws with no pose evaluation at all.</p>
      *
      * <p>Written every tick, the kinematic ones included — the tick the handle drops below 1 needs
-     * the tick before it to interpolate from, or the release visibly jumps (the same lesson
-     * {@link PhysicsBodyRig#read} carries).</p>
+     * the tick before it to interpolate from, or the release visibly jumps. The authority is
+     * recorded alongside, because whether the simulation owns the pose is part of what was true on
+     * that tick, not something to be re-read off a form at draw time.</p>
      */
-    public void read(PhysicsWorld physics, FilmScene scene, boolean teleport)
+    public void record(PhysicsWorld physics, FilmScene scene, PhysicsCache cache, int tick)
     {
         if (!this.baseValid)
         {
+            /* No frame to express the answer against — a model that has not loaded, most likely.
+             * The silence is written rather than skipped, because the slots in the recording are
+             * reused across invalidations and a skipped one would read as an old answer. */
+            this.translation.zero();
+            this.orientation.identity();
+
+            for (Part part : this.parts)
+            {
+                cache.write(tick, part.channel, this.translation, this.orientation, PhysicsCache.SILENT);
+            }
+
             return;
         }
 
         BodyInterface bodies = physics.getBodies();
+        float authority = FormRagdolls.getAuthority(this.form);
 
         for (Part part : this.parts)
         {
@@ -834,8 +850,39 @@ public class ActorRagdoll
             this.poseFrame.getTranslation(this.translation);
             this.poseFrame.getUnnormalizedRotation(this.orientation);
 
-            this.state.set(part.bone, this.translation, this.orientation, teleport);
+            cache.write(tick, part.channel, this.translation, this.orientation, authority);
         }
+    }
+
+    /**
+     * Hands the renderer the recorded pose for the frame being drawn.
+     *
+     * <p>Two ways this ends up drawing plain animation, and they are different things. The handle
+     * standing at a full 1 means the animation is in charge and draws itself, which is smoother
+     * than substituting a pose that merely agrees with it. An <em>unrecorded</em> tick means the
+     * recording has not reached this frame yet, and Р8.1 says the same thing happens: the character
+     * stands on its keyframes until the catch-up gets here.</p>
+     */
+    public void readCache(PhysicsCache cache, int tick, boolean teleport)
+    {
+        /* Coming back from unrecorded frames counts as a jump: the pose the bones are drawn out of
+         * is wherever the animation last left them, not a place they fell from. */
+        boolean jumped = teleport || !this.recorded;
+        boolean recorded = false;
+
+        for (Part part : this.parts)
+        {
+            if (cache.read(tick, part.channel, this.translation, this.orientation))
+            {
+                this.state.set(part.bone, this.translation, this.orientation, jumped);
+
+                recorded = true;
+            }
+        }
+
+        this.recorded = recorded;
+
+        this.state.setActive(recorded && cache.readAuthority(tick, this.parts.get(0).channel) < 1F);
     }
 
     /**
@@ -859,22 +906,6 @@ public class ActorRagdoll
     }
 
     /**
-     * Re-captures the answer frame without touching the bodies — for the one seek that simulates
-     * nothing (a rewind landing exactly on a checkpoint), where no step ran to refresh it and the
-     * bones would otherwise be drawn against where the actor stood ticks ago.
-     */
-    public void refresh(MatrixCache matrices, Matrix4f actorWorld)
-    {
-        this.captureBase(matrices, actorWorld);
-    }
-
-    /** Pins the drawn pose where it is, for a film that is not advancing. */
-    public void freeze()
-    {
-        this.state.freeze();
-    }
-
-    /**
      * Lets go of the form: the model goes back to being drawn from its keyframes alone. Called
      * when the scene closes — the bodies behind this ragdoll are about to stop existing.
      */
@@ -883,7 +914,10 @@ public class ActorRagdoll
         FormRagdolls.setState(this.form, null);
     }
 
-    /** One marked bone as a ragdoll part: who it is, the body following it, its filter subgroup. */
-    private record Part(String bone, String path, int id, Body body, int sub)
+    /**
+     * One marked bone as a ragdoll part: who it is, the body following it, its filter subgroup, and
+     * its slot in the film's recording.
+     */
+    private record Part(String bone, String path, int id, Body body, int sub, int channel)
     {}
 }

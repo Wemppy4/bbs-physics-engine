@@ -45,6 +45,15 @@ public final class SceneDebugRenderer
 
         for (SceneBody body : scene.getBodies())
         {
+            if (!body.isKnown())
+            {
+                /* The recording has not reached this frame, so there is nothing true to draw. A
+                 * shape left over from an older tick would be the overlay telling a lie, which is
+                 * worse than the overlay being empty — the frame is showing plain animation and the
+                 * readout says so in words (Р8.1). */
+                continue;
+            }
+
             body.getPosition(transition, POSITION);
             body.getRotation(transition, ROTATION);
 

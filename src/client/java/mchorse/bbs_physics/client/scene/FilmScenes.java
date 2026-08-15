@@ -1,6 +1,7 @@
 package mchorse.bbs_physics.client.scene;
 
 import mchorse.bbs_mod.film.BaseFilmController;
+import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.engine.JoltEngine;
@@ -171,6 +172,41 @@ public class FilmScenes
         FilmScene scene = controller == null ? null : SCENES.get(controller);
 
         return scene == null ? null : scene.getStatus();
+    }
+
+    /**
+     * The same, found by the film itself rather than by its controller — for the editor's UI, which
+     * knows which film it is showing but not which controller is playing it.
+     *
+     * <p>Identity first, then the film's id: the editor's panel and its controller normally hold
+     * the very same object, but a controller rebuilt around a reloaded film would not, and a cache
+     * bar that silently vanished after a reload would be a puzzle rather than a signal.</p>
+     */
+    public static SceneStatus getStatus(Film film)
+    {
+        if (film == null)
+        {
+            return null;
+        }
+
+        FilmScene byId = null;
+
+        for (Map.Entry<BaseFilmController, FilmScene> entry : SCENES.entrySet())
+        {
+            BaseFilmController controller = entry.getKey();
+
+            if (controller.film == film)
+            {
+                return entry.getValue().getStatus();
+            }
+
+            if (controller.film != null && controller.film.getId().equals(film.getId()))
+            {
+                byId = entry.getValue();
+            }
+        }
+
+        return byId == null ? null : byId.getStatus();
     }
 
     /** The film is gone. */

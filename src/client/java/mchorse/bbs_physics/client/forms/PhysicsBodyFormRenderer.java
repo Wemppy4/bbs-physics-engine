@@ -64,14 +64,17 @@ public class PhysicsBodyFormRenderer extends FormRenderer<PhysicsBodyForm>
     }
 
     /**
-     * Whether the simulation is currently in charge of where this form is. It is not, in the form
-     * editor's preview (no scene has claimed the form) or while the animation owns the body.
+     * Whether the simulation is currently in charge of where this form is. It is not in the form
+     * editor's preview (no scene has claimed the form), not while the animation owns the body, and
+     * not on a frame the recording has not reached yet — that last one is Р8.1, and it is why an
+     * uncomputed frame simply looks like the film without physics rather than like a crate frozen
+     * in the air.
      */
     private PhysicsBodyState getSimulated()
     {
         PhysicsBodyState state = this.form.state;
 
-        return state == null || this.form.isKinematic() ? null : state;
+        return state == null || !state.isSimulated() || this.form.isKinematic() ? null : state;
     }
 
     @Override
