@@ -36,6 +36,9 @@ public class PhysicsWorld implements AutoCloseable
      */
     public static final int COLLISION_STEPS = 2;
 
+    /** Earth, in blocks per second squared — a block is a metre (§8). */
+    public static final float EARTH_GRAVITY = 9.81F;
+
     /** A film tick, in seconds — the step this world always advances by. */
     public static final float TICK = 1F / 20F;
 
@@ -56,6 +59,9 @@ public class PhysicsWorld implements AutoCloseable
 
     private boolean closed;
 
+    /** Scene-wide knobs, which are Blender's scene properties rather than per-body settings (§7.4). */
+    private int collisionSteps = COLLISION_STEPS;
+
     public PhysicsWorld()
     {
         this.pairFilter = PhysicsLayers.newPairFilter();
@@ -64,7 +70,7 @@ public class PhysicsWorld implements AutoCloseable
 
         this.system = new PhysicsSystem();
         this.system.init(MAX_BODIES, 0, MAX_BODY_PAIRS, MAX_CONTACTS, this.broadPhaseLayers, this.broadPhaseFilter, this.pairFilter);
-        this.system.setGravity(0F, -9.81F, 0F);
+        this.system.setGravity(0F, -EARTH_GRAVITY, 0F);
         this.bodies = this.system.getBodyInterface();
 
         this.temp = new TempAllocatorImpl(TEMP_ALLOCATOR_BYTES);
@@ -96,6 +102,17 @@ public class PhysicsWorld implements AutoCloseable
         this.system.setGravity(x, y, z);
     }
 
+    /** Downwards, which is the only direction an author has ever asked for. */
+    public void setGravity(float strength)
+    {
+        this.system.setGravity(0F, -strength, 0F);
+    }
+
+    public void setCollisionSteps(int steps)
+    {
+        this.collisionSteps = Math.max(1, steps);
+    }
+
     /**
      * Tells Jolt to rebuild its broad phase tree from scratch. Worth calling once after a batch of
      * bodies has been added and not on every addition — it is an optimisation pass, not a
@@ -109,7 +126,7 @@ public class PhysicsWorld implements AutoCloseable
     /** Advances the world by exactly one film tick. */
     public void step()
     {
-        this.system.update(TICK, COLLISION_STEPS, this.temp, this.jobs);
+        this.system.update(TICK, this.collisionSteps, this.temp, this.jobs);
     }
 
     /**

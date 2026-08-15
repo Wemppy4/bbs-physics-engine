@@ -62,6 +62,28 @@ public class PhysicsKeys
     public static final IKey FRICTION = L10n.lang("bbs_physics.forms.body.friction");
     public static final IKey RESTITUTION = L10n.lang("bbs_physics.forms.body.restitution");
 
+    public static final IKey SCENE_TITLE = L10n.lang("bbs_physics.scene.title");
+    public static final IKey SCENE_NONE = L10n.lang("bbs_physics.scene.none");
+    public static final IKey SCENE_STATUS = L10n.lang("bbs_physics.scene.status");
+    public static final IKey SCENE_CACHE = L10n.lang("bbs_physics.scene.cache");
+    public static final IKey SCENE_CACHE_EMPTY = L10n.lang("bbs_physics.scene.cache_empty");
+    public static final IKey SCENE_COMPUTE = L10n.lang("bbs_physics.scene.compute");
+    public static final IKey SCENE_COMPUTE_TOOLTIP = L10n.lang("bbs_physics.scene.compute_tooltip");
+    public static final IKey SCENE_RESET = L10n.lang("bbs_physics.scene.reset");
+    public static final IKey SCENE_RESET_TOOLTIP = L10n.lang("bbs_physics.scene.reset_tooltip");
+    public static final IKey SCENE_WORLD = L10n.lang("bbs_physics.scene.world");
+    public static final IKey SCENE_GRAVITY = L10n.lang("bbs_physics.scene.gravity");
+    public static final IKey SCENE_GRAVITY_TOOLTIP = L10n.lang("bbs_physics.scene.gravity_tooltip");
+    public static final IKey SCENE_STEPS = L10n.lang("bbs_physics.scene.steps");
+    public static final IKey SCENE_STEPS_TOOLTIP = L10n.lang("bbs_physics.scene.steps_tooltip");
+    public static final IKey SCENE_REGION = L10n.lang("bbs_physics.scene.region");
+    public static final IKey SCENE_REGION_TOOLTIP = L10n.lang("bbs_physics.scene.region_tooltip");
+    public static final IKey SCENE_REGION_ROOM = L10n.lang("bbs_physics.scene.region_room");
+    public static final IKey SCENE_REGION_OUTDOORS = L10n.lang("bbs_physics.scene.region_outdoors");
+    public static final IKey SCENE_REGION_LARGE = L10n.lang("bbs_physics.scene.region_large");
+    public static final IKey SCENE_REGION_CUSTOM = L10n.lang("bbs_physics.scene.region_custom");
+    public static final IKey SCENE_DEBUG = L10n.lang("bbs_physics.scene.debug");
+
     public static final IKey HUD_TICK = L10n.lang("bbs_physics.hud.tick");
     public static final IKey HUD_NOT_RECORDED = L10n.lang("bbs_physics.hud.not_recorded");
     public static final IKey HUD_GHOSTS = L10n.lang("bbs_physics.hud.ghosts");

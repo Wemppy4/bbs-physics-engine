@@ -133,6 +133,10 @@ public class FilmScene implements AutoCloseable
     /** Whether the recording has hit its ceiling, so the fact is reported once rather than per tick. */
     private boolean full;
 
+    /** The scene-wide knobs this recording was made under — see {@link #applyWorldSettings()}. */
+    private float gravity = PhysicsWorld.EARTH_GRAVITY;
+    private int collisionSteps = PhysicsWorld.COLLISION_STEPS;
+
     /** The tick the film last asked for, against which the simulation's own tick is reported. */
     private int filmTick;
 
@@ -530,6 +534,34 @@ public class FilmScene implements AutoCloseable
         this.bodies.add(body);
     }
 
+    /**
+     * Records the rest of the film right now, however long it takes.
+     *
+     * <p>The button for authors who would rather wait once than watch the bar creep — Blender's
+     * {@code Calculate to Frame}, without the frame. Everything else about the recording is
+     * unchanged: this is the same loop the background catch-up runs, with the budget removed.</p>
+     */
+    public void computeAll()
+    {
+        int end = this.recordingEnd(this.filmTick);
+
+        this.borrowCast();
+
+        try
+        {
+            while (this.cache.getComputed() <= end && this.cache.canWrite(this.timeline.getTick() + 1))
+            {
+                this.step();
+            }
+        }
+        finally
+        {
+            this.returnCast(this.filmTick);
+        }
+
+        this.distribute(this.filmTick);
+    }
+
     /** Claims a slot in the recording. Only valid while the scene is being assembled. */
     public int addChannel()
     {
@@ -635,8 +667,37 @@ public class FilmScene implements AutoCloseable
             this.rewind();
         }
 
+        this.applyWorldSettings();
         this.compute(tick);
         this.distribute(tick);
+    }
+
+    /**
+     * Picks up the scene-wide knobs — gravity and collision steps — and throws the recording away
+     * when either has moved.
+     *
+     * <p>They are part of the simulation's arithmetic, not a display option: half gravity is a
+     * different fall from the first tick onwards, so nothing worked out under the old value is
+     * worth keeping. Cheap to check and rare to change, which is why it lives on the tick rather
+     * than needing the settings screen to tell anyone.</p>
+     */
+    private void applyWorldSettings()
+    {
+        float gravity = BBSPhysicsSettings.gravity == null ? PhysicsWorld.EARTH_GRAVITY : BBSPhysicsSettings.gravity.get();
+        int steps = BBSPhysicsSettings.collisionSteps == null ? PhysicsWorld.COLLISION_STEPS : BBSPhysicsSettings.collisionSteps.get();
+
+        if (gravity == this.gravity && steps == this.collisionSteps)
+        {
+            return;
+        }
+
+        this.gravity = gravity;
+        this.collisionSteps = steps;
+
+        this.world.setGravity(gravity);
+        this.world.setCollisionSteps(steps);
+
+        this.invalidate();
     }
 
     /**

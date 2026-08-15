@@ -5,6 +5,7 @@
     "client": [
         "BaseFilmControllerMixin",
         "FormRendererMixin",
+        "UIDashboardMixin",
         "ModelFormRendererMixin",
         "ModelPivotFramesMixin",
         "UIClipsMixin",

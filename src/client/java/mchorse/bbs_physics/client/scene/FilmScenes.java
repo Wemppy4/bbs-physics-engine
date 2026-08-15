@@ -209,6 +209,21 @@ public class FilmScenes
         return byId == null ? null : byId.getStatus();
     }
 
+    /**
+     * Any live scene, for the dashboard panel — which asks "what is physics doing" without knowing
+     * which film is open. In the editor there is one; when a film plays in the world alongside it
+     * there can be two, and either answers the question well enough for a status readout.
+     */
+    public static FilmScene getAny()
+    {
+        for (FilmScene scene : SCENES.values())
+        {
+            return scene;
+        }
+
+        return null;
+    }
+
     /** The film is gone. */
     public static void onShutdown(BaseFilmController controller)
     {

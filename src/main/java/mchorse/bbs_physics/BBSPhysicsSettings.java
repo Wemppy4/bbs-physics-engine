@@ -2,6 +2,7 @@ package mchorse.bbs_physics;
 
 import mchorse.bbs_mod.settings.SettingsBuilder;
 import mchorse.bbs_mod.settings.values.numeric.ValueBoolean;
+import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 import mchorse.bbs_mod.settings.values.numeric.ValueInt;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 
@@ -42,6 +43,27 @@ public class BBSPhysicsSettings
     public static ValueInt worldBelow;
     public static ValueInt worldAbove;
 
+    /**
+     * How hard things fall, in blocks per second squared. Earth is 9.81 and is the default; the
+     * point of exposing it is that a film is not physics homework — half gravity reads as slow
+     * motion without touching a single keyframe, and zero is a space shot.
+     *
+     * <p>Blender keeps gravity in the scene's properties rather than on the body, and so do we
+     * (§7.4). Changing it invalidates the recording, the same as any other edit would.</p>
+     */
+    public static ValueFloat gravity;
+
+    /**
+     * How many times Jolt re-solves collisions inside one film tick. A tick is 50 ms, which is long
+     * for a solver aimed at 60 Hz frames, so two is the floor for stacked bodies not sinking into
+     * each other; more costs time and buys stability in a pile.
+     *
+     * <p>Fixed per recording rather than adaptive, deliberately: the number of collision steps is
+     * part of the simulation's arithmetic, and a value that drifted with the frame rate would make
+     * a film stop being reproducible.</p>
+     */
+    public static ValueInt collisionSteps;
+
     public static void register(SettingsBuilder builder)
     {
         builder.category("general", Icons.PHYSICS);
@@ -49,6 +71,9 @@ public class BBSPhysicsSettings
         enabled = builder.getBoolean("enabled", true);
         debug = builder.getBoolean("debug", false);
         collisionPreview = builder.getBoolean("collision_preview", true);
+
+        gravity = builder.getFloat("gravity", 9.81F, 0F, 40F);
+        collisionSteps = builder.getInt("collision_steps", 2, 1, 8);
 
         worldRadius = builder.getInt("world_radius", 32, 8, 96);
         worldBelow = builder.getInt("world_below", 32, 4, 128);
