@@ -2,28 +2,17 @@ package mchorse.bbs_physics.client.scene;
 
 import com.github.stephengold.joltjni.BodyCreationSettings;
 import com.github.stephengold.joltjni.BodyInterface;
-import com.github.stephengold.joltjni.BoxShape;
-import com.github.stephengold.joltjni.CapsuleShape;
 import com.github.stephengold.joltjni.Quat;
 import com.github.stephengold.joltjni.RVec3;
-import com.github.stephengold.joltjni.RotatedTranslatedShape;
-import com.github.stephengold.joltjni.ShapeResult;
-import com.github.stephengold.joltjni.SphereShape;
-import com.github.stephengold.joltjni.StaticCompoundShapeSettings;
 import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
 import com.github.stephengold.joltjni.readonly.ConstShape;
-import mchorse.bbs_mod.cubic.IModel;
-import mchorse.bbs_mod.cubic.ModelInstance;
-import mchorse.bbs_mod.forms.FormUtilsClient;
-import mchorse.bbs_mod.forms.entities.IEntity;
 import mchorse.bbs_mod.forms.forms.Form;
-import mchorse.bbs_mod.forms.forms.ModelForm;
-import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
-import mchorse.bbs_physics.BBSPhysics;
+import mchorse.bbs_physics.client.collision.CollisionCollector;
+import mchorse.bbs_physics.client.collision.JoltShapes;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import org.joml.Matrix4f;
@@ -34,43 +23,38 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * One actor's bones as kinematic bodies: physics never moves them, they move physics. This is what
- * makes an animated character part of the simulated world — a falling crate lands on a shoulder,
- * and later a ragdoll's limbs have something to be driven towards.
+ * One actor's collision as kinematic bodies: physics never moves them, they move physics. This is
+ * what makes an animated character part of the simulated world — a falling crate lands on a
+ * shoulder, and later a ragdoll's limbs have something to be driven towards.
  *
  * <p>Kinematic rather than static because a static body has no velocity: things resting on it
  * would be left behind when it moves, instead of being carried and shoved. {@code moveKinematic}
  * gives Jolt a target for the next tick and lets it work out the velocity that gets there, which
  * is what makes the contact push.</p>
  *
- * <p>Each bone's shape comes from {@link BoneCollider} — the bone's own cubes for cubic models, a
- * capsule along the bone for BOBJ ones — so the character collides as the silhouette it is drawn
- * as, not as a cloud of beads.</p>
+ * <p><b>Only what is marked up.</b> Every piece here comes from the form tree's collision markup
+ * (§5.2) — nothing is measured behind the author's back. A model whose bones nobody marked has no
+ * bodies at all, which is the intended default: marking every cube costs contacts on geometry that
+ * was never meant to collide, and it would take ownership of the bones hair and cloth are about to
+ * be driven by. One body per marked slot, so a hand can shove a crate without the knee joining in.
+ * </p>
  *
  * <p><b>Known limit, deliberate for now:</b> the pose is only known at the tick the film is on. A
- * seek that re-simulates twenty ticks stands the bones still at the pose of the tick it is heading
+ * seek that re-simulates twenty ticks stands the bodies still at the pose of the tick it is heading
  * for, because computing the pose of every tick in between would mean replaying the whole property
  * track per step. So a tick arrived at by scrubbing is not bit-for-bit the tick arrived at by
  * playing, for any actor that moves — the props are exact either way, the character's shoving of
  * them is not. Making it exact means sampling the pose per tick, which belongs with the ragdoll
  * work in Э2. What it must never do is <em>steer</em> across a jump: a kinematic body keeps the
- * velocity it was given, so a target one tick away, integrated over twenty, throws the bone
+ * velocity it was given, so a target one tick away, integrated over twenty, throws the body
  * twentyfold across the scene, raking everything on the way. Hence {@code place}.</p>
  */
 public class ActorRig
 {
-    /** The bead a bone falls back to when it has no measurable geometry, in blocks. */
-    private static final float BONE_RADIUS = 0.12F;
-
-    /** Jolt's corner rounding, clamped small so thin bones (a finger, a strap) still fit it. */
-    private static final float CONVEX_RADIUS = 0.02F;
-
-    /** Shared, never written to — the velocity a placed bone is stopped with. */
+    /** Shared, never written to — the velocity a placed body is stopped with. */
     private static final Vec3 ZERO = new Vec3(0F, 0F, 0F);
 
-    private final IEntity entity;
-    private final Form form;
-    private final List<Bone> bones = new ArrayList<>();
+    private final List<Part> parts = new ArrayList<>();
 
     private final Matrix4f worldMatrix = new Matrix4f();
     private final Vector3f translation = new Vector3f();
@@ -78,51 +62,37 @@ public class ActorRig
     private final RVec3 target = new RVec3();
     private final Quat targetRotation = new Quat();
 
-    private ActorRig(IEntity entity, Form form)
-    {
-        this.entity = entity;
-        this.form = form;
-    }
+    private ActorRig()
+    {}
 
     /**
-     * Builds a rig for {@code entity}, or returns null when there is nothing to build one from —
-     * no form, or a form whose model has not loaded yet and so reports no bones.
+     * Builds a rig from the collision an actor's form tree describes, or returns null when it
+     * describes none — which is what an unmarked actor looks like, and is not an error.
+     *
+     * @param matrices the actor's pose, already evaluated for the tick the scene is being built at
      */
-    public static ActorRig build(PhysicsWorld physics, IEntity entity, FilmScene scene)
+    public static ActorRig build(PhysicsWorld physics, Form root, MatrixCache matrices, FilmScene scene)
     {
-        Form form = entity == null ? null : entity.getForm();
-
-        if (form == null)
+        if (root == null)
         {
             return null;
         }
 
-        List<String> names = FormUtilsClient.getRenderer(form).getBones();
-
-        if (names == null || names.isEmpty())
-        {
-            return null;
-        }
-
-        ActorRig rig = new ActorRig(entity, form);
+        ActorRig rig = new ActorRig();
         BodyInterface bodies = physics.getBodies();
 
-        ModelInstance instance = form instanceof ModelForm modelForm ? ModelFormRenderer.getModel(modelForm) : null;
-        IModel model = instance == null ? null : instance.model;
-        Vector3f scale = instance == null ? new Vector3f(1F) : instance.getScale();
-
-        for (String name : names)
+        for (CollisionCollector.Piece piece : CollisionCollector.collectActor(root, matrices))
         {
-            BoneCollider collider = BoneCollider.of(model, name, scale);
+            MatrixCacheEntry entry = matrices.get(piece.path());
 
-            if (collider == null)
+            /* No frame means nothing will ever tell this body where to stand, and a kinematic body
+             * left at the scene's origin is a collider in the middle of the set. */
+            if (entry == null || entry.matrix() == null)
             {
-                /* A bone with nothing drawn from it — a control or pivot bone. It exists to steer
-                 * other bones, not to be hit, so it gets no body at all. */
                 continue;
             }
 
-            ConstShape shape = buildShape(collider);
+            ConstShape shape = JoltShapes.build(piece.shapes());
 
             if (shape == null)
             {
@@ -135,99 +105,29 @@ public class ActorRig
 
             int id = bodies.createAndAddBody(settings, EActivation.Activate);
 
-            rig.bones.add(new Bone(name, id));
+            rig.parts.add(new Part(piece.path(), id));
 
             SceneBody debug = new SceneBody(id, 0.3F, 0.7F, 1F);
 
-            for (BoneCollider.SubShape sub : collider.shapes())
-            {
-                debug.addShape(debugHalf(sub), sub.offset(), sub.rotation());
-            }
-
+            debug.addShapes(piece.shapes());
             scene.addDebugBody(debug);
         }
 
-        return rig.bones.isEmpty() ? null : rig;
-    }
-
-    /** A Jolt shape for a bone's collider: its one shape directly, or a compound of all of them. */
-    private static ConstShape buildShape(BoneCollider collider)
-    {
-        List<BoneCollider.SubShape> subs = collider.shapes();
-
-        if (subs.size() == 1)
-        {
-            BoneCollider.SubShape sub = subs.get(0);
-
-            return new RotatedTranslatedShape(vec(sub.offset()), quat(sub.rotation()), leafShape(sub));
-        }
-
-        StaticCompoundShapeSettings compound = new StaticCompoundShapeSettings();
-
-        for (BoneCollider.SubShape sub : subs)
-        {
-            compound.addShape(vec(sub.offset()), quat(sub.rotation()), leafShape(sub));
-        }
-
-        ShapeResult result = compound.create();
-
-        if (result.hasError())
-        {
-            BBSPhysics.LOGGER.warn("Could not build a bone's compound collider: {}", result.getError());
-
-            return null;
-        }
-
-        return result.get();
-    }
-
-    private static ConstShape leafShape(BoneCollider.SubShape sub)
-    {
-        Vector3f half = sub.half();
-
-        return switch (sub.kind())
-        {
-            case BOX -> new BoxShape(vec(half), Math.min(CONVEX_RADIUS, Math.min(half.x, Math.min(half.y, half.z))));
-            case CAPSULE -> new CapsuleShape(half.y, half.x);
-            case SPHERE -> new SphereShape(half.x);
-        };
-    }
-
-    /** The box the debug overlay draws for a shape — capsules and spheres get their bounding box. */
-    private static Vector3f debugHalf(BoneCollider.SubShape sub)
-    {
-        Vector3f half = sub.half();
-
-        return switch (sub.kind())
-        {
-            case BOX -> half;
-            case CAPSULE -> new Vector3f(half.x, half.y + half.x, half.x);
-            case SPHERE -> new Vector3f(half.x, half.x, half.x);
-        };
-    }
-
-    private static Vec3 vec(Vector3f v)
-    {
-        return new Vec3(v.x, v.y, v.z);
-    }
-
-    private static Quat quat(Quaternionf q)
-    {
-        return new Quat(q.x, q.y, q.z, q.w);
+        return rig.parts.isEmpty() ? null : rig;
     }
 
     public boolean isEmpty()
     {
-        return this.bones.isEmpty();
+        return this.parts.isEmpty();
     }
 
     /**
-     * Points every bone body at where the animation has that bone this tick. The pose arrives as
-     * the shared {@code MatrixCache} the scene evaluated once for this actor; its matrices are
+     * Points every body at where the animation has its slot this tick. The pose arrives as the
+     * shared {@code MatrixCache} the scene evaluated once for this actor; its matrices are
      * form-local, so the actor's world placement is applied on top — the same transform BBS's own
      * bone physics resolves gravity against, so both agree on where the character stands.
      *
-     * @param place whether to set the bones down where they belong and stop them, instead of
+     * @param place whether to set the bodies down where they belong and stop them, instead of
      *              steering them there over the coming tick. True whenever the world is about to
      *              run more (or fewer) than the one step a steer is aimed at: the rig's first
      *              placement, and every scrub — see the class note on what steering across a jump
@@ -235,16 +135,16 @@ public class ActorRig
      */
     public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean place)
     {
-        if (this.bones.isEmpty() || matrices == null)
+        if (this.parts.isEmpty() || matrices == null)
         {
             return;
         }
 
         BodyInterface bodies = physics.getBodies();
 
-        for (Bone bone : this.bones)
+        for (Part part : this.parts)
         {
-            MatrixCacheEntry entry = matrices.get(bone.name);
+            MatrixCacheEntry entry = matrices.get(part.path);
 
             if (entry == null || entry.matrix() == null)
             {
@@ -267,23 +167,24 @@ public class ActorRig
 
             if (place)
             {
-                bodies.setPositionAndRotation(bone.id, this.target, this.targetRotation, EActivation.Activate);
+                bodies.setPositionAndRotation(part.id, this.target, this.targetRotation, EActivation.Activate);
 
                 /* And stop it there. A kinematic body's velocity is state like any other: left
                  * over from the last steer — or restored along with the rest of the world from a
-                 * checkpoint — it would carry the bone away from where it was just put, once per
+                 * checkpoint — it would carry the body away from where it was just put, once per
                  * step, for the whole of the re-simulation. */
-                bodies.setLinearAndAngularVelocity(bone.id, ZERO, ZERO);
+                bodies.setLinearAndAngularVelocity(part.id, ZERO, ZERO);
             }
             else
             {
                 /* A target for one tick, so Jolt derives the velocity that reaches it — that
-                 * velocity is what shoves whatever the bone runs into. */
-                bodies.moveKinematic(bone.id, this.target, this.targetRotation, PhysicsWorld.TICK);
+                 * velocity is what shoves whatever the body runs into. */
+                bodies.moveKinematic(part.id, this.target, this.targetRotation, PhysicsWorld.TICK);
             }
         }
     }
 
-    private record Bone(String name, int id)
+    /** One marked-up slot as a body: the matrix-cache path it follows, and the body following it. */
+    private record Part(String path, int id)
     {}
 }

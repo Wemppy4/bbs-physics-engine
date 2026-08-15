@@ -5,6 +5,10 @@
     "client": [
         "BaseFilmControllerMixin",
         "FormCategoriesMixin",
+        "UIFormMixin",
+        "UIFormRendererMixin",
+        "UIFormUndoHandlerMixin",
+        "UIPickableFormRendererMixin",
         "WorldFilmControllerMixin"
     ],
     "injectors": {

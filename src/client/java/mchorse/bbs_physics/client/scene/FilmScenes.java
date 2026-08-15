@@ -104,6 +104,22 @@ public class FilmScenes
         }
     }
 
+    /**
+     * The editor changed something about a film's cast — a keyframe, a form, a track.
+     *
+     * <p>Every live scene is told to start over, without checking which film was touched. Being
+     * wrong here costs one re-simulation of a scene that did not need it; being clever about it
+     * would mean matching an edited value's path back to a controller, and a scene that missed its
+     * edit is exactly the bug this exists to fix.</p>
+     */
+    public static void onFilmEdited()
+    {
+        for (FilmScene scene : SCENES.values())
+        {
+            scene.invalidate();
+        }
+    }
+
     /** The film's actors have been drawn; the scene may draw its own things into the same pass. */
     public static void onRender(BaseFilmController controller, WorldRenderContext context)
     {

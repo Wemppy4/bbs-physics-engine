@@ -1,6 +1,6 @@
 package mchorse.bbs_physics.client.scene;
 
-import mchorse.bbs_mod.graphics.Draw;
+import mchorse.bbs_physics.client.collision.CollisionWireframe;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.util.math.MatrixStack;
@@ -52,22 +52,17 @@ public final class SceneDebugRenderer
             stack.translate(x + POSITION.x, y + POSITION.y, z + POSITION.z);
             stack.multiply(ROTATION);
 
-            /* Each shape sits at its own place inside the body's frame — a compound bone collider
-             * is several boxes, a plain body is one centred box. */
+            /* Each shape sits at its own place inside the body's frame — a compound collider is
+             * several of them, a plain body is one centred shape. */
             for (SceneBody.Shape shape : body.getShapes())
             {
-                Vector3f half = shape.half();
                 Vector3f offset = shape.offset();
 
                 stack.push();
                 stack.translate(offset.x, offset.y, offset.z);
                 stack.multiply(shape.rotation());
 
-                /* Draw.renderBox takes a corner and a size, while a shape is a centre and half extents. */
-                Draw.renderBox(stack,
-                    -half.x, -half.y, -half.z,
-                    half.x * 2F, half.y * 2F, half.z * 2F,
-                    body.red, body.green, body.blue, 1F);
+                CollisionWireframe.draw(stack, shape.kind(), shape.half(), body.red, body.green, body.blue, 1F);
 
                 stack.pop();
             }

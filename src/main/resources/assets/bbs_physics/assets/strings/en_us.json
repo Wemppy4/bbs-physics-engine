@@ -6,12 +6,58 @@
     "bbs_physics.config.general.enabled-comment": "The master switch of the physics engine. With it off, nothing is simulated and the addon costs nothing.",
     "bbs_physics.config.general.debug": "Debug overlay",
     "bbs_physics.config.general.debug-comment": "Draws the shapes the simulation actually works with, on top of the rendered scene.",
+    "bbs_physics.config.general.collision_preview": "Show markup in the editor",
+    "bbs_physics.config.general.collision_preview-comment": "Draws collision over the model in the form editor, so shapes can be placed by eye.",
 
     "bbs_physics.forms.category": "Physics",
     "bbs_physics.forms.body.title": "Body",
     "bbs_physics.forms.body.authority": "Animation authority",
-    "bbs_physics.forms.body.size": "Collider size (blocks)",
+    "bbs_physics.forms.body.authority_tooltip": "1 — the body follows its keyframes exactly and shoves everything aside. 0 — it is on its own. In between it is pulled towards the animation by that much: it lags, sags and gives way. Animate it from 1 down to 0 to let an object go.",
     "bbs_physics.forms.body.mass": "Mass (kg)",
     "bbs_physics.forms.body.friction": "Friction",
-    "bbs_physics.forms.body.restitution": "Bounciness"
+    "bbs_physics.forms.body.restitution": "Bounciness",
+    "bbs_physics.forms.body.shape_none": "Nothing inside is marked up — this body falls through everything",
+    "bbs_physics.forms.body.shape_from": "Shape gathered from what is inside: %s pieces",
+
+    "bbs_physics.forms.collision.title": "Collision",
+    "bbs_physics.forms.collision.preview": "Show markup",
+
+    "bbs_physics.forms.collision.markup": "Markup",
+    "bbs_physics.forms.collision.mode": "Collides as",
+    "bbs_physics.forms.collision.mode_tooltip": "By default a bone collides with nothing. \"Auto\" measures its own cubes, \"Shapes\" uses the ones you place by hand.",
+    "bbs_physics.forms.collision.mode_none": "Nothing",
+    "bbs_physics.forms.collision.mode_auto": "Auto from cubes",
+    "bbs_physics.forms.collision.mode_shapes": "Shapes by hand",
+
+    "bbs_physics.forms.collision.summary_none": "Takes no part in physics",
+    "bbs_physics.forms.collision.summary_auto": "Measured from cubes: %s",
+    "bbs_physics.forms.collision.summary_shapes": "Shapes by hand: %s",
+
+    "bbs_physics.forms.collision.shapes": "Shapes",
+    "bbs_physics.forms.collision.shape_add": "Add a shape",
+    "bbs_physics.forms.collision.shape_remove": "Remove the shape",
+    "bbs_physics.forms.collision.shape_kind": "Shape",
+    "bbs_physics.forms.collision.offset": "Offset (blocks)",
+    "bbs_physics.forms.collision.rotation": "Rotation (degrees)",
+    "bbs_physics.forms.collision.size": "Size (blocks)",
+
+    "bbs_physics.forms.collision.kind.box": "Box",
+    "bbs_physics.forms.collision.kind.sphere": "Sphere",
+    "bbs_physics.forms.collision.kind.capsule": "Capsule",
+    "bbs_physics.forms.collision.kind.cylinder": "Cylinder",
+
+    "bbs_physics.forms.collision.auto": "Automatic",
+    "bbs_physics.forms.collision.auto_threshold": "Size threshold",
+    "bbs_physics.forms.collision.auto_threshold_tooltip": "Bones smaller than this (in blocks) are skipped. Fingers and straps only cost contacts and change nothing on screen.",
+    "bbs_physics.forms.collision.auto_mark": "Mark up automatically",
+    "bbs_physics.forms.collision.auto_mark_tooltip": "Sets \"auto from cubes\" on every bone above the threshold. Bones you placed shapes on by hand are left alone — this is a draft, not an answer.",
+    "bbs_physics.forms.collision.fit": "Box from bounds",
+    "bbs_physics.forms.collision.fit_tooltip": "Puts one box the size of what the form draws into the form's own slot. A block is measured from its real outline; anything else gets a block-sized box to drag from.",
+    "bbs_physics.forms.collision.clear": "Clear all markup",
+
+    "bbs_physics.forms.collision.context.copy": "Copy the markup",
+    "bbs_physics.forms.collision.context.paste": "Paste the markup",
+    "bbs_physics.forms.collision.context.reset": "Reset the markup",
+    "bbs_physics.forms.collision.context.save": "Save as a preset",
+    "bbs_physics.forms.collision.context.name": "Preset name..."
 }

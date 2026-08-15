@@ -32,7 +32,16 @@ public final class PhysicsLayers
      */
     public static final int BONE = 2;
 
-    public static final int OBJECT_LAYERS = 3;
+    /**
+     * Meets nothing at all. Where a physics body goes when nothing inside it is marked up as
+     * collidable: it still falls, it just has nothing to land on — the same thing a rigid body
+     * without a collider does in Unity, and deliberately so (§5.1). Handing it a box it was never
+     * asked for would be a lie about a shape the author did not describe; the debug overlay draws
+     * such a body in its own colour so it does not read as broken.
+     */
+    public static final int GHOST = 3;
+
+    public static final int OBJECT_LAYERS = 4;
 
     private static final int BP_STATIC = 0;
     private static final int BP_MOVING = 1;
@@ -65,6 +74,7 @@ public final class PhysicsLayers
         table.mapObjectToBroadPhaseLayer(STATIC, BP_STATIC);
         table.mapObjectToBroadPhaseLayer(MOVING, BP_MOVING);
         table.mapObjectToBroadPhaseLayer(BONE, BP_MOVING);
+        table.mapObjectToBroadPhaseLayer(GHOST, BP_MOVING);
 
         return table;
     }

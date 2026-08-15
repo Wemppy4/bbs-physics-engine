@@ -2,7 +2,9 @@
     "required": true,
     "package": "mchorse.bbs_physics.mixin",
     "compatibilityLevel": "JAVA_17",
-    "mixins": [],
+    "mixins": [
+        "FormMixin"
+    ],
     "injectors": {
         "defaultRequire": 1
     }

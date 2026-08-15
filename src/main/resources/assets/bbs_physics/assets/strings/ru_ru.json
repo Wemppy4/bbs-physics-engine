@@ -6,12 +6,58 @@
     "bbs_physics.config.general.enabled-comment": "Главный выключатель движка. Когда выключен, ничего не считается и аддон не стоит ничего.",
     "bbs_physics.config.general.debug": "Отладочный слой",
     "bbs_physics.config.general.debug-comment": "Рисует поверх сцены те формы, с которыми на самом деле работает симуляция.",
+    "bbs_physics.config.general.collision_preview": "Показывать разметку в редакторе",
+    "bbs_physics.config.general.collision_preview-comment": "Рисует коллизию поверх модели в редакторе форм, чтобы её можно было расставлять на глаз.",
 
     "bbs_physics.forms.category": "Физика",
     "bbs_physics.forms.body.title": "Тело",
     "bbs_physics.forms.body.authority": "Сила анимации",
-    "bbs_physics.forms.body.size": "Размер коллайдера (блоки)",
+    "bbs_physics.forms.body.authority_tooltip": "1 — тело идёт строго по кейфреймам и расталкивает всё вокруг. 0 — живёт само. Между ними тело тянется за анимацией на столько же: отстаёт, провисает и уступает при ударе. Анимируй с 1 в 0, чтобы отпустить предмет.",
     "bbs_physics.forms.body.mass": "Масса (кг)",
     "bbs_physics.forms.body.friction": "Трение",
-    "bbs_physics.forms.body.restitution": "Упругость"
+    "bbs_physics.forms.body.restitution": "Упругость",
+    "bbs_physics.forms.body.shape_none": "Внутри ничего не размечено — тело провалится сквозь всё",
+    "bbs_physics.forms.body.shape_from": "Форма собирается из вложенного: частей — %s",
+
+    "bbs_physics.forms.collision.title": "Коллизия",
+    "bbs_physics.forms.collision.preview": "Показывать разметку",
+
+    "bbs_physics.forms.collision.markup": "Разметка",
+    "bbs_physics.forms.collision.mode": "Чем сталкивается",
+    "bbs_physics.forms.collision.mode_tooltip": "По умолчанию кость не сталкивается ни с чем. «Авто» обмеряет её собственные кубы, «Формы» — то, что вы поставили руками.",
+    "bbs_physics.forms.collision.mode_none": "Ничем",
+    "bbs_physics.forms.collision.mode_auto": "Авто из кубов",
+    "bbs_physics.forms.collision.mode_shapes": "Формы вручную",
+
+    "bbs_physics.forms.collision.summary_none": "Не участвует в физике",
+    "bbs_physics.forms.collision.summary_auto": "Обмеряется по кубам: %s",
+    "bbs_physics.forms.collision.summary_shapes": "Форм вручную: %s",
+
+    "bbs_physics.forms.collision.shapes": "Формы",
+    "bbs_physics.forms.collision.shape_add": "Добавить форму",
+    "bbs_physics.forms.collision.shape_remove": "Убрать форму",
+    "bbs_physics.forms.collision.shape_kind": "Что это",
+    "bbs_physics.forms.collision.offset": "Сдвиг (блоки)",
+    "bbs_physics.forms.collision.rotation": "Поворот (градусы)",
+    "bbs_physics.forms.collision.size": "Размер (блоки)",
+
+    "bbs_physics.forms.collision.kind.box": "Бокс",
+    "bbs_physics.forms.collision.kind.sphere": "Сфера",
+    "bbs_physics.forms.collision.kind.capsule": "Капсула",
+    "bbs_physics.forms.collision.kind.cylinder": "Цилиндр",
+
+    "bbs_physics.forms.collision.auto": "Автоматически",
+    "bbs_physics.forms.collision.auto_threshold": "Порог размера",
+    "bbs_physics.forms.collision.auto_threshold_tooltip": "Кости мельче этого размера (в блоках) пропускаются. Пальцы и ремешки только жрут производительность и ничего не меняют в кадре.",
+    "bbs_physics.forms.collision.auto_mark": "Разметить автоматически",
+    "bbs_physics.forms.collision.auto_mark_tooltip": "Ставит «авто из кубов» всем костям крупнее порога. Кости, где вы расставили формы руками, не трогаются — это черновик, а не ответ.",
+    "bbs_physics.forms.collision.fit": "Бокс по габаритам",
+    "bbs_physics.forms.collision.fit_tooltip": "Кладёт в слот самой формы один бокс размером с то, что она рисует. Для блока — по его настоящему контуру, для остального — с блок величиной, дальше подгоняете руками.",
+    "bbs_physics.forms.collision.clear": "Снять всю разметку",
+
+    "bbs_physics.forms.collision.context.copy": "Скопировать разметку",
+    "bbs_physics.forms.collision.context.paste": "Вставить разметку",
+    "bbs_physics.forms.collision.context.reset": "Сбросить разметку",
+    "bbs_physics.forms.collision.context.save": "Сохранить как пресет",
+    "bbs_physics.forms.collision.context.name": "Название пресета..."
 }

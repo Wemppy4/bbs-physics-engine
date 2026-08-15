@@ -16,11 +16,20 @@ public class BBSPhysicsSettings
     public static ValueBoolean enabled;
     public static ValueBoolean debug;
 
+    /**
+     * Whether the collision markup is drawn over the model it belongs to. Its own switch rather
+     * than a share of the film's debug overlay: this one is for authoring, it belongs on while a
+     * shape is being placed and off the rest of the time, and it is toggled straight from the
+     * collision tab.
+     */
+    public static ValueBoolean collisionPreview;
+
     public static void register(SettingsBuilder builder)
     {
         builder.category("general", Icons.PHYSICS);
 
         enabled = builder.getBoolean("enabled", true);
         debug = builder.getBoolean("debug", false);
+        collisionPreview = builder.getBoolean("collision_preview", true);
     }
 }

@@ -3,6 +3,8 @@ package mchorse.bbs_physics.client.scene;
 import com.github.stephengold.joltjni.BodyInterface;
 import com.github.stephengold.joltjni.Quat;
 import com.github.stephengold.joltjni.RVec3;
+import mchorse.bbs_physics.client.collision.CollisionShapes;
+import mchorse.bbs_physics.collision.CollisionKind;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
@@ -18,10 +20,10 @@ import java.util.List;
  * own entities with {@code tickDelta}.</p>
  *
  * <p>The debug overlay draws each of the body's {@link Shape}s in the body's frame — a compound
- * bone collider is several boxes, a plain body is one. What is drawn is exactly what the
- * simulation collides with (capsules and spheres are drawn as their bounding boxes), because an
- * overlay that prettied things up would be useless for the one thing it exists for: seeing where
- * the engine thinks the shapes are.</p>
+ * collider is several of them, a plain body is one. What is drawn is exactly what the simulation
+ * collides with, down to the shape being round when it is round, because an overlay that prettied
+ * things up would be useless for the one thing it exists for: seeing where the engine thinks the
+ * shapes are.</p>
  */
 public class SceneBody
 {
@@ -42,8 +44,8 @@ public class SceneBody
     private final RVec3 scratchPosition = new RVec3();
     private final Quat scratchRotation = new Quat();
 
-    /** One shape inside the body: half extents, and where and how it sits in the body's frame. */
-    public record Shape(Vector3f half, Vector3f offset, Quaternionf rotation)
+    /** One shape inside the body: what it is, how big, and where it sits in the body's frame. */
+    public record Shape(CollisionKind kind, Vector3f half, Vector3f offset, Quaternionf rotation)
     {}
 
     public SceneBody(int id, float red, float green, float blue)
@@ -54,17 +56,26 @@ public class SceneBody
         this.blue = blue;
     }
 
-    /** A body that is a single centred box — the floor fallback and the physics body form. */
+    /** A body that is a single centred box — the floor fallback. */
     public SceneBody(int id, float halfX, float halfY, float halfZ, float red, float green, float blue)
     {
         this(id, red, green, blue);
 
-        this.addShape(new Vector3f(halfX, halfY, halfZ), new Vector3f(), new Quaternionf());
+        this.addShape(new Shape(CollisionKind.BOX, new Vector3f(halfX, halfY, halfZ), new Vector3f(), new Quaternionf()));
     }
 
-    public void addShape(Vector3f half, Vector3f offset, Quaternionf rotation)
+    public void addShape(Shape shape)
     {
-        this.shapes.add(new Shape(half, offset, rotation));
+        this.shapes.add(shape);
+    }
+
+    /** Everything one collider is made of, in the order the engine has it. */
+    public void addShapes(List<CollisionShapes.SubShape> subs)
+    {
+        for (CollisionShapes.SubShape sub : subs)
+        {
+            this.shapes.add(new Shape(sub.kind(), sub.half(), sub.offset(), sub.rotation()));
+        }
     }
 
     public List<Shape> getShapes()
@@ -72,13 +83,11 @@ public class SceneBody
         return this.shapes;
     }
 
-    /** Resizes a single-box body in place — the author dragging the collider size slider. */
-    public void setHalfExtents(float halfX, float halfY, float halfZ)
+    /** Swaps in a new set of shapes — the collider of a body that has just been rebuilt. */
+    public void setShapes(List<CollisionShapes.SubShape> subs)
     {
-        if (!this.shapes.isEmpty())
-        {
-            this.shapes.get(0).half().set(halfX, halfY, halfZ);
-        }
+        this.shapes.clear();
+        this.addShapes(subs);
     }
 
     /**

@@ -33,8 +33,8 @@ import java.util.List;
 
 /**
  * The physics of one film: a single Jolt world, a timeline that keeps it honest under scrubbing,
- * and the bodies in it — the world's blocks, every actor's bones, and every physics body form
- * anywhere in the cast's form trees.
+ * and the bodies in it — the world's blocks, everything the cast's forms mark up as collidable,
+ * and every physics body form anywhere in their trees.
  *
  * <p><b>Everything is simulated around an origin</b> rather than in raw world coordinates. Jolt is
  * built here in single precision, where a float's resolution at a hundred thousand blocks out is
@@ -70,6 +70,13 @@ public class FilmScene implements AutoCloseable
 
     private final List<SceneBody> bodies = new ArrayList<>();
     private final List<EntityRigs> rigs = new ArrayList<>();
+
+    /**
+     * Whether the film has been edited since this simulation ran, so everything it worked out is a
+     * consequence of numbers that are no longer there. Raised from outside (see
+     * {@link FilmScenes#onFilmEdited()}) and answered on the next tick by starting over.
+     */
+    private boolean stale;
 
     /**
      * Everything simulated for one actor: its bone bodies and the physics body forms found in its
@@ -147,10 +154,10 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
-     * Builds the simulated side of every actor: bone bodies for its model, a rigid body for every
-     * physics body form anywhere in its form tree. Actors whose model has not loaded yet report no
-     * bones and are skipped — they get their rig when the film's cast is next rebuilt, which is
-     * also what happens whenever the editor changes a form.
+     * Builds the simulated side of every actor: a kinematic body for every slot its forms mark up
+     * as collidable, and a rigid body for every physics body form anywhere in its tree. An actor
+     * with nothing marked up and no physics body is skipped entirely — that is the default state
+     * of a form, not a failure.
      */
     private void buildRigs(BaseFilmController controller, List<Integer> order)
     {
@@ -166,24 +173,40 @@ public class FilmScene implements AutoCloseable
                 continue;
             }
 
-            ActorRig bones = ActorRig.build(this.world, entity, this);
+            Replay replay = replays == null ? null : CollectionUtils.getSafe(replays, index);
+
+            /* The pose the colliders are measured against. Evaluated before anything is built,
+             * because a shape's size has to come out of the frame it will live in — a model at 2×
+             * collides at 2× — and because a body welded out of several bones needs to know where
+             * those bones are relative to it. */
+            MatrixCache matrices = this.evaluate(entity, root, replay, controller.getTick());
+
+            if (matrices == null)
+            {
+                continue;
+            }
+
+            ActorRig bones = ActorRig.build(this.world, root, matrices, this);
             List<PhysicsBodyRig> bodyRigs = new ArrayList<>(0);
 
-            this.discoverBodies(entity, root, "", bodyRigs);
+            this.discoverBodies(root, "", matrices, bodyRigs);
 
             if (bones == null && bodyRigs.isEmpty())
             {
                 continue;
             }
 
-            Replay replay = replays == null ? null : CollectionUtils.getSafe(replays, index);
             EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs);
 
             this.rigs.add(rigs);
 
             /* Placed outright rather than steered: bodies are created at the origin, and letting
              * them travel to their real spots would sweep them through the scene on the first
-             * tick. The read right after hands the placement to the renderer too.
+             * tick. Simulated bodies too, which is what {@code reset} adds — a crate that is
+             * already released at the film's opening frame has only its keyframes to say where it
+             * starts, and without this it would begin its fall from the scene's origin instead,
+             * with the author's coordinates never read at all. The read right after hands the
+             * placement to the renderer too.
              *
              * At the film's current tick, not at zero, even though the timeline is about to call
              * this world tick zero: the actors already stand where the cursor puts them, so zero
@@ -191,7 +214,7 @@ public class FilmScene implements AutoCloseable
              * keyframed values on the film's opening frame for however long it takes the next
              * render to write them back. The world catches up to the cursor on the first tick
              * either way; what matters here is not flashing the wrong pose while it does. */
-            this.updateRigs(rigs, controller.getTick(), true);
+            this.updateRigs(rigs, controller.getTick(), true, true);
 
             for (PhysicsBodyRig rig : bodyRigs)
             {
@@ -205,11 +228,11 @@ public class FilmScene implements AutoCloseable
      * helmet on a head — and gives each one a body. The path mirrors the matrix walk's convention
      * exactly, because it is the key the body's evaluated placement is read back by.
      */
-    private void discoverBodies(IEntity entity, Form form, String path, List<PhysicsBodyRig> out)
+    private void discoverBodies(Form form, String path, MatrixCache matrices, List<PhysicsBodyRig> out)
     {
         if (form instanceof PhysicsBodyForm body)
         {
-            out.add(PhysicsBodyRig.build(this.world, entity, body, path, this));
+            out.add(PhysicsBodyRig.build(this.world, body, path, matrices, this));
         }
 
         int i = 0;
@@ -220,7 +243,7 @@ public class FilmScene implements AutoCloseable
 
             if (child != null)
             {
-                this.discoverBodies(entity, child, StringUtils.combinePaths(path, String.valueOf(i)), out);
+                this.discoverBodies(child, StringUtils.combinePaths(path, String.valueOf(i)), matrices, out);
             }
 
             /* Outside the null check, mirroring the walk: a partless slot still takes an index. */
@@ -280,6 +303,13 @@ public class FilmScene implements AutoCloseable
             tick = 0;
         }
 
+        if (this.stale)
+        {
+            this.stale = false;
+
+            this.restart(tick);
+        }
+
         int before = this.timeline.getTick();
 
         if (tick == before)
@@ -304,7 +334,7 @@ public class FilmScene implements AutoCloseable
 
         for (EntityRigs rigs : this.rigs)
         {
-            this.updateRigs(rigs, tick, place);
+            this.updateRigs(rigs, tick, place, false);
         }
 
         this.timeline.advance(tick);
@@ -321,11 +351,50 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
+     * The film was edited, so this simulation describes a film that no longer exists.
+     *
+     * <p>Nothing is thrown away here: a scene is native memory and a cast, and rebuilding it on
+     * every touch of a slider would cost far more than it saves. The tick that follows starts the
+     * simulation over instead, which is all an edit actually invalidates — the history.</p>
+     */
+    public void invalidate()
+    {
+        this.stale = true;
+    }
+
+    /**
+     * Runs the simulation from the beginning again, because what it had worked out came from
+     * keyframes the author has since changed.
+     *
+     * <p>Physics is a consequence of everything that happened before, and nothing in a world of
+     * checkpoints can be edited in the middle: moving a crate's starting corner does not nudge
+     * where it ended up, it changes the whole fall. So the answer to an edit is the same one the
+     * author reaches for by leaving the film and coming back — every body stood at the pose its
+     * keyframes now describe, every checkpoint dropped, the clock back to zero. The tick that asked
+     * for this then re-simulates up to the cursor, in the seek budget's own time.</p>
+     */
+    private void restart(int tick)
+    {
+        for (EntityRigs rigs : this.rigs)
+        {
+            this.updateRigs(rigs, tick, true, true);
+
+            for (PhysicsBodyRig rig : rigs.bodyRigs)
+            {
+                rig.read(this.world, this, true);
+            }
+        }
+
+        this.timeline.start();
+        this.sampleBodies(true);
+    }
+
+    /**
      * Evaluates one actor's pose at {@code tick} and drives everything hanging off it. One walk
      * per actor per tick: the bones and every nested body read the same {@code MatrixCache}, and
      * the walk fills each physics body's parent frame through its renderer on the way.
      */
-    private void updateRigs(EntityRigs rigs, int tick, boolean place)
+    private void updateRigs(EntityRigs rigs, int tick, boolean place, boolean reset)
     {
         Form root = rigs.entity.getForm();
 
@@ -336,29 +405,17 @@ public class FilmScene implements AutoCloseable
 
         try
         {
-            if (rigs.replay != null)
-            {
-                /* Pin the form's keyframed values to this whole tick. BBS writes them when it
-                 * renders, at tick plus however far into the tick the frame happens to fall, so
-                 * left alone physics would read the authority handle — and the form's transform,
-                 * and the pose — at a value that depends on the frame rate. The next frame writes
-                 * them again for drawing, so nothing is taken away from the render path. */
-                rigs.replay.properties.applyProperties(root, rigs.replay.getTick(tick));
-            }
-
-            ensureAnimators(root);
-
-            MatrixCache matrices = FormUtilsClient.getRenderer(root).collectMatrices(rigs.entity, 1F);
+            MatrixCache matrices = evaluatePose(rigs.entity, root, rigs.replay, tick);
             Matrix4f actorWorld = this.actorWorld(rigs.entity);
 
             if (rigs.bones != null)
             {
-                rigs.bones.update(this.world, this, matrices, actorWorld, place);
+                rigs.bones.update(this.world, this, matrices, actorWorld, place || reset);
             }
 
             for (PhysicsBodyRig rig : rigs.bodyRigs)
             {
-                rig.update(this.world, this, matrices, actorWorld, place);
+                rig.update(this.world, this, matrices, actorWorld, place, reset);
             }
 
             rigs.broken = false;
@@ -371,6 +428,49 @@ public class FilmScene implements AutoCloseable
 
                 BBSPhysics.LOGGER.warn("An actor's pose could not be evaluated for physics; its bodies hold still until it recovers.", e);
             }
+        }
+    }
+
+    /**
+     * One actor's pose at a whole tick: the same {@code collectMatrices} walk the anchors and
+     * gizmos use, with the form's keyframed values pinned to the tick first.
+     *
+     * <p>The pinning is not optional. BBS writes those values when it <em>draws</em>, at the tick
+     * plus however far into the tick the frame happens to fall, so a simulation that simply read
+     * them would be sampling the animation at a moment decided by the frame rate — the authority
+     * handle, the form's transform, the pose, all of it — and the same film would come out
+     * differently on a faster machine. The next frame writes them again for drawing, so nothing is
+     * taken away from the render path.</p>
+     */
+    private static MatrixCache evaluatePose(IEntity entity, Form root, Replay replay, int tick)
+    {
+        if (replay != null)
+        {
+            replay.properties.applyProperties(root, replay.getTick(tick));
+        }
+
+        ensureAnimators(root);
+
+        return FormUtilsClient.getRenderer(root).collectMatrices(entity, 1F);
+    }
+
+    /**
+     * The same thing at scene-build time, where there is no rig yet to remember that this actor is
+     * broken — a model that has not loaded reports the failure once and simply gets no bodies. It
+     * gets them when the cast is next rebuilt, which is also what happens the moment the editor
+     * touches a form.
+     */
+    private MatrixCache evaluate(IEntity entity, Form root, Replay replay, int tick)
+    {
+        try
+        {
+            return evaluatePose(entity, root, replay, tick);
+        }
+        catch (Throwable e)
+        {
+            BBSPhysics.LOGGER.warn("An actor's pose could not be evaluated while building the scene; it gets no physics until the cast is rebuilt.", e);
+
+            return null;
         }
     }
 
