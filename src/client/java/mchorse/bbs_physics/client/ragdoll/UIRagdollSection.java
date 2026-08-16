@@ -7,12 +7,10 @@ import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.l10n.keys.IKey;
 import mchorse.bbs_mod.ui.UIKeys;
-import mchorse.bbs_physics.client.forms.UIPhysicsSection;
 import mchorse.bbs_mod.ui.framework.UIContext;
-import mchorse.bbs_mod.ui.framework.elements.UISection;
+import mchorse.bbs_mod.ui.framework.elements.UIElement;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UICirculate;
-import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
 import mchorse.bbs_mod.ui.framework.elements.utils.UILabel;
@@ -33,61 +31,74 @@ import mchorse.bbs_physics.ragdoll.RagdollJoint;
 import mchorse.bbs_physics.ragdoll.RagdollJointKind;
 
 import java.util.List;
-import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
 /**
- * The ragdoll tab: whether this model ragdolls, and how each bone is jointed.
+ * The ragdoll modifier's body: which bones fall, and how the selected one bends.
  *
- * <p>Deliberately <em>not</em> a second markup of the model. Which bones become bodies is the
- * collision tab's decision — a bone marked there is a ragdoll part, an unmarked one does not
- * exist to physics — and the list here shows that with the same dot the collision tab draws. This
- * tab only answers "and how does it bend": a soft cone unless said otherwise, a hinge for knees
- * and elbows, a weld for bones that should move as one piece.</p>
+ * <p>The tick in the list is the whole reason the collision tab went back to being its own tab. A
+ * marked-up bone is a shape; whether the ragdoll claims it is a separate answer, and an author who
+ * wants a body that keeps walking while its head comes off needs to give it. An unticked bone is not
+ * excluded from physics — it stays a kinematic body, riding the animation and shoving what it
+ * touches — it simply does not fall.</p>
  *
- * <p>Modelled on the collision tab down to the preset menu, because they are halves of the same
- * job. The presets live beside the model, keyed to its rig — set the knees up once, apply it to
- * every character that shares the skeleton.</p>
+ * <p>A bone with no markup has no tick to give: it has no shape, so there is no body to claim. That
+ * is the whole of the old "this bone is not marked up in Collision" warning, said by the absence of
+ * a control instead of by a line of grey text.</p>
+ *
+ * <p>Only the rows the selected joint actually uses are built. A cone has a spread and a twist; a
+ * hinge has an axis and two limits; a weld has neither. Showing all of them and greying out two
+ * thirds was most of what made this panel unreadable.</p>
  */
-public class UIRagdollSection extends UIPhysicsSection
+public class UIRagdollSection extends UIElement
 {
-    public UIToggle enabled;
+    /** How far from the list's right edge the tick sits — clear of the scrollbar. */
+    private static final int TICK_RIGHT = 20;
+    private static final int TICK_SIZE = 7;
 
     public UIBoneTreeList bones;
     public UISearchList<String> bonesSearch;
 
+    public UILabel boneTitle;
+
     public UICirculate kind;
-    public UILabel summary;
+    private final UIElement kindRow;
 
     public UITrackpad swing;
+    private final UIElement swingRow;
     public UITrackpad twistMin;
     public UITrackpad twistMax;
+    private final UIElement twistRow;
 
     public UICirculate hingeAxis;
+    private final UIElement hingeAxisRow;
     public UITrackpad hingeMin;
     public UITrackpad hingeMax;
+    private final UIElement hingeRow;
 
     public UIButton attachTo;
+    private final UIElement attachRow;
     public UIButton resetBone;
 
+    /**
+     * Told when the rows change, so the column outside can lay itself out again. This block grows
+     * and shrinks with the selected joint — a cone and a hinge do not have the same rows — and the
+     * scroll view above it has no way of noticing on its own.
+     */
+    private final Runnable relayout;
+
+    private Form form;
     private FormRagdoll ragdoll = FormRagdoll.EMPTY;
     private String bone = "";
     private ModelInstance model;
     private String presetGroup = "";
     private boolean syncing;
 
-    public UIRagdollSection()
+    public UIRagdollSection(Runnable relayout)
     {
+        this.relayout = relayout;
 
-        this.enabled = new UIToggle(PhysicsKeys.RAGDOLL_ENABLED, (b) ->
-        {
-            if (!this.syncing)
-            {
-                this.setRagdoll(this.ragdoll.withEnabled(b.getValue()));
-                this.updateLabels();
-            }
-        });
-        this.enabled.tooltip(PhysicsKeys.RAGDOLL_ENABLED_TOOLTIP);
+        this.column(UIConstants.MARGIN).vertical().stretch();
 
         this.bones = new UIBoneTreeList((l) ->
         {
@@ -106,7 +117,23 @@ public class UIRagdollSection extends UIPhysicsSection
             {
                 super.renderListElement(context, element, i, x, y, hover, selected);
 
-                UIRagdollSection.this.renderBoneMark(context, element, y);
+                UIRagdollSection.this.renderTick(context, element, y);
+            }
+
+            @Override
+            public boolean subMouseClicked(UIContext context)
+            {
+                if (context.mouseButton == 0 && this.area.isInside(context) && context.mouseX >= this.area.ex() - TICK_RIGHT - TICK_SIZE && context.mouseX <= this.area.ex() - TICK_RIGHT + TICK_SIZE)
+                {
+                    int index = this.getIndexAtCursor(context);
+
+                    if (index >= 0 && index < this.getList().size() && UIRagdollSection.this.toggleBone(this.getList().get(index)))
+                    {
+                        return true;
+                    }
+                }
+
+                return super.subMouseClicked(context);
             }
         };
         this.bones.background();
@@ -120,6 +147,9 @@ public class UIRagdollSection extends UIPhysicsSection
             PhysicsKeys.RAGDOLL_CONTEXT_SAVE,
             PhysicsKeys.RAGDOLL_CONTEXT_NAME
         ));
+
+        this.boneTitle = UI.label(IKey.EMPTY, UIConstants.LIST_ITEM_HEIGHT, Colors.LIGHTER_GRAY);
+        this.boneTitle.labelAnchor(0F, 0.5F);
 
         this.kind = new UICirculate((b) ->
         {
@@ -136,14 +166,15 @@ public class UIRagdollSection extends UIPhysicsSection
         }
 
         this.kind.tooltip(PhysicsKeys.RAGDOLL_KIND_TOOLTIP);
-
-        this.summary = UI.label(IKey.EMPTY, UIConstants.LIST_ITEM_HEIGHT, Colors.LIGHTER_GRAY);
-        this.summary.labelAnchor(0F, 0.5F);
+        this.kindRow = UI.labelRow(PhysicsKeys.RAGDOLL_KIND, this.kind);
 
         this.swing = this.degrees(0D, 180D, (joint, v) -> joint.withSwing(v));
         this.swing.tooltip(PhysicsKeys.RAGDOLL_SWING_TOOLTIP);
+        this.swingRow = UI.labelRow(PhysicsKeys.RAGDOLL_SWING, this.swing);
+
         this.twistMin = this.degrees(-180D, 180D, (joint, v) -> joint.withTwist(v, joint.twistMax()));
         this.twistMax = this.degrees(-180D, 180D, (joint, v) -> joint.withTwist(joint.twistMin(), v));
+        this.twistRow = UI.column(UIConstants.MARGIN, 0, UI.label(PhysicsKeys.RAGDOLL_TWIST), UI.row(this.twistMin, this.twistMax));
 
         this.hingeAxis = new UICirculate((b) ->
         {
@@ -156,41 +187,21 @@ public class UIRagdollSection extends UIPhysicsSection
         this.hingeAxis.addLabel(IKey.constant("Y"));
         this.hingeAxis.addLabel(IKey.constant("Z"));
         this.hingeAxis.tooltip(PhysicsKeys.RAGDOLL_HINGE_AXIS_TOOLTIP);
+        this.hingeAxisRow = UI.labelRow(PhysicsKeys.RAGDOLL_HINGE_AXIS, this.hingeAxis);
 
         this.hingeMin = this.degrees(-180D, 180D, (joint, v) -> joint.withHinge(v, joint.hingeMax()));
         this.hingeMax = this.degrees(-180D, 180D, (joint, v) -> joint.withHinge(joint.hingeMin(), v));
+        this.hingeRow = UI.column(UIConstants.MARGIN, 0, UI.label(PhysicsKeys.RAGDOLL_HINGE), UI.row(this.hingeMin, this.hingeMax));
 
         this.attachTo = new UIButton(PhysicsKeys.RAGDOLL_ATTACH_AUTO, (b) -> this.openAttachMenu());
         this.attachTo.tooltip(PhysicsKeys.RAGDOLL_ATTACH_TOOLTIP);
+        this.attachRow = UI.labelRow(PhysicsKeys.RAGDOLL_ATTACH, this.attachTo);
 
         this.resetBone = new UIButton(PhysicsKeys.RAGDOLL_RESET_BONE, (b) ->
         {
             this.editJoint((joint) -> RagdollJoint.DEFAULT);
             this.updateLabels();
         });
-
-        UISection joints = this.section(PhysicsKeys.RAGDOLL_JOINT, "ragdoll.joint", true);
-
-        joints.fields.add(
-            this.summary,
-            UI.labelRow(PhysicsKeys.RAGDOLL_KIND, this.kind),
-            UI.label(PhysicsKeys.RAGDOLL_SWING),
-            this.swing,
-            UI.label(PhysicsKeys.RAGDOLL_TWIST),
-            UI.row(this.twistMin, this.twistMax),
-            UI.labelRow(PhysicsKeys.RAGDOLL_HINGE_AXIS, this.hingeAxis),
-            UI.label(PhysicsKeys.RAGDOLL_HINGE),
-            UI.row(this.hingeMin, this.hingeMax),
-            UI.label(PhysicsKeys.RAGDOLL_ATTACH),
-            this.attachTo,
-            this.resetBone
-        );
-
-        this.add(
-            this.enabled,
-            this.bonesSearch,
-            joints
-        );
     }
 
     private UITrackpad degrees(double min, double max, JointEdit edit)
@@ -225,6 +236,31 @@ public class UIRagdollSection extends UIPhysicsSection
         this.setRagdoll(this.ragdoll.with(this.bone, edit.apply(this.joint())));
     }
 
+    /**
+     * Takes a bone into the ragdoll or leaves it out. Only a marked-up bone can be claimed — an
+     * unmarked one has no shape, so there is no body either way, and a tick on it would be a
+     * promise the markup cannot keep.
+     *
+     * @return whether the click was on a bone that has a tick to give
+     */
+    private boolean toggleBone(String bone)
+    {
+        if (this.form == null || this.model == null || !this.isMarked(bone))
+        {
+            return false;
+        }
+
+        this.setRagdoll(this.ragdoll.withPart(bone, !this.ragdoll.isPart(bone)));
+        this.updateLabels();
+
+        return true;
+    }
+
+    private boolean isMarked(String bone)
+    {
+        return this.form != null && FormCollisions.get(this.form).get(bone).mode() != CollisionMode.NONE;
+    }
+
     private void setRagdoll(FormRagdoll ragdoll)
     {
         this.ragdoll = ragdoll;
@@ -236,9 +272,9 @@ public class UIRagdollSection extends UIPhysicsSection
     }
 
     /**
-     * The attachment picker: automatic, or any marked-up bone. Only marked bones are offered —
-     * an unmarked one has no body, and a joint to a body that does not exist is not a thing that
-     * can be wanted.
+     * The attachment picker: automatic, or any bone that is itself a ragdoll part. A joint to a
+     * body that does not exist is not a thing that can be wanted, so bones without markup — and
+     * bones the author left out of the ragdoll — are not offered.
      */
     private void openAttachMenu()
     {
@@ -259,7 +295,7 @@ public class UIRagdollSection extends UIPhysicsSection
 
             for (String bone : this.bones.getList())
             {
-                if (bone.equals(this.bone) || FormCollisions.get(this.form).get(bone).mode() == CollisionMode.NONE)
+                if (bone.equals(this.bone) || !this.isMarked(bone) || !this.ragdoll.isPart(bone))
                 {
                     continue;
                 }
@@ -288,11 +324,9 @@ public class UIRagdollSection extends UIPhysicsSection
 
     /* Syncing the UI */
 
-    @Override
     public void setForm(Form form)
     {
-        super.setForm(form);
-
+        this.form = form;
         this.ragdoll = FormRagdolls.get(form);
         this.model = form instanceof ModelForm modelForm ? ModelFormRenderer.getModel(modelForm) : null;
 
@@ -302,8 +336,6 @@ public class UIRagdollSection extends UIPhysicsSection
 
             this.bones.fillBones(this.model.model, this.model.getDisabledBones());
             this.bones.filter(this.bonesSearch.search.getText());
-            this.bones.setEnabled(true);
-            this.bonesSearch.setEnabled(true);
 
             if (!this.pickBoneInList(PickedBone.get()) && !this.bones.getList().isEmpty())
             {
@@ -313,23 +345,14 @@ public class UIRagdollSection extends UIPhysicsSection
         }
         else
         {
-            /* A ragdoll is a property of having a skeleton; anything else sees the tab disabled
-             * rather than absent, so it reads the same everywhere. */
             this.model = null;
             this.presetGroup = "";
             this.bone = "";
-
-            this.bones.fillFlat(List.of(form.getDisplayName()));
-            this.bones.setIndex(0);
-            this.bones.setEnabled(false);
-            this.bonesSearch.setEnabled(false);
         }
 
         this.updateLabels();
-        this.resize();
     }
 
-    @Override
     public boolean pickBoneInList(String bone)
     {
         if (this.model == null || bone == null || bone.isEmpty() || !this.bones.getList().contains(bone))
@@ -353,14 +376,12 @@ public class UIRagdollSection extends UIPhysicsSection
             return;
         }
 
-        boolean isModel = this.model != null;
         RagdollJoint joint = this.joint();
 
         this.syncing = true;
 
         try
         {
-            this.enabled.setValue(this.ragdoll.enabled());
             this.kind.setValue(joint.kind().ordinal());
             this.swing.setValue(joint.swing());
             this.twistMin.setValue(joint.twistMin());
@@ -374,36 +395,56 @@ public class UIRagdollSection extends UIPhysicsSection
             this.syncing = false;
         }
 
-        boolean marked = isModel && this.form != null && FormCollisions.get(this.form).get(this.bone).mode() != CollisionMode.NONE;
-
-        this.summary.label = !isModel
-            ? PhysicsKeys.RAGDOLL_ONLY_MODELS
-            : (marked ? PhysicsKeys.RAGDOLL_SUMMARY_PART : PhysicsKeys.RAGDOLL_SUMMARY_UNMARKED);
-        this.summary.color(marked ? Colors.WHITE : Colors.LIGHTER_GRAY);
-
-        boolean editable = isModel && this.ragdoll.enabled() && !this.bone.isEmpty();
-        boolean cone = joint.kind() == RagdollJointKind.CONE;
-        boolean hinge = joint.kind() == RagdollJointKind.HINGE;
-
-        this.enabled.setEnabled(isModel);
-        this.kind.setEnabled(editable);
-        this.swing.setEnabled(editable && cone);
-        this.twistMin.setEnabled(editable && cone);
-        this.twistMax.setEnabled(editable && cone);
-        this.hingeAxis.setEnabled(editable && hinge);
-        this.hingeMin.setEnabled(editable && hinge);
-        this.hingeMax.setEnabled(editable && hinge);
         this.attachTo.label = joint.attachTo().isEmpty() ? PhysicsKeys.RAGDOLL_ATTACH_AUTO : IKey.constant(joint.attachTo());
-        this.attachTo.setEnabled(editable);
-        this.resetBone.setEnabled(editable);
+        this.boneTitle.label = this.bone.isEmpty() ? IKey.EMPTY : IKey.constant(this.bone);
+
+        this.rebuild(joint);
+    }
+
+    /** Only the rows this joint has. See the class note: the greyed-out two thirds are gone. */
+    private void rebuild(RagdollJoint joint)
+    {
+        boolean editable = this.model != null && !this.bone.isEmpty() && this.isMarked(this.bone) && this.ragdoll.isPart(this.bone);
+
+        this.removeAll();
+        this.add(this.bonesSearch);
+
+        if (!editable)
+        {
+            this.relayout.run();
+
+            return;
+        }
+
+        this.add(this.boneTitle, this.kindRow);
+
+        if (joint.kind() == RagdollJointKind.CONE)
+        {
+            this.add(this.swingRow, this.twistRow);
+        }
+        else if (joint.kind() == RagdollJointKind.HINGE)
+        {
+            this.add(this.hingeAxisRow, this.hingeRow);
+        }
+
+        if (joint.kind() != RagdollJointKind.FREE)
+        {
+            this.add(this.attachRow);
+        }
+
+        this.add(this.resetBone);
+        this.relayout.run();
     }
 
     /**
-     * The same dot the collision tab draws, because it answers the same question here: which rows
-     * of this list are real to physics. A bone with no collision markup gets no body, however its
-     * joint is configured.
+     * The tick, and the dot that says whether there is anything to tick.
+     *
+     * <p>Cyan for a bone measured from its own cubes, orange for one the author shaped by hand —
+     * the same colours the collision tab draws, because it is the same fact. An unmarked bone gets
+     * neither, which is what makes "this bone cannot fall, it has no shape" visible at a glance
+     * across the whole rig.</p>
      */
-    private void renderBoneMark(UIContext context, String element, int y)
+    private void renderTick(UIContext context, String element, int y)
     {
         if (this.model == null || this.form == null)
         {
@@ -417,12 +458,20 @@ public class UIRagdollSection extends UIPhysicsSection
             return;
         }
 
-        int x = this.bones.area.ex() - 9;
-        int mid = y + UIConstants.LIST_ITEM_HEIGHT / 2 - 2;
+        int mid = y + UIConstants.LIST_ITEM_HEIGHT / 2;
+        int dot = this.bones.area.ex() - 8;
 
-        boolean custom = this.ragdoll.joints().containsKey(element);
+        context.batcher.box(dot, mid - 2, dot + 4, mid + 2, Colors.A100 | (mode == CollisionMode.AUTO ? Colors.CYAN : Colors.ORANGE));
 
-        context.batcher.box(x, mid, x + 4, mid + 4, Colors.A100 | (custom ? Colors.ORANGE : Colors.CYAN));
+        int x = this.bones.area.ex() - TICK_RIGHT - TICK_SIZE / 2;
+        int top = mid - TICK_SIZE / 2;
+
+        context.batcher.box(x, top, x + TICK_SIZE, top + TICK_SIZE, Colors.A50);
+
+        if (this.ragdoll.isPart(element))
+        {
+            context.batcher.box(x + 1, top + 1, x + TICK_SIZE - 1, top + TICK_SIZE - 1, Colors.A100 | Colors.WHITE);
+        }
     }
 
     /** One edit of a joint by a single number. */

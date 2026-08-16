@@ -2,27 +2,40 @@ package mchorse.bbs_physics.ragdoll;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * A model form's ragdoll setup: whether it ragdolls at all, and how each bone is jointed.
+ * A model form's ragdoll setup: whether it ragdolls at all, which of the marked bones take part,
+ * and how each of them is jointed.
  *
- * <p>Deliberately <em>only</em> the joints. Which bones become bodies is not decided here — it is
- * the collision markup (§5.2): a bone marked up in the collision tab is a ragdoll part, a bone
- * that is not marked does not exist to physics. Measuring the model twice, once per tab, would
- * mean two markups drifting apart.</p>
+ * <p><b>Shape and participation are two questions.</b> The collision markup says what shape a bone
+ * is; it does not say the bone should fall. Those were the same answer until an author asked for
+ * the case that proves they are not: a character whose body and head both collide, but only the
+ * head comes off. So the markup still decides what a bone <em>is</em>, and {@link #excluded} decides
+ * whether the ragdoll claims it — an unclaimed bone stays a kinematic body, riding the animation and
+ * shoving what it hits.</p>
  *
- * <p>A bone absent from {@link #joints} uses {@link RagdollJoint#DEFAULT} — the soft cone. So an
- * enabled ragdoll with nothing else configured already works, and the map only records what the
- * author changed.</p>
+ * <p>Exclusions rather than a list of members, so the default needs no writing down and a bone
+ * marked up later is a ragdoll part without anyone revisiting this. A bone absent from
+ * {@link #joints} likewise uses {@link RagdollJoint#DEFAULT} — the soft cone — so an enabled ragdoll
+ * with nothing else configured already works, and both collections only record what was changed.</p>
  */
-public record FormRagdoll(boolean enabled, Map<String, RagdollJoint> joints)
+public record FormRagdoll(boolean enabled, Set<String> excluded, Map<String, RagdollJoint> joints)
 {
-    public static final FormRagdoll EMPTY = new FormRagdoll(false, Collections.emptyMap());
+    public static final FormRagdoll EMPTY = new FormRagdoll(false, Collections.emptySet(), Collections.emptyMap());
 
     public FormRagdoll
     {
+        excluded = excluded == null ? Collections.emptySet() : Collections.unmodifiableSet(new LinkedHashSet<>(excluded));
         joints = joints == null ? Collections.emptyMap() : Collections.unmodifiableMap(new LinkedHashMap<>(joints));
+    }
+
+    /** Whether the ragdoll claims {@code bone}, assuming the markup gave it a shape at all. */
+    public boolean isPart(String bone)
+    {
+        return !this.excluded.contains(bone);
     }
 
     /** The joint of {@code bone} — the author's, or the default cone when they never touched it. */
@@ -34,12 +47,29 @@ public record FormRagdoll(boolean enabled, Map<String, RagdollJoint> joints)
     /** Whether there is anything to store at all. */
     public boolean isEmpty()
     {
-        return !this.enabled && this.joints.isEmpty();
+        return !this.enabled && this.excluded.isEmpty() && this.joints.isEmpty();
     }
 
     public FormRagdoll withEnabled(boolean enabled)
     {
-        return new FormRagdoll(enabled, this.joints);
+        return new FormRagdoll(enabled, this.excluded, this.joints);
+    }
+
+    /** The same setup with one bone taken into the ragdoll, or left out of it. */
+    public FormRagdoll withPart(String bone, boolean part)
+    {
+        Set<String> excluded = new LinkedHashSet<>(this.excluded);
+
+        if (part)
+        {
+            excluded.remove(bone);
+        }
+        else
+        {
+            excluded.add(bone);
+        }
+
+        return new FormRagdoll(this.enabled, excluded, this.joints);
     }
 
     /** The same setup with one bone's joint replaced — or dropped, when it is back to the default. */
@@ -56,6 +86,6 @@ public record FormRagdoll(boolean enabled, Map<String, RagdollJoint> joints)
             joints.put(bone, joint);
         }
 
-        return new FormRagdoll(this.enabled, joints);
+        return new FormRagdoll(this.enabled, this.excluded, joints);
     }
 }

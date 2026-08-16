@@ -2,6 +2,7 @@ package mchorse.bbs_physics.mixin.client;
 
 import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
+import mchorse.bbs_physics.client.collision.UICollisionFormPanel;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
 import mchorse.bbs_physics.client.forms.UIPhysicsFormPanel;
 import org.spongepowered.asm.mixin.Mixin;
@@ -17,10 +18,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * lands the tab in the same place for a model, a block, an item and a group alike, without this
  * mixin having to know that any of those exist.</p>
  *
- * <p><b>One tab, not three.</b> Collision and ragdoll had tabs of their own until Р7; they are
- * sections inside this one now, shown when the modifier that needs them is on. The old arrangement
- * had half the ragdoll tab greyed out telling the author to go and use the collision tab first,
- * which is the clearest possible sign that it was never two screens.</p>
+ * <p><b>Two tabs, not three and not one.</b> Collision, ragdoll and physics were three tabs until
+ * Р7 folded them into one; the ragdoll half then turned out to need its own answer — which bones
+ * fall, as opposed to which have a shape — and with that answer in place the tab split back into
+ * two. Shape is described once per model in Collision and forgotten; Physics is what an author
+ * returns to. The three-tab arrangement is not coming back: it had half the ragdoll tab greyed out
+ * telling the author to go and use the collision tab first.</p>
  *
  * <p>The tab belongs here rather than in BBS: every form has a shape, but a shape only means
  * anything while there is an engine to collide it with. Adding it to BBS proper was considered and
@@ -35,6 +38,7 @@ public class UIFormMixin
     {
         UIForm editor = (UIForm) (Object) this;
 
+        editor.registerPanel(new UICollisionFormPanel(editor), PhysicsKeys.COLLISION_TITLE, Icons.SHAPES);
         editor.registerPanel(new UIPhysicsFormPanel(editor), PhysicsKeys.PHYSICS_TITLE, Icons.PHYSICS);
     }
 }

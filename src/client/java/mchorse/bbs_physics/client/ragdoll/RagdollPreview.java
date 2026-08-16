@@ -75,14 +75,14 @@ public final class RagdollPreview
         try
         {
             MatrixCache matrices = FormUtilsClient.getRenderer(form).collectMatrices(entity, transition);
-            List<CollisionCollector.Piece> pieces = bonePieces(form, matrices, model);
+            FormRagdoll config = FormRagdolls.get(form);
+            List<CollisionCollector.Piece> pieces = bonePieces(form, matrices, model, config);
 
             if (pieces.isEmpty())
             {
                 return;
             }
 
-            FormRagdoll config = FormRagdolls.get(form);
             Matrix4f identity = new Matrix4f();
             Map<String, String> attachment = RagdollAttachment.resolve(config, pieces, model, matrices, identity);
 
@@ -168,8 +168,12 @@ public final class RagdollPreview
         return 0xFF33FFFF;
     }
 
-    /** The marked bone slots of this form — the parts a ragdoll would be built from. */
-    private static List<CollisionCollector.Piece> bonePieces(Form form, MatrixCache matrices, Model model)
+    /**
+     * The marked bone slots this ragdoll claims — the parts it would be built from, filtered the
+     * same way the scene filters them. A bone left out of the ragdoll draws no joint here because it
+     * has none: it stays a kinematic body riding the animation.
+     */
+    private static List<CollisionCollector.Piece> bonePieces(Form form, MatrixCache matrices, Model model, FormRagdoll config)
     {
         List<CollisionCollector.Piece> pieces = new ArrayList<>();
 
@@ -177,7 +181,7 @@ public final class RagdollPreview
         {
             /* Bone slots only: a piece whose path is the form's own path is the form's shape, not a
              * bone, and it never becomes a ragdoll part. */
-            if (piece.path().equals(StringUtils.combinePaths("", piece.label())) && model.getGroup(piece.label()) != null)
+            if (piece.path().equals(StringUtils.combinePaths("", piece.label())) && model.getGroup(piece.label()) != null && config.isPart(piece.label()))
             {
                 pieces.add(piece);
             }

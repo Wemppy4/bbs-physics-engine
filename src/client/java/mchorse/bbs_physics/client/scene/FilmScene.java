@@ -30,6 +30,7 @@ import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsTimeline;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import mchorse.bbs_physics.forms.PhysicsForms;
+import mchorse.bbs_physics.ragdoll.FormRagdoll;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 import net.minecraft.client.MinecraftClient;
 import org.joml.Matrix4f;
@@ -392,7 +393,7 @@ public class FilmScene implements AutoCloseable
 
             for (Pair<ModelForm, String> found : discoverRagdolls(root, "", new ArrayList<>(0)))
             {
-                List<CollisionCollector.Piece> claimed = claimBonePieces(pieces, found.b);
+                List<CollisionCollector.Piece> claimed = claimBonePieces(pieces, found.b, FormRagdolls.get(found.a));
 
                 ActorRagdoll ragdoll = ActorRagdoll.build(this.world, found.a, found.b, claimed, matrices, actorWorld, this, ragdollGroup);
 
@@ -474,8 +475,12 @@ public class FilmScene implements AutoCloseable
      * the form at {@code formPath} has the path {@code formPath/bone} with the bone as its label;
      * the form's own slot (path equal to the form's) is deliberately left behind — it is a shape,
      * not a bone, and stays a plain kinematic body.
+     *
+     * <p>Bones the author left out of the ragdoll are left behind for the same reason: they still
+     * have a shape and still collide, they simply ride the animation instead of falling. That is the
+     * case this exists for — a body that walks on while the head comes off.</p>
      */
-    private static List<CollisionCollector.Piece> claimBonePieces(List<CollisionCollector.Piece> pieces, String formPath)
+    private static List<CollisionCollector.Piece> claimBonePieces(List<CollisionCollector.Piece> pieces, String formPath, FormRagdoll config)
     {
         List<CollisionCollector.Piece> claimed = new ArrayList<>(0);
 
@@ -483,7 +488,7 @@ public class FilmScene implements AutoCloseable
         {
             CollisionCollector.Piece piece = pieces.get(i);
 
-            if (!piece.path().equals(formPath) && piece.path().equals(StringUtils.combinePaths(formPath, piece.label())))
+            if (!piece.path().equals(formPath) && piece.path().equals(StringUtils.combinePaths(formPath, piece.label())) && config.isPart(piece.label()))
             {
                 claimed.add(pieces.remove(i));
             }

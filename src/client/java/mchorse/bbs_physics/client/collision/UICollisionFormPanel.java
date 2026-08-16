@@ -6,10 +6,11 @@ import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
-import mchorse.bbs_mod.l10n.keys.IKey;
 import mchorse.bbs_mod.ui.UIKeys;
-import mchorse.bbs_physics.client.forms.UIPhysicsSection;
+import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
+import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
 import mchorse.bbs_mod.ui.framework.UIContext;
+import mchorse.bbs_mod.ui.framework.elements.UIElement;
 import mchorse.bbs_mod.ui.framework.elements.UISection;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UICirculate;
@@ -18,7 +19,6 @@ import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UIStringList;
-import mchorse.bbs_mod.ui.framework.elements.utils.UILabel;
 import mchorse.bbs_mod.ui.utils.PickedBone;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
@@ -45,18 +45,19 @@ import java.util.function.UnaryOperator;
 /**
  * The collision tab: what shape this form is.
  *
- * <p>Modelled on the IK tab down to the preset menu, because it is the same job — describing a
- * model bone by bone — and a second convention for it would only be a second thing to learn.
- * A model is marked up per bone; every other form has one slot of its own. Nothing is marked by
- * default (§5.2): marking every cube of a model costs contacts on geometry nobody meant to
- * collide, and it would take the hair and cloth bones away from the solvers about to drive them.
- * </p>
+ * <p><b>A tab again, and on purpose.</b> Collision and ragdoll were merged into one tab in Э4 and
+ * split back apart here, which is not a retraction of that decision but a consequence of a case it
+ * did not cover: a character whose body and head both collide, but only the head comes off. Shape
+ * and participation turned out to be two questions, and once the ragdoll has its own answer, the two
+ * screens stop being the same screen written twice. What is left here is a job done once and
+ * forgotten — mark the model up, close the tab — while the physics tab is the one an author returns
+ * to every shot.</p>
  *
- * <p>The tab lives in the addon and is added to BBS's form editor by a mixin. BBS itself knows
- * nothing about it, deliberately: BBS without the addon has to stay BBS without the addon, and a
- * tab that does nothing at all would be worse than no tab.</p>
+ * <p>Modelled on the IK tab down to the preset menu, because it is the same job: describing a model
+ * bone by bone. A model is marked up per bone; every other form has one slot of its own and no list
+ * to choose from, so it simply does not get one.</p>
  */
-public class UICollisionSection extends UIPhysicsSection
+public class UICollisionFormPanel extends UIFormPanel<Form>
 {
     /** One model pixel, in blocks — the step every distance here scrolls by. */
     private static final double PIXEL = 1D / 16D;
@@ -74,7 +75,7 @@ public class UICollisionSection extends UIPhysicsSection
     public UISearchList<String> bonesSearch;
 
     public ModeCirculate mode;
-    public UILabel summary;
+    private final UIElement modeRow;
 
     public UIStringList shapes;
     public UIIcon addShape;
@@ -92,9 +93,12 @@ public class UICollisionSection extends UIPhysicsSection
     public UITrackpad sizeZ;
 
     public UITrackpad autoThreshold;
+    private final UIElement thresholdRow;
     public UIButton autoMark;
     public UIButton fitBounds;
     public UIButton clearAll;
+
+    private final UISection primitives;
 
     private FormCollision collision = FormCollision.EMPTY;
 
@@ -105,8 +109,9 @@ public class UICollisionSection extends UIPhysicsSection
     private String presetGroup = "";
     private boolean syncing;
 
-    public UICollisionSection()
+    public UICollisionFormPanel(UIForm editor)
     {
+        super(editor);
 
         this.preview = new UIToggle(PhysicsKeys.COLLISION_PREVIEW, (b) -> BBSPhysicsSettings.collisionPreview.set(b.getValue()));
 
@@ -128,7 +133,7 @@ public class UICollisionSection extends UIPhysicsSection
             {
                 super.renderListElement(context, element, i, x, y, hover, selected);
 
-                UICollisionSection.this.renderSlotMark(context, element, y);
+                UICollisionFormPanel.this.renderSlotMark(context, element, y);
             }
         };
         this.bones.background();
@@ -157,9 +162,7 @@ public class UICollisionSection extends UIPhysicsSection
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_AUTO);
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_SHAPES);
         this.mode.tooltip(PhysicsKeys.COLLISION_MODE_TOOLTIP);
-
-        this.summary = UI.label(IKey.EMPTY, UIConstants.LIST_ITEM_HEIGHT, Colors.LIGHTER_GRAY);
-        this.summary.labelAnchor(0F, 0.5F);
+        this.modeRow = UI.labelRow(PhysicsKeys.COLLISION_MODE, this.mode);
 
         this.shapes = new UIStringList((l) -> this.updateLabels());
         this.shapes.background();
@@ -203,6 +206,7 @@ public class UICollisionSection extends UIPhysicsSection
         this.autoThreshold = new UITrackpad((v) -> threshold = v.floatValue());
         this.autoThreshold.limit(0D, 8D).increment(PIXEL).values(PIXEL, PIXEL, PIXEL * 4);
         this.autoThreshold.tooltip(PhysicsKeys.COLLISION_AUTO_THRESHOLD_TOOLTIP);
+        this.thresholdRow = UI.labelRow(PhysicsKeys.COLLISION_AUTO_THRESHOLD, this.autoThreshold);
 
         this.autoMark = new UIButton(PhysicsKeys.COLLISION_AUTO_MARK, (b) -> this.autoMark());
         this.autoMark.tooltip(PhysicsKeys.COLLISION_AUTO_MARK_TOOLTIP);
@@ -210,20 +214,12 @@ public class UICollisionSection extends UIPhysicsSection
         this.fitBounds.tooltip(PhysicsKeys.COLLISION_FIT_TOOLTIP);
         this.clearAll = new UIButton(PhysicsKeys.COLLISION_CLEAR, (b) -> this.clearAll());
 
-        UISection markup = this.section(PhysicsKeys.COLLISION_MARKUP, "collision.markup", true);
+        /* Folded, and below the automatic pass: automation is the answer for the common case, hand
+         * placement is the correction. One level of folding and no deeper — a panel with sections
+         * inside sections is a panel nobody can find anything in. */
+        this.primitives = this.section(PhysicsKeys.COLLISION_SHAPES, "collision.shapes", false);
 
-        markup.fields.add(
-            UI.labelRow(PhysicsKeys.COLLISION_MODE, this.mode),
-            this.summary
-        );
-
-        /* Folded by default, and below the automatic pass. The order used to be the other way round
-         * — nine trackpads open on arrival, the button most authors actually want tucked away in a
-         * folded section underneath (§7.2). Automation is the answer for the common case; hand
-         * placement is the correction. */
-        UISection primitives = this.section(PhysicsKeys.COLLISION_SHAPES, "collision.shapes", false);
-
-        primitives.fields.add(
+        this.primitives.fields.add(
             this.shapes,
             UI.row(this.addShape, this.removeShape),
             UI.labelRow(PhysicsKeys.COLLISION_SHAPE_KIND, this.kind),
@@ -233,23 +229,6 @@ public class UICollisionSection extends UIPhysicsSection
             UI.row(this.rotateX, this.rotateY, this.rotateZ),
             UI.label(PhysicsKeys.COLLISION_SIZE),
             UI.row(this.sizeX, this.sizeY, this.sizeZ)
-        );
-
-        UISection auto = this.section(PhysicsKeys.COLLISION_AUTO, "collision.auto", true);
-
-        auto.fields.add(
-            UI.labelRow(PhysicsKeys.COLLISION_AUTO_THRESHOLD, this.autoThreshold),
-            this.autoMark,
-            this.fitBounds,
-            this.clearAll
-        );
-
-        this.add(
-            this.preview,
-            this.bonesSearch,
-            markup,
-            auto,
-            primitives
         );
     }
 
@@ -462,9 +441,9 @@ public class UICollisionSection extends UIPhysicsSection
     /* Syncing the UI */
 
     @Override
-    public void setForm(Form form)
+    public void startEdit(Form form)
     {
-        super.setForm(form);
+        super.startEdit(form);
 
         this.preview.setValue(BBSPhysicsSettings.collisionPreview.get());
         this.collision = FormCollisions.get(form);
@@ -476,8 +455,6 @@ public class UICollisionSection extends UIPhysicsSection
 
             this.bones.fillBones(this.model.model, this.model.getDisabledBones());
             this.bones.filter(this.bonesSearch.search.getText());
-            this.bones.setEnabled(true);
-            this.bonesSearch.setEnabled(true);
 
             if (!this.pickBoneInList(PickedBone.get()) && !this.bones.getList().isEmpty())
             {
@@ -487,22 +464,17 @@ public class UICollisionSection extends UIPhysicsSection
         }
         else
         {
-            /* Anything that is not a model has one shape: its own. The list still shows it, so the
-             * tab reads the same everywhere, but there is nothing to choose between. */
+            /* Anything that is not a model has one shape: its own. There is nothing to choose
+             * between, so it gets no list at all rather than a list with one row greyed out. */
             this.model = null;
             this.presetGroup = form instanceof ModelForm modelForm ? modelForm.model.get() : "";
             this.slot = FormCollision.SELF;
-
-            this.bones.fillFlat(List.of(form.getDisplayName()));
-            this.bones.setIndex(0);
-            this.bones.setEnabled(false);
-            this.bonesSearch.setEnabled(false);
         }
 
         this.autoThreshold.setValue(threshold);
         this.selectShape(0);
+        this.rebuild();
         this.updateLabels();
-        this.resize();
     }
 
     @Override
@@ -523,6 +495,37 @@ public class UICollisionSection extends UIPhysicsSection
         return true;
     }
 
+    /**
+     * Puts the tab together out of the parts this form actually has. Rebuilt rather than hidden:
+     * {@code setVisible} stops an element from drawing but leaves it holding its place in the
+     * column, so a tab that hid what it did not need would be a tab full of unexplained gaps.
+     */
+    private void rebuild()
+    {
+        boolean model = this.model != null;
+
+        this.options.removeAll();
+
+        if (model)
+        {
+            this.options.add(this.bonesSearch);
+        }
+
+        this.options.add(this.modeRow, this.primitives);
+
+        if (model)
+        {
+            this.options.add(this.thresholdRow, this.autoMark);
+        }
+        else
+        {
+            this.options.add(this.fitBounds);
+        }
+
+        this.options.add(this.clearAll, this.preview);
+        this.options.resize();
+    }
+
     private void updateLabels()
     {
         if (this.mode == null)
@@ -531,18 +534,27 @@ public class UICollisionSection extends UIPhysicsSection
         }
 
         CollisionSlot slot = this.slot();
-        boolean shapesMode = slot.mode() == CollisionMode.SHAPES;
+
+        /* "Shapes by hand" is what a slot with shapes in it <em>is</em>, not a mode to select
+         * beforehand. Selecting it on an empty slot could not work — a slot with no shapes is
+         * dropped on save (see CollisionSlot.isEmpty), so the switch sprang straight back to
+         * "Nothing" while the add button sat waiting for that very mode. Adding a shape is the way
+         * in and sets the mode itself; the option is offered once it has something to mean.
+         *
+         * Which options exist has to be settled before the value is read back in: the switch skips
+         * a disabled option, so a stale one would send the value somewhere else entirely. */
+        boolean hasShapes = !slot.shapes().isEmpty();
+
+        /* Automatic measuring reads a bone's own cubes, and a form that is not a model has
+         * none — the option would be a button that quietly does nothing. */
+        this.mode.allow(CollisionMode.AUTO.ordinal(), this.model != null);
+        this.mode.allow(CollisionMode.SHAPES.ordinal(), hasShapes);
 
         this.syncing = true;
 
         try
         {
             this.mode.setValue(slot.mode().ordinal());
-
-            /* Automatic measuring reads a bone's own cubes, and a form that is not a model has
-             * none — the option would be a button that quietly does nothing. */
-            this.mode.allow(CollisionMode.AUTO.ordinal(), this.model != null);
-
             this.fillShapes(slot);
 
             CollisionShape shape = this.shape();
@@ -557,13 +569,10 @@ public class UICollisionSection extends UIPhysicsSection
             this.syncing = false;
         }
 
-        this.summary.label = this.summaryLabel(slot);
-        this.summary.color(slot.mode() == CollisionMode.NONE ? Colors.LIGHTER_GRAY : Colors.WHITE);
+        boolean hasShape = this.shape() != null;
 
-        boolean hasShape = shapesMode && this.shape() != null;
-
-        this.shapes.setEnabled(shapesMode);
-        this.addShape.setEnabled(shapesMode);
+        this.shapes.setEnabled(hasShapes);
+        this.addShape.setEnabled(this.form != null);
         this.removeShape.setEnabled(hasShape);
         this.kind.setEnabled(hasShape);
 
@@ -571,13 +580,6 @@ public class UICollisionSection extends UIPhysicsSection
         {
             pad.setEnabled(hasShape);
         }
-
-        this.autoThreshold.setEnabled(this.model != null);
-        this.autoMark.setEnabled(this.model != null);
-
-        /* A model is marked up bone by bone, and "automatic" there means measuring each one. One
-         * box around the whole thing is what a block or an item wants. */
-        this.fitBounds.setEnabled(this.model == null);
     }
 
     /**
@@ -605,19 +607,6 @@ public class UICollisionSection extends UIPhysicsSection
         this.shapes.clear();
         this.shapes.add(rows);
         this.shapes.setIndex(Math.min(Math.max(index, 0), rows.size() - 1));
-    }
-
-    /** What this slot amounts to, in words — the answer to "so does this bone collide or not?". */
-    private IKey summaryLabel(CollisionSlot slot)
-    {
-        return switch (slot.mode())
-        {
-            case NONE -> PhysicsKeys.COLLISION_SUMMARY_NONE;
-            case AUTO -> this.model == null
-                ? PhysicsKeys.COLLISION_SUMMARY_NONE
-                : PhysicsKeys.COLLISION_SUMMARY_AUTO.format(CollisionShapes.measure(this.model.model, this.slot, this.model.getScale()).size());
-            case SHAPES -> PhysicsKeys.COLLISION_SUMMARY_SHAPES.format(slot.shapes().size());
-        };
     }
 
     private void setVector(Vector3f vector, UITrackpad x, UITrackpad y, UITrackpad z)
@@ -650,6 +639,12 @@ public class UICollisionSection extends UIPhysicsSection
         int color = mode == CollisionMode.AUTO ? Colors.CYAN : Colors.ORANGE;
 
         context.batcher.box(x, mid, x + 4, mid + 4, Colors.A100 | color);
+    }
+
+    @Override
+    protected float getDefaultOptionsWidth()
+    {
+        return 0.3F;
     }
 
     /** One edit of a primitive by a single number. */

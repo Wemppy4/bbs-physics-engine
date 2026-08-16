@@ -1,22 +1,27 @@
 package mchorse.bbs_physics.ragdoll;
 
 import mchorse.bbs_mod.data.types.BaseType;
+import mchorse.bbs_mod.data.types.ListType;
 import mchorse.bbs_mod.data.types.MapType;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * Ragdoll setup on disk: {@code {"enabled": true, "joints": {bone: {...}}}}.
+ * Ragdoll setup on disk: {@code {"enabled": true, "excluded": [bone], "joints": {bone: {...}}}}.
  *
- * <p>Joints that are exactly the default are not written, so a model whose author only flipped the
- * switch stores one flag and nothing else — and a form the ragdoll was never enabled on stores
- * nothing at all, staying byte-identical to one the addon never saw.</p>
+ * <p>Joints that are exactly the default are not written, and neither is an empty exclusion list, so
+ * a model whose author only flipped the switch stores one flag and nothing else — and a form the
+ * ragdoll was never enabled on stores nothing at all, staying byte-identical to one the addon never
+ * saw.</p>
  */
 public final class RagdollIO
 {
     private static final String KEY_ENABLED = "enabled";
+    private static final String KEY_EXCLUDED = "excluded";
     private static final String KEY_JOINTS = "joints";
 
     private static final String KEY_KIND = "kind";
@@ -53,7 +58,24 @@ public final class RagdollIO
             }
         }
 
-        return new FormRagdoll(map.getBool(KEY_ENABLED), joints);
+        Set<String> excluded = new LinkedHashSet<>();
+
+        if (map.has(KEY_EXCLUDED, BaseType.TYPE_LIST))
+        {
+            ListType list = map.getList(KEY_EXCLUDED);
+
+            for (int i = 0; i < list.size(); i++)
+            {
+                String bone = list.getString(i);
+
+                if (!bone.isEmpty())
+                {
+                    excluded.add(bone);
+                }
+            }
+        }
+
+        return new FormRagdoll(map.getBool(KEY_ENABLED), excluded, joints);
     }
 
     public static MapType toData(FormRagdoll ragdoll)
@@ -68,6 +90,18 @@ public final class RagdollIO
         if (ragdoll.enabled())
         {
             map.putBool(KEY_ENABLED, true);
+        }
+
+        if (!ragdoll.excluded().isEmpty())
+        {
+            ListType excluded = new ListType();
+
+            for (String bone : ragdoll.excluded())
+            {
+                excluded.addString(bone);
+            }
+
+            map.put(KEY_EXCLUDED, excluded);
         }
 
         MapType joints = new MapType();

@@ -12,18 +12,13 @@ public class PhysicsKeys
     public static final IKey BODY_TITLE = L10n.lang("bbs_physics.forms.body.title");
 
     public static final IKey PHYSICS_TITLE = L10n.lang("bbs_physics.forms.physics.title");
+    public static final IKey PHYSICS_ADD = L10n.lang("bbs_physics.forms.physics.add");
     public static final IKey PHYSICS_ADD_BODY = L10n.lang("bbs_physics.forms.physics.add_body");
-    public static final IKey PHYSICS_ADD_BODY_TOOLTIP = L10n.lang("bbs_physics.forms.physics.add_body_tooltip");
     public static final IKey PHYSICS_ADD_RAGDOLL = L10n.lang("bbs_physics.forms.physics.add_ragdoll");
-    public static final IKey PHYSICS_ADD_RAGDOLL_TOOLTIP = L10n.lang("bbs_physics.forms.physics.add_ragdoll_tooltip");
     public static final IKey PHYSICS_ADD_OBSTACLE = L10n.lang("bbs_physics.forms.physics.add_obstacle");
     public static final IKey PHYSICS_ADD_CLOTH = L10n.lang("bbs_physics.forms.physics.add_cloth");
-    public static final IKey PHYSICS_LATER = L10n.lang("bbs_physics.forms.physics.later");
     public static final IKey PHYSICS_REMOVE = L10n.lang("bbs_physics.forms.physics.remove");
-    public static final IKey PHYSICS_RAGDOLL_HINT = L10n.lang("bbs_physics.forms.physics.ragdoll_hint");
-    public static final IKey PHYSICS_NEXT_NONE = L10n.lang("bbs_physics.forms.physics.next_none");
-    public static final IKey PHYSICS_NEXT_UNMARKED = L10n.lang("bbs_physics.forms.physics.next_unmarked");
-    public static final IKey PHYSICS_NEXT_READY = L10n.lang("bbs_physics.forms.physics.next_ready");
+    public static final IKey PHYSICS_UNMARKED = L10n.lang("bbs_physics.forms.physics.unmarked");
 
     public static final IKey BODY_MASS_TOOLTIP = L10n.lang("bbs_physics.forms.body.mass_tooltip");
     public static final IKey BODY_TYPE = L10n.lang("bbs_physics.forms.body.type");
@@ -31,12 +26,6 @@ public class PhysicsKeys
     public static final IKey BODY_TYPE_PASSIVE = L10n.lang("bbs_physics.forms.body.type_passive");
     public static final IKey BODY_TYPE_TOOLTIP = L10n.lang("bbs_physics.forms.body.type_tooltip");
 
-    public static final IKey SHAPE = L10n.lang("bbs_physics.forms.body.shape");
-    public static final IKey SHAPE_NOTHING = L10n.lang("bbs_physics.forms.body.shape_nothing");
-    public static final IKey SHAPE_AUTO = L10n.lang("bbs_physics.forms.body.shape_auto");
-    public static final IKey SHAPE_TOOLTIP = L10n.lang("bbs_physics.forms.body.shape_tooltip");
-
-    public static final IKey MATERIAL_PICK = L10n.lang("bbs_physics.forms.body.material_pick");
     public static final IKey MATERIAL_TOOLTIP = L10n.lang("bbs_physics.forms.body.material_tooltip");
     public static final IKey MATERIAL_CORK = L10n.lang("bbs_physics.forms.body.material.cork");
     public static final IKey MATERIAL_WOOD = L10n.lang("bbs_physics.forms.body.material.wood");
@@ -46,15 +35,6 @@ public class PhysicsKeys
     public static final IKey MATERIAL_STONE = L10n.lang("bbs_physics.forms.body.material.stone");
     public static final IKey MATERIAL_IRON = L10n.lang("bbs_physics.forms.body.material.iron");
     public static final IKey MATERIAL_GOLD = L10n.lang("bbs_physics.forms.body.material.gold");
-
-    public static final IKey AUTHORITY_ENDS = L10n.lang("bbs_physics.forms.body.authority_ends");
-
-    public static final IKey PHYSICS_MARKUP = L10n.lang("bbs_physics.forms.physics.markup");
-    public static final IKey PHYSICS_MARKUP_NONE = L10n.lang("bbs_physics.forms.physics.markup_none");
-    public static final IKey PHYSICS_REMARK = L10n.lang("bbs_physics.forms.physics.remark");
-    public static final IKey PHYSICS_REMARK_TOOLTIP = L10n.lang("bbs_physics.forms.physics.remark_tooltip");
-    public static final IKey PHYSICS_MANUAL = L10n.lang("bbs_physics.forms.physics.manual");
-    public static final IKey PHYSICS_BY_BONES = L10n.lang("bbs_physics.forms.physics.by_bones");
 
     public static final IKey AUTHORITY = L10n.lang("bbs_physics.forms.body.authority");
     public static final IKey AUTHORITY_TOOLTIP = L10n.lang("bbs_physics.forms.body.authority_tooltip");
@@ -92,16 +72,11 @@ public class PhysicsKeys
     public static final IKey COLLISION_TITLE = L10n.lang("bbs_physics.forms.collision.title");
     public static final IKey COLLISION_PREVIEW = L10n.lang("bbs_physics.forms.collision.preview");
 
-    public static final IKey COLLISION_MARKUP = L10n.lang("bbs_physics.forms.collision.markup");
     public static final IKey COLLISION_MODE = L10n.lang("bbs_physics.forms.collision.mode");
     public static final IKey COLLISION_MODE_TOOLTIP = L10n.lang("bbs_physics.forms.collision.mode_tooltip");
     public static final IKey COLLISION_MODE_NONE = L10n.lang("bbs_physics.forms.collision.mode_none");
     public static final IKey COLLISION_MODE_AUTO = L10n.lang("bbs_physics.forms.collision.mode_auto");
     public static final IKey COLLISION_MODE_SHAPES = L10n.lang("bbs_physics.forms.collision.mode_shapes");
-
-    public static final IKey COLLISION_SUMMARY_NONE = L10n.lang("bbs_physics.forms.collision.summary_none");
-    public static final IKey COLLISION_SUMMARY_AUTO = L10n.lang("bbs_physics.forms.collision.summary_auto");
-    public static final IKey COLLISION_SUMMARY_SHAPES = L10n.lang("bbs_physics.forms.collision.summary_shapes");
 
     public static final IKey COLLISION_SHAPES = L10n.lang("bbs_physics.forms.collision.shapes");
     public static final IKey COLLISION_SHAPE_ADD = L10n.lang("bbs_physics.forms.collision.shape_add");
@@ -111,7 +86,6 @@ public class PhysicsKeys
     public static final IKey COLLISION_ROTATION = L10n.lang("bbs_physics.forms.collision.rotation");
     public static final IKey COLLISION_SIZE = L10n.lang("bbs_physics.forms.collision.size");
 
-    public static final IKey COLLISION_AUTO = L10n.lang("bbs_physics.forms.collision.auto");
     public static final IKey COLLISION_AUTO_THRESHOLD = L10n.lang("bbs_physics.forms.collision.auto_threshold");
     public static final IKey COLLISION_AUTO_THRESHOLD_TOOLTIP = L10n.lang("bbs_physics.forms.collision.auto_threshold_tooltip");
     public static final IKey COLLISION_AUTO_MARK = L10n.lang("bbs_physics.forms.collision.auto_mark");
@@ -143,10 +117,6 @@ public class PhysicsKeys
     }
 
     public static final IKey RAGDOLL_TITLE = L10n.lang("bbs_physics.forms.ragdoll.title");
-    public static final IKey RAGDOLL_ENABLED = L10n.lang("bbs_physics.forms.ragdoll.enabled");
-    public static final IKey RAGDOLL_ENABLED_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.enabled_tooltip");
-
-    public static final IKey RAGDOLL_JOINT = L10n.lang("bbs_physics.forms.ragdoll.joint");
     public static final IKey RAGDOLL_KIND = L10n.lang("bbs_physics.forms.ragdoll.kind");
     public static final IKey RAGDOLL_KIND_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.kind_tooltip");
     public static final IKey RAGDOLL_SWING = L10n.lang("bbs_physics.forms.ragdoll.swing");
@@ -159,10 +129,6 @@ public class PhysicsKeys
     public static final IKey RAGDOLL_ATTACH_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.attach_tooltip");
     public static final IKey RAGDOLL_ATTACH_AUTO = L10n.lang("bbs_physics.forms.ragdoll.attach_auto");
     public static final IKey RAGDOLL_RESET_BONE = L10n.lang("bbs_physics.forms.ragdoll.reset_bone");
-
-    public static final IKey RAGDOLL_ONLY_MODELS = L10n.lang("bbs_physics.forms.ragdoll.only_models");
-    public static final IKey RAGDOLL_SUMMARY_PART = L10n.lang("bbs_physics.forms.ragdoll.summary_part");
-    public static final IKey RAGDOLL_SUMMARY_UNMARKED = L10n.lang("bbs_physics.forms.ragdoll.summary_unmarked");
 
     public static final IKey RAGDOLL_CONTEXT_COPY = L10n.lang("bbs_physics.forms.ragdoll.context.copy");
     public static final IKey RAGDOLL_CONTEXT_PASTE = L10n.lang("bbs_physics.forms.ragdoll.context.paste");
