@@ -4,10 +4,12 @@ import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.settings.values.core.ValueColor;
 import mchorse.bbs_mod.settings.values.core.ValueLink;
 import mchorse.bbs_mod.settings.values.core.ValueString;
+import mchorse.bbs_mod.settings.values.misc.ValueVector4f;
 import mchorse.bbs_mod.settings.values.numeric.ValueBoolean;
 import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 import mchorse.bbs_mod.settings.values.numeric.ValueInt;
 import mchorse.bbs_mod.utils.colors.Color;
+import org.joml.Vector4f;
 
 /**
  * A sheet of cloth: a textured rectangle that Jolt's soft body solver bends, swings and drapes
@@ -34,6 +36,14 @@ public class ClothForm extends Form
     public final ValueBoolean mipmap = new ValueBoolean("mipmap", false);
     public final ValueBoolean shading = new ValueBoolean("shading", true);
 
+    /**
+     * Pixels shaved off the texture before it is stretched over the sheet — left, top, right,
+     * bottom, the picture form's convention. Crop only picks the region; the sheet's shape stays
+     * whatever {@link #width} and {@link #height} say, because a sheet's size is physical, not
+     * pixel-derived.
+     */
+    public final ValueVector4f crop = new ValueVector4f("crop", new Vector4f(0F, 0F, 0F, 0F));
+
     /* What the sheet is: size in blocks, resolution in cells. More cells drape finer and cost
      * more — each vertex is simulated and recorded every tick. */
     public final ValueFloat width = new ValueFloat("width", 1F, 0.1F, 16F);
@@ -43,6 +53,16 @@ public class ClothForm extends Form
 
     /** Which edge rides the animation while the rest hangs — stored by {@link ClothEdge} name. */
     public final ValueString edge = new ValueString("edge", ClothEdge.TOP.name());
+
+    /**
+     * Whether other sheets can land on this one.
+     *
+     * <p>Off by default, and not out of caution about the look: Jolt does not collide soft bodies
+     * with each other at all, so this is served by building a grid of thin kinematic slabs that
+     * follow the sheet and stand in for it. That is real bodies in the world per sheet, which is
+     * worth asking for rather than assuming — one cape on a character needs none of it.</p>
+     */
+    public final ValueBoolean selfCollision = new ValueBoolean("selfCollision", false);
 
     /* What the fabric is like. */
     public final ValueFloat mass = new ValueFloat("mass", 1F, 0.01F, 1000F);
@@ -67,11 +87,13 @@ public class ClothForm extends Form
         this.add(this.linear);
         this.add(this.mipmap);
         this.add(this.shading);
+        this.add(this.crop);
         this.add(this.width);
         this.add(this.height);
         this.add(this.segmentsX);
         this.add(this.segmentsY);
         this.add(this.edge);
+        this.add(this.selfCollision);
         this.add(this.mass);
         this.add(this.stiffness);
         this.add(this.damping);

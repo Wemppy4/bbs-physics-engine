@@ -86,6 +86,8 @@
     "bbs_physics.forms.cloth.edge_left": "By the left edge",
     "bbs_physics.forms.cloth.edge_top_corners": "By the top corners",
     "bbs_physics.forms.cloth.edge_none": "By nothing",
+    "bbs_physics.forms.cloth.self_collision": "Collides with cloth",
+    "bbs_physics.forms.cloth.self_collision_tooltip": "Other sheets will be able to land on this one. Jolt cannot solve soft against soft, so a grid of thin slabs is built to follow this sheet and stand in for it — real bodies in the scene, hence off by default. A sheet still cannot land on itself.",
     "bbs_physics.forms.cloth.mass": "Whole sheet's weight (kg)",
     "bbs_physics.forms.cloth.stiffness": "Stiffness: 0 is knitwear, 1 is tarpaulin",
     "bbs_physics.forms.cloth.damping": "Damping: how quickly the sheet stops swinging",

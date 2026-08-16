@@ -53,6 +53,8 @@ public class PhysicsKeys
     public static final IKey CLOTH_EDGE_LEFT = L10n.lang("bbs_physics.forms.cloth.edge_left");
     public static final IKey CLOTH_EDGE_TOP_CORNERS = L10n.lang("bbs_physics.forms.cloth.edge_top_corners");
     public static final IKey CLOTH_EDGE_NONE = L10n.lang("bbs_physics.forms.cloth.edge_none");
+    public static final IKey CLOTH_SELF_COLLISION = L10n.lang("bbs_physics.forms.cloth.self_collision");
+    public static final IKey CLOTH_SELF_COLLISION_TOOLTIP = L10n.lang("bbs_physics.forms.cloth.self_collision_tooltip");
     public static final IKey CLOTH_MASS = L10n.lang("bbs_physics.forms.cloth.mass");
     public static final IKey CLOTH_STIFFNESS = L10n.lang("bbs_physics.forms.cloth.stiffness");
     public static final IKey CLOTH_DAMPING = L10n.lang("bbs_physics.forms.cloth.damping");

@@ -33,6 +33,7 @@ import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import org.joml.Vector4f;
 
 import java.util.function.Supplier;
 
@@ -51,6 +52,23 @@ public class ClothFormRenderer extends FormRenderer<ClothForm>
 {
     private float[] positions = new float[0];
     private float[] normals = new float[0];
+
+    /**
+     * Whether this is the palette's little preview rather than the film.
+     *
+     * <p>An unsimulated sheet is drawn flat, which is honest in the world — that is what the frame
+     * really shows until the recording reaches it. In the palette it is useless: a flat rectangle
+     * with a texture on it is a picture form, and the whole point of the entry is to say "this one
+     * is cloth". So the preview is given a canned drape, folds and all, in place of the simulation
+     * it cannot have.</p>
+     */
+    private boolean preview;
+
+    /** The corner of the texture the sheet wears, worked out from the crop once per draw. */
+    private float u1;
+    private float v1;
+    private float u2;
+    private float v2;
 
     public ClothFormRenderer(ClothForm form)
     {
@@ -71,11 +89,24 @@ public class ClothFormRenderer extends FormRenderer<ClothForm>
         stack.translate(0F, 1F, 0F);
         stack.scale(1.5F, 1.5F, 1.5F);
 
-        this.renderCloth(
-            VertexFormats.POSITION_COLOR_TEXTURE_OVERLAY_LIGHT_NORMAL,
-            GameRenderer::getRenderTypeEntityTranslucentProgram,
-            stack, OverlayTexture.DEFAULT_UV, LightmapTextureManager.MAX_LIGHT_COORDINATE, Colors.WHITE,
-            0F, false);
+        /* The sheet is drawn hanging from its top edge, so the pivot is at the top of it — shift
+         * it up by half its height to sit in the middle of the slot it is previewed in. */
+        stack.translate(0F, this.form.height.get() / 2F, 0F);
+
+        this.preview = true;
+
+        try
+        {
+            this.renderCloth(
+                VertexFormats.POSITION_COLOR_TEXTURE_OVERLAY_LIGHT_NORMAL,
+                GameRenderer::getRenderTypeEntityTranslucentProgram,
+                stack, OverlayTexture.DEFAULT_UV, LightmapTextureManager.MAX_LIGHT_COORDINATE, Colors.WHITE,
+                0F, false);
+        }
+        finally
+        {
+            this.preview = false;
+        }
 
         stack.pop();
     }
@@ -115,6 +146,18 @@ public class ClothFormRenderer extends FormRenderer<ClothForm>
         this.fillNormals(columns, rows);
 
         Texture texture = BBSModClient.getTextures().getTexture(link);
+
+        /* The crop picks the region of the texture the sheet wears, in pixels off each side —
+         * the picture form's convention, so a texture atlas built for one works here unchanged.
+         * It does not touch the sheet's shape: a sheet is sized in blocks because it is a physical
+         * object, where a picture takes its proportions from its pixels. */
+        Vector4f crop = this.form.crop.get();
+
+        this.u1 = crop.x / texture.width;
+        this.v1 = crop.y / texture.height;
+        this.u2 = 1F - crop.z / texture.width;
+        this.v2 = 1F - crop.w / texture.height;
+
         BufferBuilder builder = Tessellator.getInstance().getBuffer();
         Color color = new Color().set(overlayColor, true);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
@@ -237,6 +280,10 @@ public class ClothFormRenderer extends FormRenderer<ClothForm>
                     this.positions[i * 3 + 1] = state.get(i, 1, transition);
                     this.positions[i * 3 + 2] = state.get(i, 2, transition);
                 }
+                else if (this.preview)
+                {
+                    this.drape(c, r, columns, rows, i);
+                }
                 else
                 {
                     this.positions[i * 3] = this.form.flatX(c);
@@ -245,6 +292,32 @@ public class ClothFormRenderer extends FormRenderer<ClothForm>
                 }
             }
         }
+    }
+
+    /**
+     * The canned drape the palette entry is drawn in: a curtain hanging from its top edge in three
+     * soft folds, gathered a little at the top and swinging free at the bottom.
+     *
+     * <p>Written out rather than simulated because the palette has no world, no tick and no
+     * recording — and because an entry has to look the same every time it is drawn. The shape is a
+     * cosine across the width for the folds, deepening towards the hem where a real sheet is least
+     * constrained, with the width pinched in slightly as the fabric gathers.</p>
+     */
+    private void drape(int c, int r, int columns, int rows, int i)
+    {
+        float u = columns == 1 ? 0F : c / (float) (columns - 1);
+        float v = rows == 1 ? 0F : r / (float) (rows - 1);
+
+        /* Folds run down the sheet and open up towards the hem. */
+        float depth = this.form.width.get() * 0.14F * v;
+        float fold = (float) Math.cos(u * Math.PI * 3F);
+
+        /* The fabric gathers, so the hanging sheet is a touch narrower than it is laid flat. */
+        float pinch = 1F - 0.12F * v;
+
+        this.positions[i * 3] = this.form.flatX(c) * pinch;
+        this.positions[i * 3 + 1] = this.form.flatY(r);
+        this.positions[i * 3 + 2] = fold * depth;
     }
 
     /**
@@ -304,8 +377,8 @@ public class ClothFormRenderer extends FormRenderer<ClothForm>
         float y = this.positions[i * 3 + 1];
         float z = this.positions[i * 3 + 2];
 
-        float u = (i % columns) / (float) (columns - 1);
-        float v = (i / columns) / (float) (rows - 1);
+        float u = this.u1 + (this.u2 - this.u1) * ((i % columns) / (float) (columns - 1));
+        float v = this.v1 + (this.v2 - this.v1) * ((i / columns) / (float) (rows - 1));
 
         if (format == VertexFormats.POSITION_TEXTURE_LIGHT_COLOR)
         {

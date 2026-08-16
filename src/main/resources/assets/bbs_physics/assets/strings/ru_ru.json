@@ -86,6 +86,8 @@
     "bbs_physics.forms.cloth.edge_left": "За левый край",
     "bbs_physics.forms.cloth.edge_top_corners": "За верхние углы",
     "bbs_physics.forms.cloth.edge_none": "Ни за что",
+    "bbs_physics.forms.cloth.self_collision": "Сталкивается с тканью",
+    "bbs_physics.forms.cloth.self_collision_tooltip": "Другие полотна смогут лечь на это. Jolt не умеет считать мягкое против мягкого, поэтому под полотном строится решётка тонких пластин, которые едут за ним и подменяют его для других тканей — это лишние тела в сцене, потому по умолчанию выключено. Само на себя полотно всё равно не ложится.",
     "bbs_physics.forms.cloth.mass": "Вес всего полотна (кг)",
     "bbs_physics.forms.cloth.stiffness": "Жёсткость: 0 — трикотаж, 1 — брезент",
     "bbs_physics.forms.cloth.damping": "Затухание: насколько быстро полотно перестаёт болтаться",

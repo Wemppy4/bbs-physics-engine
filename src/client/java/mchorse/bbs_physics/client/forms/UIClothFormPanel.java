@@ -3,12 +3,14 @@ package mchorse.bbs_physics.client.forms;
 import mchorse.bbs_mod.ui.UIKeys;
 import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
 import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
+import mchorse.bbs_mod.ui.forms.editors.utils.UICropOverlayPanel;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UICirculate;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UIColor;
 import mchorse.bbs_mod.ui.framework.elements.input.UITexturePicker;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
+import mchorse.bbs_mod.ui.framework.elements.overlay.UIOverlay;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
 import mchorse.bbs_mod.utils.Direction;
@@ -33,12 +35,14 @@ public class UIClothFormPanel extends UIFormPanel<ClothForm>
     public UIToggle linear;
     public UIToggle mipmap;
     public UIToggle shading;
+    public UIButton openCrop;
 
     public UITrackpad width;
     public UITrackpad height;
     public UITrackpad segmentsX;
     public UITrackpad segmentsY;
     public UICirculate edge;
+    public UIToggle selfCollision;
 
     public UITrackpad mass;
     public UITrackpad stiffness;
@@ -58,6 +62,10 @@ public class UIClothFormPanel extends UIFormPanel<ClothForm>
         this.linear = new UIToggle(UIKeys.TEXTURES_LINEAR, false, (b) -> this.form.linear.set(b.getValue()));
         this.mipmap = new UIToggle(UIKeys.TEXTURES_MIPMAP, false, (b) -> this.form.mipmap.set(b.getValue()));
         this.shading = new UIToggle(UIKeys.FORMS_EDITORS_BILLBOARD_SHADING, false, (b) -> this.form.shading.set(b.getValue()));
+        this.openCrop = new UIButton(UIKeys.FORMS_EDITORS_BILLBOARD_EDIT_CROP, (b) ->
+        {
+            UIOverlay.addOverlay(this.getContext(), new UICropOverlayPanel(this.form.texture.get(), this.form.crop.get()), 0.5F, 0.5F);
+        });
 
         this.width = new UITrackpad((value) -> this.form.width.set(value.floatValue()));
         this.width.limit(0.1D, 16D).tooltip(PhysicsKeys.CLOTH_WIDTH);
@@ -76,6 +84,9 @@ public class UIClothFormPanel extends UIFormPanel<ClothForm>
         this.edge.addLabel(PhysicsKeys.CLOTH_EDGE_NONE);
         this.edge.tooltip(PhysicsKeys.CLOTH_EDGE_TOOLTIP);
 
+        this.selfCollision = new UIToggle(PhysicsKeys.CLOTH_SELF_COLLISION, false, (b) -> this.form.selfCollision.set(b.getValue()));
+        this.selfCollision.tooltip(PhysicsKeys.CLOTH_SELF_COLLISION_TOOLTIP);
+
         this.mass = new UITrackpad((value) -> this.form.mass.set(value.floatValue()));
         this.mass.limit(0.01D, 1000D).tooltip(PhysicsKeys.CLOTH_MASS);
         this.stiffness = new UITrackpad((value) -> this.form.stiffness.set(value.floatValue()));
@@ -88,9 +99,9 @@ public class UIClothFormPanel extends UIFormPanel<ClothForm>
         this.authority = new UITrackpad((value) -> PhysicsForms.setAuthority(this.form, value.floatValue()));
         this.authority.limit(0D, 1D).tooltip(PhysicsKeys.AUTHORITY_TOOLTIP);
 
-        this.options.add(this.pick, this.color, this.linear, this.mipmap, this.shading);
+        this.options.add(this.pick, this.color, this.linear, this.mipmap, this.shading, this.openCrop);
         this.options.add(UI.label(PhysicsKeys.CLOTH_SHEET).marginTop(UIConstants.SECTION_GAP));
-        this.options.add(UI.row(this.width, this.height), UI.row(this.segmentsX, this.segmentsY), this.edge);
+        this.options.add(UI.row(this.width, this.height), UI.row(this.segmentsX, this.segmentsY), this.edge, this.selfCollision);
         this.options.add(UI.label(PhysicsKeys.CLOTH_FABRIC).marginTop(UIConstants.SECTION_GAP));
         this.options.add(this.mass, this.stiffness, this.damping, this.friction);
         this.options.add(UI.label(PhysicsKeys.AUTHORITY).marginTop(UIConstants.SECTION_GAP), this.authority);
@@ -111,6 +122,7 @@ public class UIClothFormPanel extends UIFormPanel<ClothForm>
         this.segmentsX.setValue(form.segmentsX.get());
         this.segmentsY.setValue(form.segmentsY.get());
         this.edge.setValue(form.getEdge().ordinal());
+        this.selfCollision.setValue(form.selfCollision.get());
 
         this.mass.setValue(form.mass.get());
         this.stiffness.setValue(form.stiffness.get());

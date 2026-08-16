@@ -375,10 +375,11 @@ public class FilmScene implements AutoCloseable
      */
     private void buildRigs()
     {
-        /* Distinct per actor: bodies of one group consult its filter, bodies of different groups
-         * never do and collide normally. Two actors sharing an id would consult each other's filter
-         * by subgroup index — nonsense pairs, and one character's arm excused from another's. */
-        int actorGroup = 0;
+        /* Distinct per actor — and per sheet of cloth, which draws from the same counter for the
+         * same reason: bodies of one group consult its filter, bodies of different groups never do
+         * and collide normally. Two groups sharing an id would consult each other's filter by
+         * subgroup index — nonsense pairs, and one character's arm excused from another's. */
+        int group = 0;
 
         for (CastMember member : this.cast)
         {
@@ -416,9 +417,9 @@ public class FilmScene implements AutoCloseable
 
             /* Sized before the markup is divided between owners, because that division does not
              * change how many bodies there will be — only which half builds them. */
-            ActorCollisionGroup group = new ActorCollisionGroup(actorGroup, pieces.size());
+            ActorCollisionGroup actorGroup = new ActorCollisionGroup(group, pieces.size());
 
-            actorGroup += 1;
+            group += 1;
 
             for (Pair<ModelForm, String> found : discoverRagdolls(root, "", new ArrayList<>(0)))
             {
@@ -430,7 +431,7 @@ public class FilmScene implements AutoCloseable
                 Map<String, String> welds = RagdollWelds.resolve(config, pieces, found.b, found.a);
                 List<CollisionCollector.Piece> claimed = claimBonePieces(pieces, found.b, config, welds);
 
-                ActorRagdoll ragdoll = ActorRagdoll.build(this.world, found.a, found.b, claimed, welds, matrices, actorWorld, this, group);
+                ActorRagdoll ragdoll = ActorRagdoll.build(this.world, found.a, found.b, claimed, welds, matrices, actorWorld, this, actorGroup);
 
                 if (ragdoll != null)
                 {
@@ -444,12 +445,15 @@ public class FilmScene implements AutoCloseable
                 }
             }
 
-            ActorRig bones = ActorRig.build(this.world, root, matrices, this, pieces, group);
+            ActorRig bones = ActorRig.build(this.world, root, matrices, this, pieces, actorGroup);
             List<PhysicsBodyRig> bodyRigs = new ArrayList<>(0);
             List<ClothRig> cloths = new ArrayList<>(0);
 
             this.discoverBodies(root, "", matrices, bodyRigs);
-            this.discoverCloths(root, "", matrices, actorWorld, cloths);
+
+            /* Each sheet takes an id of its own from the same counter, so its stand-ins are excused
+             * from it alone — see ClothProxy. */
+            group = this.discoverCloths(root, "", matrices, actorWorld, cloths, group);
 
             if (bones == null && bodyRigs.isEmpty() && ragdolls.isEmpty() && cloths.isEmpty())
             {
@@ -458,9 +462,9 @@ public class FilmScene implements AutoCloseable
 
             /* Both halves of the actor exist now, which is the first moment anything knows every
              * ragdoll part and every kinematic bone at once. */
-            group.seal();
+            actorGroup.seal();
 
-            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls, cloths, group);
+            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls, cloths, actorGroup);
 
             this.rigs.add(rigs);
 
@@ -616,16 +620,20 @@ public class FilmScene implements AutoCloseable
      * the same path convention as the rigid bodies, because the path is how the sheet's animated
      * frame is read back per tick.
      */
-    private void discoverCloths(Form form, String path, MatrixCache matrices, Matrix4f actorWorld, List<ClothRig> out)
+    private int discoverCloths(Form form, String path, MatrixCache matrices, Matrix4f actorWorld, List<ClothRig> out, int group)
     {
         if (form instanceof ClothForm cloth)
         {
-            ClothRig rig = ClothRig.build(this.world, cloth, path, matrices, actorWorld, this);
+            ClothRig rig = ClothRig.build(this.world, cloth, path, matrices, actorWorld, this, group);
 
             if (rig != null)
             {
                 out.add(rig);
             }
+
+            /* Taken whether or not the sheet was built, and whether or not it asked for
+             * stand-ins: an id spent is cheaper than an id reused by mistake. */
+            group += 1;
         }
 
         int i = 0;
@@ -636,12 +644,14 @@ public class FilmScene implements AutoCloseable
 
             if (child != null)
             {
-                this.discoverCloths(child, StringUtils.combinePaths(path, String.valueOf(i)), matrices, actorWorld, out);
+                group = this.discoverCloths(child, StringUtils.combinePaths(path, String.valueOf(i)), matrices, actorWorld, out, group);
             }
 
             /* Outside the null check, mirroring the walk: a partless slot still takes an index. */
             i += 1;
         }
+
+        return group;
     }
 
     /** Registers a body to be drawn by the debug overlay, with a channel of its own to be read from. */

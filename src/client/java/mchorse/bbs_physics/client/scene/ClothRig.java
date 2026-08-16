@@ -77,6 +77,12 @@ public class ClothRig
     private final SoftBodyMotionProperties motion;
     private final SoftBodyVertex[] vertices;
 
+    /**
+     * The rigid stand-ins other sheets land on, or null when this sheet was not asked to collide
+     * with cloth. See {@link ClothProxy} for why sheet-on-sheet cannot be a layer pair.
+     */
+    private final ClothProxy proxy;
+
     /** The recording's layout: x y z per vertex, then the marker (§ the cache's contract). */
     private final float[] record;
 
@@ -93,8 +99,9 @@ public class ClothRig
     private float lastFriction;
     private float lastDamping;
 
-    private ClothRig(ClothForm form, String path, int bodyId, int channel, boolean[] held, float freeInvMass, SoftBodyMotionProperties motion)
+    private ClothRig(ClothForm form, String path, int bodyId, int channel, boolean[] held, float freeInvMass, SoftBodyMotionProperties motion, ClothProxy proxy)
     {
+        this.proxy = proxy;
         this.form = form;
         this.path = path;
         this.bodyId = bodyId;
@@ -116,7 +123,7 @@ public class ClothRig
      * Builds the soft body for a cloth form found at {@code path} in an actor's tree. Null when
      * the pose has no frame for that path — the scene will be rebuilt when the cast changes.
      */
-    public static ClothRig build(PhysicsWorld physics, ClothForm form, String path, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene)
+    public static ClothRig build(PhysicsWorld physics, ClothForm form, String path, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, int group)
     {
         MatrixCacheEntry entry = matrices == null ? null : matrices.get(path);
 
@@ -224,15 +231,29 @@ public class ClothRig
         settings.setFriction(form.friction.get());
         settings.setNumIterations(5);
 
+        /* Built before the sheet, because the sheet has to be told to consult the proxies' filter
+         * — that is the whole of how it is excused from its own stand-ins. */
+        ClothProxy proxy = form.selfCollision.get() ? ClothProxy.build(physics, columns, rows, group) : null;
+
+        if (proxy != null)
+        {
+            settings.setCollisionGroup(proxy.sheetGroup(group));
+        }
+
         Body body = physics.getBodies().createSoftBody(settings);
 
         physics.getBodies().addBody(body.getId(), EActivation.Activate);
 
         SoftBodyMotionProperties motion = (SoftBodyMotionProperties) body.getMotionProperties();
 
+        if (proxy != null)
+        {
+            proxy.resize(physics, form.width.get() / (columns - 1), form.height.get() / (rows - 1));
+        }
+
         form.state = new ClothState(columns, rows);
 
-        return new ClothRig(form, path, body.getId(), scene.addChannel(columns * rows * 3 + 1), held, freeInvMass, motion);
+        return new ClothRig(form, path, body.getId(), scene.addChannel(columns * rows * 3 + 1), held, freeInvMass, motion, proxy);
     }
 
     /**
@@ -332,6 +353,13 @@ public class ClothRig
 
         /* A sheet Jolt has put to sleep ignores everything it was just told. */
         physics.getBodies().activateBody(this.bodyId);
+
+        /* The stand-ins go where the sheet ended up last step — the only place known before this
+         * one runs, hence the tick of lag named in ClothProxy. */
+        if (this.proxy != null)
+        {
+            this.proxy.update(physics, this.motion);
+        }
     }
 
     /**

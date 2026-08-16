@@ -3,6 +3,8 @@ package mchorse.bbs_physics.client.forms;
 import mchorse.bbs_mod.forms.FormCategories;
 import mchorse.bbs_mod.forms.categories.FormCategory;
 import mchorse.bbs_mod.forms.sections.FormSection;
+import mchorse.bbs_mod.resources.Link;
+import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.cloth.ClothForm;
 
 import java.util.Collections;
@@ -28,8 +30,16 @@ public class PhysicsFormSection extends FormSection
     @Override
     public void initiate()
     {
+        ClothForm cloth = new ClothForm();
+
+        /* A texture, because the palette draws the form itself as its own preview and a sheet with
+         * no texture draws nothing at all — an empty slot where the entry should be. BBS does the
+         * same for its picture and block entries; ours is a woven fabric so that the entry reads as
+         * cloth at a glance rather than as another picture. */
+        cloth.texture.set(new Link(BBSPhysics.ASSETS, "textures/cloth.png"));
+
         this.category = new FormCategory(PhysicsKeys.CATEGORY, this.parent.visibility.get("bbs_physics"));
-        this.category.addForm(new ClothForm());
+        this.category.addForm(cloth);
     }
 
     @Override

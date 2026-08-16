@@ -45,13 +45,31 @@ public final class PhysicsLayers
      * Soft bodies — cloth. A layer of its own for one load-bearing reason: a soft body is the one
      * kind of body that looks for its <em>own</em> contacts (a rigid body that finds a soft one in
      * the broad phase does nothing about it), so this layer's pairs decide everything cloth can
-     * touch. It meets the world, the props and the actor's bones — a cape lands on shoulders —
-     * but not other cloth: sheet-on-sheet contact costs a vertex-against-vertex narrow phase that
-     * nothing filmed so far has needed.
+     * touch: the world, the props and the actor's bones — a cape lands on shoulders.
+     *
+     * <p>Cloth against cloth is <b>not</b> among them, and not as an optimisation: Jolt does not
+     * resolve soft against soft at all. Measured rather than assumed — a free sheet dropped onto a
+     * pinned hammock with the pair enabled went straight through it and landed on the floor
+     * (ClothSmoke round 5). So two sheets never meet whatever this table says, and pretending
+     * otherwise here would only cost every pair of sheets a broad phase test that can never
+     * produce a contact. What stands between two sheets instead is a rigid proxy — see
+     * {@link #CLOTH_PROXY}.</p>
      */
     public static final int CLOTH = 4;
 
-    public static final int OBJECT_LAYERS = 5;
+    /**
+     * The rigid stand-in a sheet can be given so that other cloth has something real to land on.
+     * Kinematic thin boxes stitched to the sheet's own faces, driven by it each tick: the sheet
+     * that owns them is excused from touching them (it would fight its own proxy), and every other
+     * sheet collides with them normally. That is the only way sheet-on-sheet exists here, because
+     * the engine has no soft-against-soft phase — see {@link #CLOTH}.
+     *
+     * <p>They are deliberately not in {@link #MOVING}: a proxy must not shove props or bones
+     * around, or a cape would bat crates away with a surface the author never described.</p>
+     */
+    public static final int CLOTH_PROXY = 5;
+
+    public static final int OBJECT_LAYERS = 6;
 
     private static final int BP_STATIC = 0;
     private static final int BP_MOVING = 1;
@@ -80,6 +98,11 @@ public final class PhysicsLayers
         filter.enableCollision(CLOTH, MOVING);
         filter.enableCollision(CLOTH, BONE);
 
+        /* A sheet meets another sheet's proxy, never the sheet itself (Jolt has no soft-vs-soft).
+         * Proxy against anything else is off: it is a stand-in for cloth, not a body in its own
+         * right, and it is kinematic — the pairs below could not produce an impulse anyway. */
+        filter.enableCollision(CLOTH, CLOTH_PROXY);
+
         return filter;
     }
 
@@ -92,6 +115,7 @@ public final class PhysicsLayers
         table.mapObjectToBroadPhaseLayer(BONE, BP_MOVING);
         table.mapObjectToBroadPhaseLayer(GHOST, BP_MOVING);
         table.mapObjectToBroadPhaseLayer(CLOTH, BP_MOVING);
+        table.mapObjectToBroadPhaseLayer(CLOTH_PROXY, BP_MOVING);
 
         return table;
     }
