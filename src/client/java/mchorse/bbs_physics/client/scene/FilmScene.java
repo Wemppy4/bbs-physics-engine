@@ -25,6 +25,7 @@ import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.ragdoll.RagdollPoseApplier;
+import mchorse.bbs_physics.client.ragdoll.RagdollWelds;
 import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsTimeline;
@@ -39,6 +40,7 @@ import org.joml.Vector3f;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The physics of one film: a single Jolt world, a recording of what it did on every tick, and the
@@ -417,9 +419,15 @@ public class FilmScene implements AutoCloseable
 
             for (Pair<ModelForm, String> found : discoverRagdolls(root, "", new ArrayList<>(0)))
             {
-                List<CollisionCollector.Piece> claimed = claimBonePieces(pieces, found.b, FormRagdolls.get(found.a));
+                FormRagdoll config = FormRagdolls.get(found.a);
 
-                ActorRagdoll ragdoll = ActorRagdoll.build(this.world, found.a, found.b, claimed, matrices, actorWorld, this, group);
+                /* Before the claim, because a welded bone is claimed too — it has no body of its
+                 * own, so leaving it behind would put a second collider where its owner's shape
+                 * already is, standing on the animation while the owner falls away from it. */
+                Map<String, String> welds = RagdollWelds.resolve(config, pieces, found.b, found.a);
+                List<CollisionCollector.Piece> claimed = claimBonePieces(pieces, found.b, config, welds);
+
+                ActorRagdoll ragdoll = ActorRagdoll.build(this.world, found.a, found.b, claimed, welds, matrices, actorWorld, this, group);
 
                 if (ragdoll != null)
                 {
@@ -542,8 +550,12 @@ public class FilmScene implements AutoCloseable
      * <p>Bones the author left out of the ragdoll are left behind for the same reason: they still
      * have a shape and still collide, they simply ride the animation instead of falling. That is the
      * case this exists for — a body that walks on while the head comes off.</p>
+     *
+     * <p>Unless they are welded ({@code welds}), in which case they are claimed as well: a bone
+     * nailed to a falling one is part of that body, and a kinematic copy of it left standing here
+     * would be a collider the character walked out from under.</p>
      */
-    private static List<CollisionCollector.Piece> claimBonePieces(List<CollisionCollector.Piece> pieces, String formPath, FormRagdoll config)
+    private static List<CollisionCollector.Piece> claimBonePieces(List<CollisionCollector.Piece> pieces, String formPath, FormRagdoll config, Map<String, String> welds)
     {
         List<CollisionCollector.Piece> claimed = new ArrayList<>(0);
 
@@ -551,7 +563,7 @@ public class FilmScene implements AutoCloseable
         {
             CollisionCollector.Piece piece = pieces.get(i);
 
-            if (!piece.path().equals(formPath) && piece.path().equals(StringUtils.combinePaths(formPath, piece.label())) && config.isPart(piece.label()))
+            if (RagdollWelds.isBonePiece(piece, formPath) && (config.isPart(piece.label()) || welds.containsKey(piece.label())))
             {
                 claimed.add(pieces.remove(i));
             }

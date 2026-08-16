@@ -14,8 +14,14 @@ import java.util.Set;
  * is; it does not say the bone should fall. Those were the same answer until an author asked for
  * the case that proves they are not: a character whose body and head both collide, but only the
  * head comes off. So the markup still decides what a bone <em>is</em>, and {@link #excluded} decides
- * whether the ragdoll claims it — an unclaimed bone stays a kinematic body, riding the animation and
- * shoving what it hits.</p>
+ * whether the ragdoll claims it.</p>
+ *
+ * <p><b>An unclaimed bone is one of two things</b>, and the scene tells them apart by itself, from
+ * the bone tree — there is no third setting to get wrong. With no falling bone above it, it stays a
+ * kinematic body riding the animation and shoving what it hits: the torso that walks on. Underneath
+ * a falling bone, it is welded into that bone's body — headwear on a head — because "I do not fall
+ * and my parent does" can only mean nailed to it. Ticking a bone back into the ragdoll is therefore
+ * also how an author says "this one <em>does</em> swing free", pompom on a welded hat included.</p>
  *
  * <p>Exclusions rather than a list of members, so the default needs no writing down and a bone
  * marked up later is a ragdoll part without anyone revisiting this. A bone absent from

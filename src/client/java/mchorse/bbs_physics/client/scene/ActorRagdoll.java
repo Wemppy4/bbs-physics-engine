@@ -26,8 +26,10 @@ import mchorse.bbs_mod.utils.MathUtils;
 import mchorse.bbs_mod.utils.StringUtils;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
+import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
 import mchorse.bbs_physics.client.ragdoll.RagdollAttachment;
+import mchorse.bbs_physics.client.ragdoll.RagdollWelds;
 import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsWorld;
@@ -53,6 +55,14 @@ import java.util.Map;
  * exist to physics. The ragdoll tab only says how the parts are jointed — a soft cone by default,
  * so an enabled ragdoll works with nothing configured, just drunkenly: knees bend every way until
  * they are told they are hinges.</p>
+ *
+ * <p><b>A bone that does not fall is not always a bone that stands still.</b> One left out of the
+ * ragdoll underneath a falling bone — headwear on a head, a badge on a chest — is welded into that
+ * bone's body rather than given one of its own: its shapes join the owner's compound and travel with
+ * it, and the renderer carries the bone itself along for free, since a weld is only ever resolved
+ * along the bone tree. See {@link RagdollWelds} for why the tree and nothing else decides that, and
+ * why this is not a fixed joint. A bone with no falling bone above it is unaffected and stays the
+ * kinematic body it always was — that is the torso walking on while the head comes off.</p>
  *
  * <p><b>The skeleton is held by Jolt's own joints</b> — {@code SwingTwistConstraint} for the cone,
  * {@code HingeConstraint} for knees and elbows, {@code FixedConstraint} for welds — created once at
@@ -164,12 +174,15 @@ public class ActorRagdoll
      * Builds a ragdoll for one ragdoll-enabled model form, or returns null when there is nothing
      * to build — no marked bones, or a model type the pose cannot be handed back to.
      *
-     * @param pieces   the marked-up bone slots belonging to this form, already collected
+     * @param pieces   the marked-up bone slots belonging to this form, already collected — the
+     *                 falling parts and the bones welded into them, together
+     * @param welds    welded bone → the part it belongs to, as {@link RagdollWelds} resolved it. A
+     *                 welded bone gets no body: its shapes join its owner's compound
      * @param matrices the actor's pose at scene build — the placement the bodies start from
      * @param group    the actor's collision group, shared with its kinematic bones and with any
      *                 other ragdoll hanging off the same actor
      */
-    public static ActorRagdoll build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> pieces, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
+    public static ActorRagdoll build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> pieces, Map<String, String> welds, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
     {
         ModelInstance instance = ModelFormRenderer.getModel(form);
 
@@ -213,7 +226,26 @@ public class ActorRagdoll
         ActorRagdoll ragdoll = new ActorRagdoll(form, formPath);
         Map<String, Part> byBone = new HashMap<>();
 
+        /* The welded bones, gathered under the part each of them belongs to, and the parts on their
+         * own — the joint search must not see a welded bone, which has no body to be jointed to. */
+        Map<String, List<CollisionCollector.Piece>> welded = new HashMap<>();
+        List<CollisionCollector.Piece> partPieces = new ArrayList<>(pieces.size());
+
         for (CollisionCollector.Piece piece : pieces)
+        {
+            String owner = welds.get(piece.label());
+
+            if (owner == null)
+            {
+                partPieces.add(piece);
+            }
+            else
+            {
+                welded.computeIfAbsent(owner, key -> new ArrayList<>(1)).add(piece);
+            }
+        }
+
+        for (CollisionCollector.Piece piece : partPieces)
         {
             MatrixCacheEntry entry = matrices.get(piece.path());
 
@@ -222,7 +254,10 @@ public class ActorRagdoll
                 continue;
             }
 
-            ConstShape shape = JoltShapes.build(piece.shapes());
+            /* Everything this part collides as: its own markup, plus the markup of every bone nailed
+             * to it, carried into its frame. */
+            List<CollisionShapes.SubShape> shapes = weld(piece, welded.get(piece.label()), entry, matrices);
+            ConstShape shape = JoltShapes.build(shapes);
 
             if (shape == null)
             {
@@ -274,7 +309,7 @@ public class ActorRagdoll
 
             SceneBody debug = new SceneBody(body.getId(), 0.75F, 0.4F, 1F);
 
-            debug.addShapes(piece.shapes());
+            debug.addShapes(shapes);
             scene.addDebugBody(debug);
         }
 
@@ -285,7 +320,7 @@ public class ActorRagdoll
 
         /* Who hangs off whom — the three-step answer, shared with the viewport preview so that the
          * lines an author sees are the joints that will actually be built (§7.6). */
-        Map<String, String> attachment = RagdollAttachment.resolve(config, pieces, model, matrices, actorWorld);
+        Map<String, String> attachment = RagdollAttachment.resolve(config, partPieces, model, matrices, actorWorld);
 
         for (Part part : ragdoll.parts)
         {
@@ -317,6 +352,46 @@ public class ActorRagdoll
         FormRagdolls.setState(form, ragdoll.state);
 
         return ragdoll;
+    }
+
+    /**
+     * One part's collision: its own shapes, plus the shapes of every bone welded into it, carried
+     * from each of their frames into this part's.
+     *
+     * <p>Their placement is read once, at the pose the scene is built on, and that is the whole of
+     * what a weld means: the bone keeps the position relative to its owner that it has here,
+     * whatever the animation does with it afterwards. An author who animates a welded bone against
+     * its parent will see the mesh move and the shape stay — but a bone animated against its parent
+     * is not nailed to it, and the fix for that is to let it fall on its own joint.</p>
+     */
+    private static List<CollisionShapes.SubShape> weld(CollisionCollector.Piece piece, List<CollisionCollector.Piece> welded, MatrixCacheEntry own, MatrixCache matrices)
+    {
+        if (welded == null || welded.isEmpty())
+        {
+            return piece.shapes();
+        }
+
+        List<CollisionShapes.SubShape> shapes = new ArrayList<>(piece.shapes());
+        Matrix4f inverse = new Matrix4f(own.matrix()).invert();
+
+        for (CollisionCollector.Piece part : welded)
+        {
+            MatrixCacheEntry entry = matrices.get(part.path());
+
+            if (entry == null || entry.matrix() == null)
+            {
+                continue;
+            }
+
+            Matrix4f relative = new Matrix4f(inverse).mul(entry.matrix());
+
+            for (CollisionShapes.SubShape sub : part.shapes())
+            {
+                shapes.add(CollisionShapes.carry(sub, relative));
+            }
+        }
+
+        return shapes;
     }
 
     /**

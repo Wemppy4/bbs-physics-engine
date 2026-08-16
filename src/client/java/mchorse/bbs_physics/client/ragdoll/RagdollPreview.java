@@ -9,7 +9,6 @@ import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
-import mchorse.bbs_mod.utils.StringUtils;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
@@ -39,11 +38,19 @@ import java.util.Map;
  * the joint itself, and the colour of the joint's kind — so a knee that is still a cone rather than
  * a hinge is visible as a colour, before the character falls over sideways in the film.</p>
  *
+ * <p><b>Welds are drawn too</b>, in a colour of their own ({@link RagdollWelds}): a bone ticked out
+ * of the ragdoll under a falling one is not jointed to it, it <em>is</em> it, and the two readings
+ * of an unticked bone — welded into its parent, or standing still on the animation — are otherwise
+ * indistinguishable until the character falls.</p>
+ *
  * <p>Depth testing is off for the same reason the collision preview turns it off: joints live
  * inside the model, and an overlay that respected depth would be an overlay nobody ever sees.</p>
  */
 public final class RagdollPreview
 {
+    /** Welds, in a colour no joint kind uses — they are not a joint, which is the point of them. */
+    private static final int WELD = 0xFFCC66FF;
+
     private RagdollPreview()
     {}
 
@@ -76,11 +83,22 @@ public final class RagdollPreview
         {
             MatrixCache matrices = FormUtilsClient.getRenderer(form).collectMatrices(entity, transition);
             FormRagdoll config = FormRagdolls.get(form);
-            List<CollisionCollector.Piece> pieces = bonePieces(form, matrices, model, config);
+            List<CollisionCollector.Piece> bones = bonePieces(form, matrices, model);
 
-            if (pieces.isEmpty())
+            if (bones.isEmpty())
             {
                 return;
+            }
+
+            Map<String, String> welds = RagdollWelds.resolve(config, bones, "", model);
+            List<CollisionCollector.Piece> pieces = new ArrayList<>(bones.size());
+
+            for (CollisionCollector.Piece piece : bones)
+            {
+                if (config.isPart(piece.label()) && !welds.containsKey(piece.label()))
+                {
+                    pieces.add(piece);
+                }
             }
 
             Matrix4f identity = new Matrix4f();
@@ -93,6 +111,20 @@ public final class RagdollPreview
                 for (CollisionCollector.Piece piece : pieces)
                 {
                     draw(stack, piece, pieces, attachment, config, matrices, identity);
+                }
+
+                /* And the welds, in their own colour and towards the body the bone has become part
+                 * of. Without a line here the interface says exactly nothing about the difference
+                 * between a bone welded into a falling head and one standing still on the animation
+                 * — and those two do opposite things the moment the character falls. */
+                for (CollisionCollector.Piece piece : bones)
+                {
+                    String owner = welds.get(piece.label());
+
+                    if (owner != null)
+                    {
+                        drawWeld(stack, piece, bones, owner, matrices, identity);
+                    }
                 }
             }
             finally
@@ -122,6 +154,19 @@ public final class RagdollPreview
         Vector3f target = parent == null ? null : RagdollAttachment.pivotWorld(find(pieces, parent), matrices, identity);
 
         JointWireframe.draw(stack, pivot, target, colorOf(joint, parent));
+    }
+
+    /** A welded bone's line: to the part it is nailed to, in the weld's own colour. */
+    private static void drawWeld(MatrixStack stack, CollisionCollector.Piece piece, List<CollisionCollector.Piece> pieces, String owner, MatrixCache matrices, Matrix4f identity)
+    {
+        Vector3f pivot = RagdollAttachment.pivotWorld(piece, matrices, identity);
+
+        if (pivot == null)
+        {
+            return;
+        }
+
+        JointWireframe.draw(stack, pivot, RagdollAttachment.pivotWorld(find(pieces, owner), matrices, identity), WELD);
     }
 
     private static CollisionCollector.Piece find(List<CollisionCollector.Piece> pieces, String bone)
@@ -169,11 +214,12 @@ public final class RagdollPreview
     }
 
     /**
-     * The marked bone slots this ragdoll claims — the parts it would be built from, filtered the
-     * same way the scene filters them. A bone left out of the ragdoll draws no joint here because it
-     * has none: it stays a kinematic body riding the animation.
+     * Every marked bone slot of the model — the raw material the scene divides between falling
+     * parts, welds and kinematic bones. Divided the same way here, so what is drawn is what will be
+     * built. A bone that ends up in neither list draws nothing, and correctly so: it stays a
+     * kinematic body riding the animation, with no joint and nothing to be welded into.
      */
-    private static List<CollisionCollector.Piece> bonePieces(Form form, MatrixCache matrices, Model model, FormRagdoll config)
+    private static List<CollisionCollector.Piece> bonePieces(Form form, MatrixCache matrices, Model model)
     {
         List<CollisionCollector.Piece> pieces = new ArrayList<>();
 
@@ -181,7 +227,7 @@ public final class RagdollPreview
         {
             /* Bone slots only: a piece whose path is the form's own path is the form's shape, not a
              * bone, and it never becomes a ragdoll part. */
-            if (piece.path().equals(StringUtils.combinePaths("", piece.label())) && model.getGroup(piece.label()) != null && config.isPart(piece.label()))
+            if (RagdollWelds.isBonePiece(piece, "") && model.getGroup(piece.label()) != null)
             {
                 pieces.add(piece);
             }
