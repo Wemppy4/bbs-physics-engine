@@ -82,9 +82,6 @@ public class PhysicsKeys
     public static final IKey COLLISION_SHAPE_ADD = L10n.lang("bbs_physics.forms.collision.shape_add");
     public static final IKey COLLISION_SHAPE_REMOVE = L10n.lang("bbs_physics.forms.collision.shape_remove");
     public static final IKey COLLISION_SHAPE_KIND = L10n.lang("bbs_physics.forms.collision.shape_kind");
-    public static final IKey COLLISION_OFFSET = L10n.lang("bbs_physics.forms.collision.offset");
-    public static final IKey COLLISION_ROTATION = L10n.lang("bbs_physics.forms.collision.rotation");
-    public static final IKey COLLISION_SIZE = L10n.lang("bbs_physics.forms.collision.size");
 
     public static final IKey COLLISION_AUTO_THRESHOLD = L10n.lang("bbs_physics.forms.collision.auto_threshold");
     public static final IKey COLLISION_AUTO_THRESHOLD_TOOLTIP = L10n.lang("bbs_physics.forms.collision.auto_threshold_tooltip");

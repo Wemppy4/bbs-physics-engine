@@ -2,11 +2,17 @@ package mchorse.bbs_physics.client.collision;
 
 import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.cubic.ModelInstance;
+import mchorse.bbs_mod.cubic.data.model.Model;
 import mchorse.bbs_mod.data.types.MapType;
+import mchorse.bbs_mod.forms.FormUtils;
+import mchorse.bbs_mod.forms.FormUtilsClient;
+import mchorse.bbs_mod.forms.entities.IEntity;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
+import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import mchorse.bbs_mod.ui.UIKeys;
+import mchorse.bbs_mod.ui.forms.editors.UIFormEditor;
 import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
 import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
 import mchorse.bbs_mod.ui.framework.UIContext;
@@ -16,6 +22,7 @@ import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UICirculate;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIIcon;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
+import mchorse.bbs_mod.ui.framework.elements.input.UIPropTransform;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UIStringList;
@@ -25,7 +32,10 @@ import mchorse.bbs_mod.ui.utils.UIConstants;
 import mchorse.bbs_mod.ui.utils.bones.UIBoneTreeList;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_mod.ui.utils.presets.UIDataContextMenu;
+import mchorse.bbs_mod.utils.MathUtils;
+import mchorse.bbs_mod.utils.StringUtils;
 import mchorse.bbs_mod.utils.colors.Colors;
+import mchorse.bbs_mod.utils.pose.Transform;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
 import mchorse.bbs_physics.collision.CollisionIO;
@@ -35,6 +45,8 @@ import mchorse.bbs_physics.collision.CollisionShape;
 import mchorse.bbs_physics.collision.CollisionSlot;
 import mchorse.bbs_physics.collision.FormCollision;
 import mchorse.bbs_physics.collision.FormCollisions;
+import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import java.util.ArrayList;
@@ -82,15 +94,15 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
     public UIIcon removeShape;
 
     public UICirculate kind;
-    public UITrackpad offsetX;
-    public UITrackpad offsetY;
-    public UITrackpad offsetZ;
-    public UITrackpad rotateX;
-    public UITrackpad rotateY;
-    public UITrackpad rotateZ;
-    public UITrackpad sizeX;
-    public UITrackpad sizeY;
-    public UITrackpad sizeZ;
+
+    /**
+     * Sdvig, povorot and razmer as BBS's own transform widget — and the thing the viewport gizmo
+     * drags. Nine trackpads said the same in three times the height and could only be typed into.
+     */
+    public UIPropTransform placement;
+
+    /** The widget edits this in place; it is copied back into the selected primitive on every change. */
+    private final Transform placementTransform = new Transform();
 
     public UITrackpad autoThreshold;
     private final UIElement thresholdRow;
@@ -191,17 +203,17 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             this.kind.addLabel(PhysicsKeys.kind(value));
         }
 
-        this.offsetX = this.distance(Colors.RED, (shape, v) -> new CollisionShape(shape.kind(), new Vector3f(v, shape.offset().y, shape.offset().z), shape.rotation(), shape.size()));
-        this.offsetY = this.distance(Colors.GREEN, (shape, v) -> new CollisionShape(shape.kind(), new Vector3f(shape.offset().x, v, shape.offset().z), shape.rotation(), shape.size()));
-        this.offsetZ = this.distance(Colors.BLUE, (shape, v) -> new CollisionShape(shape.kind(), new Vector3f(shape.offset().x, shape.offset().y, v), shape.rotation(), shape.size()));
+        this.placement = new UIPropTransform().callbacks(() -> {}, this::commitPlacement).barBackground();
+        this.placement.enableHotkeys();
 
-        this.rotateX = this.degrees(Colors.RED, (shape, v) -> new CollisionShape(shape.kind(), shape.offset(), new Vector3f(v, shape.rotation().y, shape.rotation().z), shape.size()));
-        this.rotateY = this.degrees(Colors.GREEN, (shape, v) -> new CollisionShape(shape.kind(), shape.offset(), new Vector3f(shape.rotation().x, v, shape.rotation().z), shape.size()));
-        this.rotateZ = this.degrees(Colors.BLUE, (shape, v) -> new CollisionShape(shape.kind(), shape.offset(), new Vector3f(shape.rotation().x, shape.rotation().y, v), shape.size()));
+        /* The keyboard half of the gizmo (grab/rotate/scale) builds its drag the same way the mouse
+         * half does, through the editor — otherwise the hotkeys move nothing. */
+        this.placement.hotkeyDrag(() ->
+        {
+            UIFormEditor formEditor = this.getParent(UIFormEditor.class);
 
-        this.sizeX = this.size(Colors.RED, (shape, v) -> new CollisionShape(shape.kind(), shape.offset(), shape.rotation(), new Vector3f(v, shape.size().y, shape.size().z)));
-        this.sizeY = this.size(Colors.GREEN, (shape, v) -> new CollisionShape(shape.kind(), shape.offset(), shape.rotation(), new Vector3f(shape.size().x, v, shape.size().z)));
-        this.sizeZ = this.size(Colors.BLUE, (shape, v) -> new CollisionShape(shape.kind(), shape.offset(), shape.rotation(), new Vector3f(shape.size().x, shape.size().y, v)));
+            return formEditor == null ? null : formEditor.buildHotkeyDrag(this.placement);
+        });
 
         this.autoThreshold = new UITrackpad((v) -> threshold = v.floatValue());
         this.autoThreshold.limit(0D, 8D).increment(PIXEL).values(PIXEL, PIXEL, PIXEL * 4);
@@ -223,54 +235,8 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             this.shapes,
             UI.row(this.addShape, this.removeShape),
             UI.labelRow(PhysicsKeys.COLLISION_SHAPE_KIND, this.kind),
-            UI.label(PhysicsKeys.COLLISION_OFFSET),
-            UI.row(this.offsetX, this.offsetY, this.offsetZ),
-            UI.label(PhysicsKeys.COLLISION_ROTATION),
-            UI.row(this.rotateX, this.rotateY, this.rotateZ),
-            UI.label(PhysicsKeys.COLLISION_SIZE),
-            UI.row(this.sizeX, this.sizeY, this.sizeZ)
+            this.placement
         );
-    }
-
-    private UITrackpad distance(int color, ShapeEdit edit)
-    {
-        UITrackpad pad = new UITrackpad(this.callback(edit));
-
-        pad.limit(-64D, 64D).increment(PIXEL).values(PIXEL, PIXEL, PIXEL * 4);
-        pad.textbox.setColor(color);
-
-        return pad;
-    }
-
-    private UITrackpad degrees(int color, ShapeEdit edit)
-    {
-        UITrackpad pad = new UITrackpad(this.callback(edit));
-
-        pad.limit(-180D, 180D).increment(5D).values(1D, 0.5D, 5D);
-        pad.textbox.setColor(color);
-
-        return pad;
-    }
-
-    private UITrackpad size(int color, ShapeEdit edit)
-    {
-        UITrackpad pad = new UITrackpad(this.callback(edit));
-
-        pad.limit(PIXEL, 64D).increment(PIXEL).values(PIXEL, PIXEL, PIXEL * 4);
-        pad.textbox.setColor(color);
-
-        return pad;
-    }
-
-    private Consumer<Double> callback(ShapeEdit edit)
-    {
-        return (v) ->
-        {
-            if (!this.syncing)
-            {
-                this.editShape((shape) -> edit.apply(shape, v.floatValue()));
-            }
-        };
     }
 
     /* Editing */
@@ -323,12 +289,54 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
     {
         CollisionSlot slot = this.slot();
 
-        /* A fresh primitive is a quarter-block box: big enough to see in the preview, small enough
-         * not to swallow the bone it was just added to. */
-        this.setSlot(slot.plus(CollisionShape.of(CollisionKind.BOX, 0.25F)));
+        this.setSlot(slot.plus(this.freshShape()));
 
         this.selectShape(this.slot().shapes().size() - 1);
         this.updateLabels();
+    }
+
+    /**
+     * The primitive an author gets when they add one: a box around whatever the bone draws, so hand
+     * markup starts from an almost-right shape and becomes a correction rather than a construction.
+     *
+     * <p>The measurement comes back in the bone's own frame, half a turn from the one shapes are
+     * authored in (§10.1), so it is carried back across the same flip that carries them out. A bone
+     * with nothing drawn from it — a control or pivot bone — has nothing to measure, and gets the
+     * quarter-block box: big enough to see in the preview, small enough not to swallow the bone.</p>
+     */
+    private CollisionShape freshShape()
+    {
+        List<CollisionShapes.SubShape> measured = this.model == null || this.model.model == null || FormCollision.SELF.equals(this.slot)
+            ? List.of()
+            : CollisionShapes.measure(this.model.model, this.slot, new Vector3f(1F));
+
+        if (measured.isEmpty())
+        {
+            return CollisionShape.of(CollisionKind.BOX, 0.25F);
+        }
+
+        Vector3f min = new Vector3f(Float.MAX_VALUE);
+        Vector3f max = new Vector3f(-Float.MAX_VALUE);
+
+        for (CollisionShapes.SubShape sub : measured)
+        {
+            /* The measured pieces carry their own rotations; a box around all of them is taken
+             * axis-aligned, which over-covers a tilted piece. That is the safe way to be wrong for
+             * something the author is about to drag anyway. */
+            min.min(new Vector3f(sub.offset()).sub(sub.half()));
+            max.max(new Vector3f(sub.offset()).add(sub.half()));
+        }
+
+        Vector3f offset = new Vector3f(max).add(min).mul(0.5F);
+        Vector3f size = new Vector3f(max).sub(min);
+        Quaternionf rotation = new Quaternionf();
+
+        if (this.model.model instanceof Model)
+        {
+            CollisionShapes.flipY180(offset, rotation);
+        }
+
+        return new CollisionShape(CollisionKind.BOX, offset, new Vector3f(), size);
     }
 
     private void removeShape()
@@ -351,6 +359,101 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
     private void selectShape(int index)
     {
         this.shapes.setIndex(index);
+    }
+
+    /* The transform widget, and the gizmo behind it */
+
+    /** Every change the widget makes — typed, dragged or gizmoed — lands in the selected primitive. */
+    private void commitPlacement()
+    {
+        if (this.syncing)
+        {
+            return;
+        }
+
+        CollisionShape edited = this.authored();
+
+        if (edited != null)
+        {
+            this.editShape((shape) -> edited);
+        }
+    }
+
+    /**
+     * The widget's current state as an authored primitive. Read through
+     * {@link Transform#getEulerRotation} rather than the euler field, so a shape whose rotation the
+     * author put into quaternion mode still reads correctly.
+     */
+    private CollisionShape authored()
+    {
+        CollisionShape shape = this.shape();
+
+        if (shape == null)
+        {
+            return null;
+        }
+
+        Vector3f euler = this.placementTransform.getEulerRotation(new Vector3f());
+
+        return new CollisionShape(
+            shape.kind(),
+            new Vector3f(this.placementTransform.translate),
+            new Vector3f(MathUtils.toDeg(euler.x), MathUtils.toDeg(euler.y), MathUtils.toDeg(euler.z)),
+            new Vector3f(this.placementTransform.scale));
+    }
+
+    /**
+     * The transform the viewport gizmo should drag, or null when there is no primitive selected —
+     * in which case the editor's own gizmo target is left alone.
+     */
+    public UIPropTransform getGizmoTransform()
+    {
+        return this.shape() == null ? null : this.placement;
+    }
+
+    /**
+     * Where the gizmo stands: the selected primitive itself, in the viewport's frame.
+     *
+     * <p>Built from the <em>widget's</em> numbers rather than the stored shape, and that is load
+     * bearing: BBS works out how a screen drag turns into numbers by nudging the transform and
+     * asking for this matrix again ({@code GizmoDrag.computeTranslateJacobian}). A matrix that
+     * ignored the nudge would leave the gizmo unable to move anything.</p>
+     *
+     * <p>It also means the bone's own half turn (§10.1) never has to be reasoned about here: the
+     * shape is placed by the same call that places it for the engine, so whatever the frame does to
+     * a collider it does to the handles.</p>
+     */
+    public Matrix4f gizmoOrigin(IEntity entity, float transition, boolean local)
+    {
+        CollisionShape shape = this.authored();
+
+        if (shape == null || this.form == null || entity == null)
+        {
+            return null;
+        }
+
+        Form root = FormUtils.getRoot(this.form);
+        String path = FormUtils.getPath(this.form);
+
+        if (this.model != null && !FormCollision.SELF.equals(this.slot))
+        {
+            path = StringUtils.combinePaths(path, this.slot);
+        }
+
+        MatrixCacheEntry entry = FormUtilsClient.getRenderer(root).collectMatrices(entity, transition).get(path);
+
+        if (entry == null || entry.matrix() == null)
+        {
+            return null;
+        }
+
+        boolean flip = this.model != null && this.model.model instanceof Model && !FormCollision.SELF.equals(this.slot);
+        CollisionShapes.SubShape sub = CollisionShapes.place(shape, flip, new Vector3f(1F));
+        Matrix4f matrix = new Matrix4f(entry.matrix()).translate(sub.offset()).rotate(sub.rotation());
+
+        /* GLOBAL wants the spot without the frame's rotation, the same split UIForm.getOrigin makes
+         * between a bone's matrix and its origin. */
+        return local ? matrix : new Matrix4f().translation(matrix.getTranslation(new Vector3f()));
     }
 
     /* Automatic markup */
@@ -560,9 +663,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             CollisionShape shape = this.shape();
 
             this.kind.setValue(shape == null ? 0 : shape.kind().ordinal());
-            this.setVector(shape == null ? null : shape.offset(), this.offsetX, this.offsetY, this.offsetZ);
-            this.setVector(shape == null ? null : shape.rotation(), this.rotateX, this.rotateY, this.rotateZ);
-            this.setVector(shape == null ? null : shape.size(), this.sizeX, this.sizeY, this.sizeZ);
+            this.fillPlacement(shape);
         }
         finally
         {
@@ -575,11 +676,30 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         this.addShape.setEnabled(this.form != null);
         this.removeShape.setEnabled(hasShape);
         this.kind.setEnabled(hasShape);
+    }
 
-        for (UITrackpad pad : List.of(this.offsetX, this.offsetY, this.offsetZ, this.rotateX, this.rotateY, this.rotateZ, this.sizeX, this.sizeY, this.sizeZ))
+    /**
+     * Loads the selected primitive into the transform widget — sdvig into translate, povorot into
+     * rotate (degrees to radians, same ZYX order both sides), razmer into scale. Handing it null is
+     * how the widget greys itself out, which is the honest state when no primitive is selected.
+     */
+    private void fillPlacement(CollisionShape shape)
+    {
+        if (shape == null)
         {
-            pad.setEnabled(hasShape);
+            this.placement.setTransform(null);
+
+            return;
         }
+
+        Vector3f rotation = shape.rotation();
+
+        this.placementTransform.rotationMode = Transform.RotationMode.EULER;
+        this.placementTransform.translate.set(shape.offset());
+        this.placementTransform.scale.set(shape.size());
+        this.placementTransform.rotate.set(MathUtils.toRad(rotation.x), MathUtils.toRad(rotation.y), MathUtils.toRad(rotation.z));
+
+        this.placement.setTransform(this.placementTransform);
     }
 
     /**
@@ -607,13 +727,6 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         this.shapes.clear();
         this.shapes.add(rows);
         this.shapes.setIndex(Math.min(Math.max(index, 0), rows.size() - 1));
-    }
-
-    private void setVector(Vector3f vector, UITrackpad x, UITrackpad y, UITrackpad z)
-    {
-        x.setValue(vector == null ? 0D : vector.x);
-        y.setValue(vector == null ? 0D : vector.y);
-        z.setValue(vector == null ? 0D : vector.z);
     }
 
     /**
@@ -645,12 +758,6 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
     protected float getDefaultOptionsWidth()
     {
         return 0.3F;
-    }
-
-    /** One edit of a primitive by a single number. */
-    private interface ShapeEdit
-    {
-        CollisionShape apply(CollisionShape shape, float value);
     }
 
     /**

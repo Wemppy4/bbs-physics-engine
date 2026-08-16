@@ -11,6 +11,7 @@
         "UIClipsMixin",
         "UIFilmControllerMixin",
         "UIFilmKeyframesMixin",
+        "UIFormEditorMixin",
         "UIFormMixin",
         "UIFormRendererMixin",
         "UIFormUndoHandlerMixin",

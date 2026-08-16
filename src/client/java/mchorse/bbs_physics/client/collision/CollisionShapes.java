@@ -359,8 +359,13 @@ public final class CollisionShapes
         return new SubShape(shape.kind(), half, offset, rotation.mul(shape.rotation(), new Quaternionf()));
     }
 
-    /** Conjugates a frame by the half turn about Y, in place: {@code p → F·p}, {@code R → F·R·F}. */
-    private static void flipY180(Vector3f offset, Quaternionf rotation)
+    /**
+     * Conjugates a frame by the half turn about Y, in place: {@code p → F·p}, {@code R → F·R·F}.
+     *
+     * <p>Its own inverse, which is what makes it usable in both directions — the editor reads a
+     * measured shape (already in the bone's frame) back into the frame an author types in.</p>
+     */
+    public static void flipY180(Vector3f offset, Quaternionf rotation)
     {
         offset.set(-offset.x, offset.y, -offset.z);
 

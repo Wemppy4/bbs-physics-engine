@@ -87,9 +87,6 @@
     "bbs_physics.forms.collision.shape_add": "Add a shape — the bone moves from \"auto from cubes\" to hand markup",
     "bbs_physics.forms.collision.shape_remove": "Remove the shape",
     "bbs_physics.forms.collision.shape_kind": "Shape",
-    "bbs_physics.forms.collision.offset": "Offset (blocks)",
-    "bbs_physics.forms.collision.rotation": "Rotation (degrees)",
-    "bbs_physics.forms.collision.size": "Size (blocks)",
 
     "bbs_physics.forms.collision.kind.box": "Box",
     "bbs_physics.forms.collision.kind.sphere": "Sphere",

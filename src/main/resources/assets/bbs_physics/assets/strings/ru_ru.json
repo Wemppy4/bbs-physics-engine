@@ -87,9 +87,6 @@
     "bbs_physics.forms.collision.shape_add": "Добавить форму — кость перейдёт с «авто из кубов» на ручную разметку",
     "bbs_physics.forms.collision.shape_remove": "Убрать форму",
     "bbs_physics.forms.collision.shape_kind": "Что это",
-    "bbs_physics.forms.collision.offset": "Сдвиг (блоки)",
-    "bbs_physics.forms.collision.rotation": "Поворот (градусы)",
-    "bbs_physics.forms.collision.size": "Размер (блоки)",
 
     "bbs_physics.forms.collision.kind.box": "Бокс",
     "bbs_physics.forms.collision.kind.sphere": "Сфера",
