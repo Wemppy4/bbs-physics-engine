@@ -2,8 +2,7 @@ package mchorse.bbs_physics.mixin.client;
 
 import mchorse.bbs_mod.ui.forms.editors.utils.UIPickableFormRenderer;
 import mchorse.bbs_mod.ui.framework.UIContext;
-import mchorse.bbs_physics.client.collision.CollisionPreview;
-import mchorse.bbs_physics.client.ragdoll.RagdollPreview;
+import mchorse.bbs_physics.client.EditorPreview;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -18,9 +17,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * injection into the parent never runs here. Since it never calls its parent either, the two
  * mixins can never both fire for the same viewport.</p>
  *
- * <p>Injected at the tail, after the stencil pass has handed the main framebuffer back and while
- * the viewport still holds the camera's projection — the same state the grid and the gizmo axes
- * are drawn in.</p>
+ * <p>Injected at the tail, which is after the stencil pass — and that pass leaves the GL viewport
+ * pointing at the whole window rather than at the preview. {@link EditorPreview} puts it back; the
+ * reason it has to is written out there.</p>
  */
 @Mixin(UIPickableFormRenderer.class)
 public class UIPickableFormRendererMixin
@@ -33,16 +32,6 @@ public class UIPickableFormRendererMixin
         /* The target entity, not the renderer's own stub: when the editor was opened from a film,
          * the preview is posed by the actor it belongs to, and the markup has to be measured
          * against the same pose the model is drawn in. */
-        CollisionPreview.render(
-            renderer.form,
-            renderer.getTargetEntity(),
-            context.batcher.getContext().getMatrices(),
-            context.getTransition());
-
-        RagdollPreview.render(
-            renderer.form,
-            renderer.getTargetEntity(),
-            context.batcher.getContext().getMatrices(),
-            context.getTransition());
+        EditorPreview.render(renderer.form, renderer.getTargetEntity(), renderer.area, context);
     }
 }

@@ -51,6 +51,7 @@ import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
@@ -466,6 +467,14 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
      *
      * <p>Bones the author placed primitives on by hand are never touched — the pass is a draft to
      * correct, not an answer, and throwing away hand work would make it unusable as a draft.</p>
+     *
+     * <p>Bones BBS's own chain solver drives — hair, a cape, a tail — are left out, and that is
+     * about correctness rather than cost: a strand the solver swings and a kinematic body drags
+     * along the animation has <b>two masters</b> and does neither convincingly. They are written
+     * down as "nothing" rather than skipped, so a later run at a smaller threshold cannot quietly
+     * pick them up. Hand-placed primitives still win over this, as they win over everything else
+     * here: putting one on a chain bone is a deliberate act, and a button that undid deliberate
+     * acts would be a button nobody dares press.</p>
      */
     private void autoMark()
     {
@@ -476,6 +485,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             return;
         }
 
+        Set<String> chains = ChainBones.of(this.form, model instanceof Model cubic ? cubic : null);
         Vector3f scale = this.model.getScale();
         FormCollision collision = this.collision;
 
@@ -485,6 +495,13 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
             if (slot.mode() == CollisionMode.SHAPES)
             {
+                continue;
+            }
+
+            if (chains.contains(bone))
+            {
+                collision = collision.with(bone, CollisionSlot.NONE);
+
                 continue;
             }
 

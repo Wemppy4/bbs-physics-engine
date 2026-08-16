@@ -50,7 +50,7 @@
     "bbs_physics.forms.physics.add_obstacle": "Obstacle (later)",
     "bbs_physics.forms.physics.add_cloth": "Cloth (later)",
     "bbs_physics.forms.physics.remove": "Remove the modifier",
-    "bbs_physics.forms.physics.unmarked": "No shape — falls through everything. See the Collision tab",
+    "bbs_physics.forms.physics.unmarked": "Set up collision first — the Collision tab. Without it there is nothing for physics to take hold of: the form falls through everything and touches nothing.",
 
     "bbs_physics.forms.body.mass_tooltip": "Only matters when two moving bodies meet: in a vacuum everything falls alike.",
 

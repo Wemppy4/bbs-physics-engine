@@ -50,7 +50,7 @@
     "bbs_physics.forms.physics.add_obstacle": "Препятствие (позже)",
     "bbs_physics.forms.physics.add_cloth": "Ткань (позже)",
     "bbs_physics.forms.physics.remove": "Убрать модификатор",
-    "bbs_physics.forms.physics.unmarked": "Формы нет — провалится сквозь всё. Вкладка «Коллизия»",
+    "bbs_physics.forms.physics.unmarked": "Для начала настройте коллизии — вкладка «Коллизия». Без них физике не за что взяться: форма провалится сквозь всё и ничего не заденет.",
 
     "bbs_physics.forms.body.mass_tooltip": "Влияет только на столкновение двух подвижных тел: в вакууме все падают одинаково.",
 

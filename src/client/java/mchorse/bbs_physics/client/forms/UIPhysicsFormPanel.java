@@ -4,21 +4,18 @@ import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
 import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
+import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.framework.elements.UIElement;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UICirculate;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIIcon;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
-import mchorse.bbs_mod.ui.framework.elements.utils.UILabel;
+import mchorse.bbs_mod.ui.framework.elements.utils.UIText;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_mod.utils.colors.Colors;
-import mchorse.bbs_physics.client.collision.CollisionAuto;
 import mchorse.bbs_physics.client.ragdoll.UIRagdollSection;
-import mchorse.bbs_physics.collision.CollisionMode;
-import mchorse.bbs_physics.collision.CollisionSlot;
-import mchorse.bbs_physics.collision.FormCollision;
 import mchorse.bbs_physics.collision.FormCollisions;
 import mchorse.bbs_physics.forms.FormBody;
 import mchorse.bbs_physics.forms.PhysicsForms;
@@ -34,9 +31,12 @@ import java.util.function.UnaryOperator;
  * <em>not</em> do any more is describe shape: that moved back out to the collision tab, which is a
  * job done once per model and forgotten, while this one is where an author returns every shot.</p>
  *
- * <p><b>Adding a modifier runs the markup pass</b> (Р8.4) over a form nobody has marked up yet.
- * Nobody starts from empty; what that leaves for the author is correcting a draft in the other tab,
- * not answering "what shape is this?" before anything has ever moved.</p>
+ * <p><b>A modifier does not touch the markup at all</b> (Р11). Adding one used to run the automatic
+ * pass and removing the last one used to wipe the result, which made shape a thing the physics tab
+ * quietly owned — and an author who had marked a model up by hand in the other tab watched it
+ * vanish under a click here. Collision is now set up on its own, once, and physics only reads it.
+ * The cost of that is a form that can carry a modifier and no shape, which is exactly the state the
+ * notice at the top of the tab is for.</p>
  *
  * <p>One handle drives both modifiers (§4), so it sits inside whichever modifier is present rather
  * than being duplicated into each — a form is a body or a ragdoll, never both.</p>
@@ -64,8 +64,11 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
     private final UITrackpad ragdollAuthority;
     private final UIElement ragdollAuthorityRow;
 
-    /** Shown only when there is nothing marked up at all — the one state that reads as broken. */
-    private final UILabel unmarked;
+    /** Shown when a modifier is on and there is no shape for it to work with — see {@link #marked}. */
+    private final UIText unmarked;
+
+    /** What the tab was last built against, so an edit made in the collision tab is noticed. */
+    private boolean marked;
 
     private boolean syncing;
 
@@ -119,8 +122,9 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.ragdollSection = new UIModifierSection(PhysicsKeys.RAGDOLL_TITLE, "physics.ragdoll", () -> this.toggleRagdoll(false));
         this.ragdollSection.fields.add(this.ragdollAuthorityRow, this.ragdollBones);
 
-        this.unmarked = UI.label(PhysicsKeys.PHYSICS_UNMARKED, UIConstants.LIST_ITEM_HEIGHT, Colors.LIGHTER_GRAY);
-        this.unmarked.labelAnchor(0F, 0.5F);
+        /* Wrapped rather than a one-line label: the column is narrow, and the sentence that has to
+         * be read here is the one a single line cuts in half. */
+        this.unmarked = new UIText(PhysicsKeys.PHYSICS_UNMARKED).color(Colors.LIGHTER_GRAY, true).padding(0, 2);
     }
 
     private UITrackpad authority()
@@ -196,16 +200,6 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         }
 
         PhysicsForms.setBody(this.form, add ? FormBody.added() : FormBody.EMPTY);
-
-        if (add)
-        {
-            this.markUp();
-        }
-        else
-        {
-            this.dropMarkup();
-        }
-
         this.sync();
     }
 
@@ -217,50 +211,7 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         }
 
         FormRagdolls.set(this.form, FormRagdolls.get(this.form).withEnabled(add));
-
-        if (add)
-        {
-            this.markUp();
-        }
-        else
-        {
-            this.dropMarkup();
-        }
-
         this.sync();
-    }
-
-    /**
-     * Removing the last modifier takes the collision markup with it.
-     *
-     * <p>The markup is stored separately on the form and read by everyone (Р6), which is right —
-     * but leaving it behind meant a form the author had just stripped of physics still quietly
-     * carried a set of shapes, and adding the modifier back would find them and skip the automatic
-     * pass, handing back yesterday's draft instead of a fresh one. Blender behaves the same way: the
-     * shape belongs to the modifier, and deleting the modifier deletes it. Undo brings it back if
-     * the click was a mistake.</p>
-     */
-    private void dropMarkup()
-    {
-        if (!PhysicsForms.isSimulated(this.form))
-        {
-            FormCollisions.set(this.form, FormCollision.EMPTY);
-        }
-    }
-
-    /**
-     * The Р8.4 pass. It only runs over a form nobody has marked up yet — re-running it on the
-     * author's own work would be the modifier quietly undoing it — and the collision tab's own
-     * button is where running it again on purpose lives.
-     */
-    private void markUp()
-    {
-        FormCollision collision = FormCollisions.get(this.form);
-
-        if (CollisionAuto.isBlank(collision))
-        {
-            FormCollisions.set(this.form, CollisionAuto.mark(this.form, collision, CollisionAuto.DEFAULT_THRESHOLD));
-        }
     }
 
     private void setAuthority(float value)
@@ -341,7 +292,17 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
      */
     private void rebuild(boolean body, boolean ragdoll)
     {
+        this.marked = FormCollisions.has(this.form);
+
         this.options.removeAll();
+
+        /* First, above the modifier it blocks: a modifier with nothing to collide as does nothing
+         * at all, and since Р11 nothing marks the form up on the author's behalf. Read before the
+         * settings, it is an instruction; read under them, it is an epitaph. */
+        if ((body || ragdoll) && !this.marked)
+        {
+            this.options.add(this.unmarked);
+        }
 
         /* A form is a body or a ragdoll, never both: welding a model into one falling lump and
          * jointing its bones are two answers to the same question. So the button that adds one is
@@ -361,26 +322,25 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
             this.options.add(this.ragdollSection);
         }
 
-        if ((body || ragdoll) && !isMarked(FormCollisions.get(this.form)))
-        {
-            this.options.add(this.unmarked);
-        }
-
         this.options.resize();
     }
 
-    /** Whether anything at all would collide — the difference between "falls" and "falls forever". */
-    private static boolean isMarked(FormCollision collision)
+    /**
+     * The markup is edited in the <em>other</em> tab, and switching tabs does not rebuild this one —
+     * so without this the notice would still be sitting there after the author had gone and answered
+     * it. {@link FormCollisions#has} is the cheap form of the question (empty slots are never
+     * written, so "has anything stored" and "has anything that collides" are the same question), and
+     * the rebuild only fires on the frame the answer changes.
+     */
+    @Override
+    public void render(UIContext context)
     {
-        for (CollisionSlot slot : collision.slots().values())
+        if (this.form != null && FormCollisions.has(this.form) != this.marked)
         {
-            if (slot.mode() != CollisionMode.NONE)
-            {
-                return true;
-            }
+            this.rebuild(PhysicsForms.getBody(this.form).enabled(), FormRagdolls.isEnabled(this.form));
         }
 
-        return false;
+        super.render(context);
     }
 
     @Override
