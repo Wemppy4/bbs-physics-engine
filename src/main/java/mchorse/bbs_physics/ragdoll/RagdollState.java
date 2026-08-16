@@ -1,5 +1,6 @@
 package mchorse.bbs_physics.ragdoll;
 
+import mchorse.bbs_mod.utils.MathUtils;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
@@ -24,21 +25,59 @@ public class RagdollState
     private final Map<String, BoneState> bones = new HashMap<>();
 
     /**
-     * Whether the simulation, rather than the animation, currently owns the pose. Written every
-     * tick from the authority handle: below a full 1 the renderer substitutes these frames, at 1
-     * it draws the keyframes untouched — the bodies are standing on them anyway, and the animation
-     * path is the smoother of the two while it is in charge.
+     * The handle as it stood on the two ticks the drawn frame falls between, so the substitution's
+     * weight can be interpolated like everything else here.
+     *
+     * <p>A full 1 on both means the animation owns the pose outright, which is the resting state of
+     * a form nobody has released — hence the initial value.</p>
      */
-    private boolean active;
+    private float previousAuthority = 1F;
+    private float authority = 1F;
 
+    /** Whether the recording had anything to say about this ragdoll on the frame being drawn. */
+    private boolean recorded;
+
+    /**
+     * Whether the substitution can have any weight at all on the frame being drawn.
+     *
+     * <p><b>A shortcut past the walk, not a decision about who owns the pose.</b> That distinction
+     * is the whole of the fix to the handle: this used to answer "authority below 1?" and thereby
+     * turn a continuous handle into a switch that flipped on the last step of the fade — invisible
+     * going 1 → 0, where the bodies are standing exactly on the animation anyway, and a visible
+     * jerk coming back, where they are merely near it. Now the weight is {@code 1 - authority} and
+     * the walk simply is not worth running when it comes out zero. At a full 1 the animation still
+     * draws itself untouched — same result, same cost, but as a consequence rather than a rule.</p>
+     */
     public boolean isActive()
     {
-        return this.active;
+        return this.recorded && (this.authority < 1F || this.previousAuthority < 1F);
     }
 
-    public void setActive(boolean active)
+    /** The simulation's share of the drawn pose: 0 at a full handle, 1 at a released one. */
+    public float getWeight(float transition)
     {
-        this.active = active;
+        float value = this.previousAuthority + (this.authority - this.previousAuthority) * transition;
+
+        return MathUtils.clamp(1F - value, 0F, 1F);
+    }
+
+    public void setRecorded(boolean recorded)
+    {
+        this.recorded = recorded;
+    }
+
+    /**
+     * Records the handle for the tick just read.
+     *
+     * @param teleport whether this tick does not follow the last one, in which case there is no
+     *                 previous handle to fade from — the same rule the bone frames follow
+     */
+    public void setAuthority(float authority, boolean teleport)
+    {
+        float value = MathUtils.clamp(authority, 0F, 1F);
+
+        this.previousAuthority = teleport ? value : this.authority;
+        this.authority = value;
     }
 
     /**

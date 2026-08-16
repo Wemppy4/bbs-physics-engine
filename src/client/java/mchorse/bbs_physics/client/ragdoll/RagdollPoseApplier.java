@@ -16,9 +16,17 @@ import org.joml.Vector3f;
  * <p>It writes where every constraint stage writes — {@code ModelGroup.orient} (the bone's full
  * local rotation, applied in place of the channels) and {@code ModelGroup.offset} (a shift in the
  * parent frame) — and it runs in the constraint phase between IK and the chain physics. Which is
- * the whole trick: the channels stay untouched FK truth, IK on ragdolled bones is overwritten and
- * thereby muted, and the hair chains that run right after anchor themselves to bones that are
- * already fallen. Nothing downstream had to learn anything.</p>
+ * the whole trick: the channels stay untouched FK truth, IK on ragdolled bones is faded out along
+ * with the rest of the animated pose, and the hair chains that run right after anchor themselves to
+ * bones that are already fallen. Nothing downstream had to learn anything.</p>
+ *
+ * <p><b>By the handle's weight, like every other stage of that phase.</b> The simulated frame is
+ * mixed into what the pipeline had rather than replacing it, so 0.4 on the handle draws four tenths
+ * of the fall — and, which is the point, a full 1 draws none of it and a full 0 draws all of it,
+ * with nothing happening on any particular tick in between. The substitution used to be
+ * all-or-nothing under a "handle below 1?" test, and that test was a threshold on a continuous
+ * handle: harmless letting go, where the bodies are standing on the animation anyway, and a visible
+ * jerk taking the character back, where they are only near it.</p>
  *
  * <p>The state holds each simulated bone's <em>pivot frame</em> in the model's flipped group space
  * — the space the render walk composes matrices in, actor-independent. Turning that absolute frame
@@ -78,9 +86,16 @@ public final class RagdollPoseApplier
             return;
         }
 
+        float weight = state.getWeight(transition);
+
+        if (weight <= 0F)
+        {
+            return;
+        }
+
         chainStretch = true;
 
-        Walker walker = new Walker(state, transition);
+        Walker walker = new Walker(state, transition, weight);
 
         for (ModelGroup group : cubic.topGroups)
         {
@@ -94,16 +109,21 @@ public final class RagdollPoseApplier
         private final RagdollState state;
         private final float transition;
 
+        /** The simulation's share of the drawn pose — see {@link #substitute}. */
+        private final float weight;
+
         private final Vector3f position = new Vector3f();
         private final Quaternionf rotation = new Quaternionf();
         private final Matrix4f inverse = new Matrix4f();
         private final Vector3f local = new Vector3f();
         private final Quaternionf parentRotation = new Quaternionf();
+        private final Quaternionf simulated = new Quaternionf();
 
-        private Walker(RagdollState state, float transition)
+        private Walker(RagdollState state, float transition, float weight)
         {
             this.state = state;
             this.transition = transition;
+            this.weight = weight;
         }
 
         private void walk(ModelGroup group, Matrix4f parent)
@@ -140,7 +160,19 @@ public final class RagdollPoseApplier
 
         /**
          * Solves the one local rotation and parent-frame shift that land this bone's pivot frame
-         * exactly where the simulation has it, and writes them where the renderer reads.
+         * where the simulation has it, and blends them into what the pipeline had by the weight.
+         *
+         * <p><b>Blended, not written outright</b>, which is what the constraint stage's contract
+         * asks of every stage ({@code ModelGroup.orient}): read the evaluated-so-far rotation, mix
+         * your result against it by your weight, write the outcome. Ignoring the weight is what put
+         * a cliff at the top of the handle — the substitution was all-or-nothing, so the last step
+         * of a fade back to the animation was a jump of however far the bodies had failed to be
+         * pulled. At weight 0 both lines below are the identity, and at 1 they are exactly what
+         * they were before; the fade is now a fade at both ends.</p>
+         *
+         * <p>The animated side is read here rather than passed in because it is not the same thing
+         * for every bone: {@code evaluatedRotation()} is whatever the channels and the IK solve
+         * left, and {@code offset} is the IK stretch's shift where there was one.</p>
          */
         private void substitute(ModelGroup group, Matrix4f parent)
         {
@@ -156,14 +188,30 @@ public final class RagdollPoseApplier
             this.inverse.set(parent).invert();
             this.inverse.transformPosition(this.position, this.local);
 
-            group.offset = new Vector3f(this.local.x - dx, this.local.y - dy, this.local.z - dz);
+            Vector3f offset = group.offset;
+            float ox = offset == null ? 0F : offset.x;
+            float oy = offset == null ? 0F : offset.y;
+            float oz = offset == null ? 0F : offset.z;
+
+            group.offset = new Vector3f(
+                mix(ox, this.local.x - dx, this.weight),
+                mix(oy, this.local.y - dy, this.weight),
+                mix(oz, this.local.z - dz, this.weight));
 
             /* The local rotation that composes with the parent's to face where the body faces.
              * Unnormalized read because ancestor scale rides the frame; the result is normalized
              * for the same reason. */
             parent.getUnnormalizedRotation(this.parentRotation);
+            this.parentRotation.conjugate().mul(this.rotation, this.simulated).normalize();
 
-            group.orient = this.parentRotation.conjugate().mul(this.rotation, new Quaternionf()).normalize();
+            /* Along the shorter arc, so a bone half a turn from its keyframes fades the near way
+             * round rather than through the character. */
+            group.orient = group.evaluatedRotation().slerp(this.simulated, this.weight);
+        }
+
+        private static float mix(float animated, float simulated, float weight)
+        {
+            return animated + (simulated - animated) * weight;
         }
     }
 }

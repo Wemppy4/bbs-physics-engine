@@ -70,8 +70,16 @@ import java.util.Map;
  * carry it to its keyframed place, mixed with what it already has in the handle's proportion. The
  * joints stay out of that bargain and only enforce their limits, so at 0.6 the character walks
  * where it is told while sagging and stumbling into what it hits, and at 0 it is entirely the
- * world's problem. Muting IK on ragdolled bones costs nothing here: the pose the parts are pulled
- * towards already includes IK, and the drawn pose below 1 is these bodies, not the solvers.</p>
+ * world's problem.</p>
+ *
+ * <p><b>The handle is the drawn pose's weight as well as the drive's</b>, and both ends of it are
+ * exact: at 1 nothing is substituted and the animation draws itself, at 0 the bodies are the pose
+ * outright, and in between the two are mixed by that much (see {@code RagdollPoseApplier}). It has
+ * to be a weight rather than a threshold in both places or the fade has a cliff at whichever end
+ * the threshold sits — which it did, at the top, where a ragdoll being taken back by the animation
+ * jerked the last of the way home. Blending rather than overruling also settles what happens to IK
+ * on a ragdolled bone for free: it is faded out with everything else instead of being muted, and
+ * the pose the parts are pulled towards includes it either way.</p>
  *
  * <p><b>Cubic models only, for now.</b> The simulated pose is handed back through the model's
  * group frames ({@code orient}/{@code offset}), which BOBJ models do not have — a BOBJ model would
@@ -625,13 +633,15 @@ public class ActorRagdoll
     }
 
     /**
-     * Hands the renderer the recorded pose for the frame being drawn.
+     * Hands the renderer the recorded pose for the frame being drawn, and the handle it was
+     * simulated under — which decides how much of that pose is used.
      *
      * <p>Two ways this ends up drawing plain animation, and they are different things. The handle
-     * standing at a full 1 means the animation is in charge and draws itself, which is smoother
-     * than substituting a pose that merely agrees with it. An <em>unrecorded</em> tick means the
-     * recording has not reached this frame yet, and Р8.1 says the same thing happens: the character
-     * stands on its keyframes until the catch-up gets here.</p>
+     * standing at a full 1 leaves the substitution no weight, so the animation draws itself
+     * untouched — smoother than substituting a pose that merely agrees with it, and now the end of
+     * a continuous fade rather than a rule that fires on one tick. An <em>unrecorded</em> tick means
+     * the recording has not reached this frame yet, and Р8.1 says the same thing happens: the
+     * character stands on its keyframes until the catch-up gets here.</p>
      */
     public void readCache(PhysicsCache cache, int tick, boolean teleport)
     {
@@ -639,6 +649,7 @@ public class ActorRagdoll
          * is wherever the animation last left them, not a place they fell from. */
         boolean jumped = teleport || !this.recorded;
         boolean recorded = false;
+        float authority = 1F;
 
         for (Part part : this.parts)
         {
@@ -646,13 +657,23 @@ public class ActorRagdoll
             {
                 this.state.set(part.bone, this.translation, this.orientation, jumped);
 
+                if (!recorded)
+                {
+                    /* From a channel that actually answered, not from the first part outright. The
+                     * handle belongs to the form, so every part of one ragdoll wrote the same
+                     * number — but a part with nothing to say wrote the silence marker in its
+                     * place, and reading that as a handle would release a ragdoll nobody released. */
+                    authority = cache.readAuthority(tick, part.channel);
+                }
+
                 recorded = true;
             }
         }
 
         this.recorded = recorded;
 
-        this.state.setActive(recorded && cache.readAuthority(tick, this.parts.get(0).channel) < 1F);
+        this.state.setRecorded(recorded);
+        this.state.setAuthority(authority, jumped);
     }
 
     /**
