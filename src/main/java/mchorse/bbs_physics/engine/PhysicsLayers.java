@@ -81,6 +81,16 @@ public final class PhysicsLayers
 
     public static ObjectVsBroadPhaseLayerFilterTable newBroadPhaseFilter(BroadPhaseLayerInterfaceTable layers, ObjectLayerPairFilterTable pairs)
     {
-        return new ObjectVsBroadPhaseLayerFilterTable(layers, BROAD_PHASE_LAYERS, pairs, OBJECT_LAYERS);
+        /* The second count is the number of OBJECT layers, the last one the number of broad phase
+         * layers — the reverse of what the parameter names suggest. Handing them over the other way
+         * round builds rows for the first two object layers only, and every layer past those
+         * collides with nothing, silently: the table answers false for every tree, so the broad
+         * phase never returns a single candidate. It went unseen for the whole of Э1–Э4 because the
+         * clipped layers were BONE and GHOST — a kinematic bone never queries for itself (dynamic
+         * bodies find it through their own, intact row) and GHOST is supposed to meet nothing. A
+         * soft body is the first thing that queries the broad phase from one of those rows, which
+         * is how cloth fell through the world and named this. Proven by probing shouldCollide on
+         * both argument orders — see the ClothSmoke stands. */
+        return new ObjectVsBroadPhaseLayerFilterTable(layers, OBJECT_LAYERS, pairs, BROAD_PHASE_LAYERS);
     }
 }
