@@ -28,6 +28,7 @@ import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 import java.nio.FloatBuffer;
+import java.util.Map;
 
 /**
  * Ties one cloth form to its soft body in the simulation, in both directions: the held edge (and,
@@ -65,6 +66,13 @@ public class ClothRig
     private final int bodyId;
     private final int channel;
 
+    /**
+     * The bone this sheet hangs on, named the way the pose walk names bones, or null when it hangs
+     * on no bone at all. Only used to ask whether that bone is being ragdolled — see the delta in
+     * {@link #update}.
+     */
+    private final String anchor;
+
     private final int columns;
     private final int rows;
 
@@ -99,9 +107,10 @@ public class ClothRig
     private float lastFriction;
     private float lastDamping;
 
-    private ClothRig(ClothForm form, String path, int bodyId, int channel, boolean[] held, float freeInvMass, SoftBodyMotionProperties motion, ClothProxy proxy)
+    private ClothRig(ClothForm form, String path, int bodyId, int channel, boolean[] held, float freeInvMass, SoftBodyMotionProperties motion, ClothProxy proxy, String anchor)
     {
         this.proxy = proxy;
+        this.anchor = anchor;
         this.form = form;
         this.path = path;
         this.bodyId = bodyId;
@@ -123,7 +132,7 @@ public class ClothRig
      * Builds the soft body for a cloth form found at {@code path} in an actor's tree. Null when
      * the pose has no frame for that path — the scene will be rebuilt when the cast changes.
      */
-    public static ClothRig build(PhysicsWorld physics, ClothForm form, String path, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, int group)
+    public static ClothRig build(PhysicsWorld physics, ClothForm form, String path, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, int group, String anchor)
     {
         MatrixCacheEntry entry = matrices == null ? null : matrices.get(path);
 
@@ -253,7 +262,7 @@ public class ClothRig
 
         form.state = new ClothState(columns, rows);
 
-        return new ClothRig(form, path, body.getId(), scene.addChannel(columns * rows * 3 + 1), held, freeInvMass, motion, proxy);
+        return new ClothRig(form, path, body.getId(), scene.addChannel(columns * rows * 3 + 1), held, freeInvMass, motion, proxy, anchor);
     }
 
     /**
@@ -265,11 +274,39 @@ public class ClothRig
      */
     public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset)
     {
+        this.update(physics, scene, matrices, actorWorld, reset, Map.of());
+    }
+
+    /**
+     * @param deltas how far each ragdolled bone of this actor has been carried from its animated
+     *               pose, published by the ragdolls a moment ago — see {@link ActorRagdoll#publish}
+     */
+    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset, Map<String, Matrix4f> deltas)
+    {
         MatrixCacheEntry entry = matrices == null ? null : matrices.get(this.path);
 
         if (entry != null && entry.matrix() != null)
         {
-            this.formWorld.set(actorWorld).mul(entry.matrix());
+            /* The bone this sheet hangs on may be falling, and the pose walk cannot say so: it is
+             * run with the ragdoll's substitution off, because the simulation must see plain
+             * animation. Left at that, a cape pinned to a shoulder was simulated where the
+             * shoulder would have been had the character stayed on its feet, while the renderer
+             * drew it where the shoulder actually is. Multiplying on the left swaps the animated
+             * bone for the simulated one and leaves the body part's own transform below it alone.
+             *
+             * Applied to the frame the whole rig works in, so the recording — which converts the
+             * sheet into this very frame — stays consistent with it for free, and the renderer's
+             * own fallen stack lands the vertices exactly where they were solved. */
+            Matrix4f delta = this.anchor == null ? null : deltas.get(this.anchor);
+
+            if (delta == null)
+            {
+                this.formWorld.set(actorWorld).mul(entry.matrix());
+            }
+            else
+            {
+                this.formWorld.set(delta).mul(actorWorld).mul(entry.matrix());
+            }
         }
 
         this.applySettings(physics);

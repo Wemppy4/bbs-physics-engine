@@ -164,6 +164,15 @@ public class ActorRagdoll
     private final Vec3 angular = new Vec3();
     private final Matrix4f poseFrame = new Matrix4f();
 
+    /* The two frames a bone's fall is measured between, and the weighted blend of them. Fields
+     * because this runs per part per tick — see {@link #publish}. */
+    private final Vector3f animatedPosition = new Vector3f();
+    private final Vector3f simulatedPosition = new Vector3f();
+    private final Vector3f blendedPosition = new Vector3f();
+    private final Quaternionf animatedRotation = new Quaternionf();
+    private final Quaternionf simulatedRotation = new Quaternionf();
+    private final Quaternionf blendedRotation = new Quaternionf();
+
     private ActorRagdoll(ModelForm form, String formPath)
     {
         this.form = form;
@@ -644,6 +653,15 @@ public class ActorRagdoll
      */
     public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset)
     {
+        this.update(physics, scene, matrices, actorWorld, reset, null);
+    }
+
+    /**
+     * @param deltas where to publish how far each bone has fallen from its animated pose — see
+     *               {@link #publish}. Null when nobody is hanging off this ragdoll
+     */
+    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset, Map<String, Matrix4f> deltas)
+    {
         this.captureBase(matrices, actorWorld);
 
         BodyInterface bodies = physics.getBodies();
@@ -706,7 +724,80 @@ public class ActorRagdoll
             {
                 this.drive(bodies, part, authority);
             }
+
+            this.publish(bodies, scene, part, deltas, authority);
         }
+    }
+
+    /**
+     * Says how far this bone has been carried from the pose the animation drew it in, as one
+     * matrix: <em>where the body is</em> times the inverse of <em>where the keyframes put it</em>.
+     *
+     * <p>This exists because everything hanging off a fallen bone would otherwise stay behind.
+     * A form is placed from the actor's pose walk, and that walk is deliberately run with the
+     * ragdoll's substitution switched off — the simulation has to see plain animation, or the
+     * parts chase their own output. Correct for the ragdoll, wrong for a cape pinned to its
+     * shoulder: the sheet was simulated where the shoulder <em>would have been</em>, while the
+     * renderer drew it where the shoulder actually is. Multiplying the form's animated frame by
+     * this delta on the left swaps the animated bone out for the simulated one and leaves
+     * everything below it — the body part's own transform, nested forms — untouched.</p>
+     *
+     * <p>Published only while the ragdoll is actually falling: at a handle of 1 the bodies are
+     * kinematically glued to the animation, so the delta is the identity and saying so would be
+     * one matrix multiply per hanger per tick to change nothing.</p>
+     *
+     * <p>The delta describes the <em>previous</em> step, which is the only pose that exists before
+     * this one is solved. A tick of lag at 20 Hz, and the same lag the cloth proxies carry.</p>
+     */
+    private void publish(BodyInterface bodies, FilmScene scene, Part part, Map<String, Matrix4f> deltas, float authority)
+    {
+        if (deltas == null || this.kinematic)
+        {
+            return;
+        }
+
+        bodies.getPositionAndRotation(part.id, this.currentPosition, this.currentRotation);
+
+        double x = this.currentPosition.xx() + scene.getOriginX();
+        double y = this.currentPosition.yy() + scene.getOriginY();
+        double z = this.currentPosition.zz() + scene.getOriginZ();
+
+        if (!finite(x) || !finite(y) || !finite(z))
+        {
+            /* A part the solver has lost says nothing rather than handing everything pinned to it
+             * a frame made of infinities. */
+            return;
+        }
+
+        /* this.worldMatrix still holds the animated frame this part was just driven towards. */
+        this.worldMatrix.getTranslation(this.animatedPosition);
+        this.worldMatrix.getUnnormalizedRotation(this.animatedRotation);
+
+        this.simulatedPosition.set((float) x, (float) y, (float) z);
+        this.simulatedRotation.set(
+            this.currentRotation.getX(), this.currentRotation.getY(),
+            this.currentRotation.getZ(), this.currentRotation.getW());
+
+        /* Weighted exactly the way the renderer weighs the pose it substitutes: the handle is a
+         * crossfade, not a switch (the Р9 feedback), so at 0.5 what is drawn is halfway between
+         * animation and simulation. A delta taken from the simulation alone would place the sheet
+         * somewhere the shoulder is not being drawn, and the cape would float away from a
+         * character that is only half limp. At 0 and 1 this is the plain answer either way. */
+        float weight = 1F - authority;
+
+        this.animatedPosition.lerp(this.simulatedPosition, weight, this.blendedPosition);
+        this.animatedRotation.slerp(this.simulatedRotation, weight, this.blendedRotation);
+
+        /* Both frames taken as rigid — position and rotation, no scale. A model scaled in the film
+         * carries that scale in its matrices, and dividing one scaled frame by another would
+         * cancel it out of everything hanging below: the delta must move the sheet, not resize it.
+         * Rigid on both sides leaves the scale where it was, in the form's own frame. */
+        this.poseFrame.translationRotate(
+            this.animatedPosition.x, this.animatedPosition.y, this.animatedPosition.z, this.animatedRotation).invert();
+
+        deltas.computeIfAbsent(part.path, (key) -> new Matrix4f())
+            .translationRotate(this.blendedPosition.x, this.blendedPosition.y, this.blendedPosition.z, this.blendedRotation)
+            .mul(this.poseFrame);
     }
 
     /**

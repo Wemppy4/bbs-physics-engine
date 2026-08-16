@@ -40,6 +40,7 @@ import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -187,6 +188,14 @@ public class FilmScene implements AutoCloseable
          * once the scene is assembled.
          */
         private final ActorCollisionGroup group;
+
+        /**
+         * How far each of this actor's ragdolled bones has been carried from its animated pose,
+         * refilled every tick by the ragdolls and read by everything pinned to them — see
+         * {@link ActorRagdoll#publish}. Per actor, because the paths inside two actors are the
+         * same strings and a shared map would have one character's cape reading another's fall.
+         */
+        private final Map<String, Matrix4f> boneDeltas = new HashMap<>();
 
         /**
          * Whether this actor's last evaluation failed, so the failure is reported once instead of
@@ -453,7 +462,7 @@ public class FilmScene implements AutoCloseable
 
             /* Each sheet takes an id of its own from the same counter, so its stand-ins are excused
              * from it alone — see ClothProxy. */
-            group = this.discoverCloths(root, "", matrices, actorWorld, cloths, group);
+            group = this.discoverCloths(root, "", matrices, actorWorld, cloths, group, null);
 
             if (bones == null && bodyRigs.isEmpty() && ragdolls.isEmpty() && cloths.isEmpty())
             {
@@ -620,11 +629,11 @@ public class FilmScene implements AutoCloseable
      * the same path convention as the rigid bodies, because the path is how the sheet's animated
      * frame is read back per tick.
      */
-    private int discoverCloths(Form form, String path, MatrixCache matrices, Matrix4f actorWorld, List<ClothRig> out, int group)
+    private int discoverCloths(Form form, String path, MatrixCache matrices, Matrix4f actorWorld, List<ClothRig> out, int group, String anchor)
     {
         if (form instanceof ClothForm cloth)
         {
-            ClothRig rig = ClothRig.build(this.world, cloth, path, matrices, actorWorld, this, group);
+            ClothRig rig = ClothRig.build(this.world, cloth, path, matrices, actorWorld, this, group, anchor);
 
             if (rig != null)
             {
@@ -644,7 +653,16 @@ public class FilmScene implements AutoCloseable
 
             if (child != null)
             {
-                group = this.discoverCloths(child, StringUtils.combinePaths(path, String.valueOf(i)), matrices, actorWorld, out, group);
+                /* Descending out of a model means everything below hangs on one of its bones, and
+                 * that bone is what a ragdoll moves. Anywhere else the anchor is inherited: a
+                 * sheet two groups deep under an arm still hangs on the arm. The path is built the
+                 * same way the pose walk names bones, which is what lets the delta be looked up by
+                 * it. */
+                String childAnchor = form instanceof ModelForm
+                    ? StringUtils.combinePaths(path, part.bone.get())
+                    : anchor;
+
+                group = this.discoverCloths(child, StringUtils.combinePaths(path, String.valueOf(i)), matrices, actorWorld, out, group, childAnchor);
             }
 
             /* Outside the null check, mirroring the walk: a partless slot still takes an index. */
@@ -1146,9 +1164,13 @@ public class FilmScene implements AutoCloseable
                 rigs.bones.update(this.world, this, matrices, actorWorld, reset);
             }
 
+            /* Emptied rather than left to age: a ragdoll taken back by the animation stops
+             * publishing, and a stale delta would keep a cape hanging off a fall that is over. */
+            rigs.boneDeltas.clear();
+
             for (ActorRagdoll ragdoll : rigs.ragdolls)
             {
-                ragdoll.update(this.world, this, matrices, actorWorld, reset);
+                ragdoll.update(this.world, this, matrices, actorWorld, reset, rigs.cloths.isEmpty() ? null : rigs.boneDeltas);
             }
 
             for (PhysicsBodyRig rig : rigs.bodyRigs)
@@ -1156,9 +1178,11 @@ public class FilmScene implements AutoCloseable
                 rig.update(this.world, this, matrices, actorWorld, reset);
             }
 
+            /* After the ragdolls, so a sheet pinned to a falling bone is placed from this tick's
+             * fall rather than the one before it. */
             for (ClothRig cloth : rigs.cloths)
             {
-                cloth.update(this.world, this, matrices, actorWorld, reset);
+                cloth.update(this.world, this, matrices, actorWorld, reset, rigs.boneDeltas);
             }
 
             rigs.broken = false;
