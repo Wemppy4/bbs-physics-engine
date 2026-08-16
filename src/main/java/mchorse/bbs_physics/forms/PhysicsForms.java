@@ -5,6 +5,7 @@ import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.settings.values.core.ValueData;
 import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 import mchorse.bbs_mod.utils.MathUtils;
+import mchorse.bbs_physics.cloth.ClothForm;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 
 /**
@@ -59,10 +60,10 @@ public final class PhysicsForms
         return value != null && BodyIO.isEnabled(value.get());
     }
 
-    /** Whether the form is simulated at all, by either modifier. */
+    /** Whether the form is simulated at all — by either modifier, or by being cloth. */
     public static boolean isSimulated(Form form)
     {
-        return isBody(form) || FormRagdolls.isEnabled(form);
+        return isBody(form) || FormRagdolls.isEnabled(form) || form instanceof ClothForm;
     }
 
     /**

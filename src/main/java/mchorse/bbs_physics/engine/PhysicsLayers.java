@@ -41,7 +41,17 @@ public final class PhysicsLayers
      */
     public static final int GHOST = 3;
 
-    public static final int OBJECT_LAYERS = 4;
+    /**
+     * Soft bodies — cloth. A layer of its own for one load-bearing reason: a soft body is the one
+     * kind of body that looks for its <em>own</em> contacts (a rigid body that finds a soft one in
+     * the broad phase does nothing about it), so this layer's pairs decide everything cloth can
+     * touch. It meets the world, the props and the actor's bones — a cape lands on shoulders —
+     * but not other cloth: sheet-on-sheet contact costs a vertex-against-vertex narrow phase that
+     * nothing filmed so far has needed.
+     */
+    public static final int CLOTH = 4;
+
+    public static final int OBJECT_LAYERS = 5;
 
     private static final int BP_STATIC = 0;
     private static final int BP_MOVING = 1;
@@ -64,6 +74,12 @@ public final class PhysicsLayers
         filter.enableCollision(MOVING, MOVING);
         filter.enableCollision(MOVING, BONE);
 
+        /* Cloth against bones is not the waste the bone-on-bone ban is about: the sheet is the one
+         * asking, it can be pushed, and the pair is exactly a cape lying on shoulders. */
+        filter.enableCollision(CLOTH, STATIC);
+        filter.enableCollision(CLOTH, MOVING);
+        filter.enableCollision(CLOTH, BONE);
+
         return filter;
     }
 
@@ -75,6 +91,7 @@ public final class PhysicsLayers
         table.mapObjectToBroadPhaseLayer(MOVING, BP_MOVING);
         table.mapObjectToBroadPhaseLayer(BONE, BP_MOVING);
         table.mapObjectToBroadPhaseLayer(GHOST, BP_MOVING);
+        table.mapObjectToBroadPhaseLayer(CLOTH, BP_MOVING);
 
         return table;
     }

@@ -162,7 +162,9 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
             }
 
             menu.action(Icons.STRUCTURE, PhysicsKeys.PHYSICS_ADD_OBSTACLE, () -> {});
-            menu.action(Icons.CURVES, PhysicsKeys.PHYSICS_ADD_CLOTH, () -> {});
+
+            /* Cloth is not on this menu any more: it became a form of its own (Р12), picked from
+             * the palette's Physics section like any other form, not a behaviour added to one. */
         });
     }
 

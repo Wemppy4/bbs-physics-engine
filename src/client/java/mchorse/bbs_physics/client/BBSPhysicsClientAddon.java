@@ -4,10 +4,15 @@ import mchorse.bbs_mod.events.BBSAddonMod;
 import mchorse.bbs_mod.events.Subscribe;
 import mchorse.bbs_mod.events.register.RegisterClientSettingsEvent;
 import mchorse.bbs_mod.events.register.RegisterL10nEvent;
+import mchorse.bbs_mod.forms.FormUtilsClient;
 import mchorse.bbs_mod.resources.Link;
+import mchorse.bbs_mod.ui.forms.editors.UIFormEditor;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
+import mchorse.bbs_physics.client.forms.ClothFormRenderer;
+import mchorse.bbs_physics.client.forms.UIClothForm;
+import mchorse.bbs_physics.cloth.ClothForm;
 
 import java.util.Collections;
 
@@ -30,5 +35,12 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
     public void onRegisterClientSettings(RegisterClientSettingsEvent event)
     {
         event.register(Icons.PHYSICS, BBSPhysics.MOD_ID, BBSPhysicsSettings::register);
+
+        /* How cloth is drawn and how it is edited. Both registries are static maps keyed by the
+         * form's class, so an addon's form is as first-class as BBS's own. Done from an event
+         * rather than from the Fabric entry point for the same timing reason the form type itself
+         * is — see BBSPhysicsAddon. */
+        FormUtilsClient.register(ClothForm.class, ClothFormRenderer::new);
+        UIFormEditor.register(ClothForm.class, UIClothForm::new);
     }
 }

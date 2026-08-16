@@ -4,6 +4,7 @@ import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_physics.client.collision.UICollisionFormPanel;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
+import mchorse.bbs_physics.client.forms.UIClothForm;
 import mchorse.bbs_physics.client.forms.UIPhysicsFormPanel;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -37,6 +38,14 @@ public class UIFormMixin
     private void bbs_physics$addPhysicsPanel(CallbackInfo info)
     {
         UIForm editor = (UIForm) (Object) this;
+
+        if (editor instanceof UIClothForm)
+        {
+            /* Cloth is its own kind of physics: it has no collision markup to describe and no
+             * modifier to add or remove, so both shared tabs would be rows of things that do not
+             * apply. Everything cloth-shaped lives in its own tab instead. */
+            return;
+        }
 
         editor.registerPanel(new UICollisionFormPanel(editor), PhysicsKeys.COLLISION_TITLE, Icons.SHAPES);
         editor.registerPanel(new UIPhysicsFormPanel(editor), PhysicsKeys.PHYSICS_TITLE, Icons.PHYSICS);

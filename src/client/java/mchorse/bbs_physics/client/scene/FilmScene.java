@@ -24,6 +24,7 @@ import mchorse.bbs_mod.utils.StringUtils;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
+import mchorse.bbs_physics.cloth.ClothForm;
 import mchorse.bbs_physics.client.ragdoll.RagdollPoseApplier;
 import mchorse.bbs_physics.client.ragdoll.RagdollWelds;
 import mchorse.bbs_physics.engine.PhysicsCache;
@@ -178,6 +179,7 @@ public class FilmScene implements AutoCloseable
         private final ActorRig bones;
         private final List<PhysicsBodyRig> bodyRigs;
         private final List<ActorRagdoll> ragdolls;
+        private final List<ClothRig> cloths;
 
         /**
          * Who among this actor's bodies is excused from colliding with whom. Native and held by
@@ -194,13 +196,14 @@ public class FilmScene implements AutoCloseable
          */
         private boolean broken;
 
-        private EntityRigs(IEntity entity, Replay replay, ActorRig bones, List<PhysicsBodyRig> bodyRigs, List<ActorRagdoll> ragdolls, ActorCollisionGroup group)
+        private EntityRigs(IEntity entity, Replay replay, ActorRig bones, List<PhysicsBodyRig> bodyRigs, List<ActorRagdoll> ragdolls, List<ClothRig> cloths, ActorCollisionGroup group)
         {
             this.entity = entity;
             this.replay = replay;
             this.bones = bones;
             this.bodyRigs = bodyRigs;
             this.ragdolls = ragdolls;
+            this.cloths = cloths;
             this.group = group;
         }
     }
@@ -443,10 +446,12 @@ public class FilmScene implements AutoCloseable
 
             ActorRig bones = ActorRig.build(this.world, root, matrices, this, pieces, group);
             List<PhysicsBodyRig> bodyRigs = new ArrayList<>(0);
+            List<ClothRig> cloths = new ArrayList<>(0);
 
             this.discoverBodies(root, "", matrices, bodyRigs);
+            this.discoverCloths(root, "", matrices, actorWorld, cloths);
 
-            if (bones == null && bodyRigs.isEmpty() && ragdolls.isEmpty())
+            if (bones == null && bodyRigs.isEmpty() && ragdolls.isEmpty() && cloths.isEmpty())
             {
                 continue;
             }
@@ -455,7 +460,7 @@ public class FilmScene implements AutoCloseable
              * ragdoll part and every kinematic bone at once. */
             group.seal();
 
-            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls, group);
+            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls, cloths, group);
 
             this.rigs.add(rigs);
 
@@ -606,6 +611,39 @@ public class FilmScene implements AutoCloseable
         }
     }
 
+    /**
+     * Finds every cloth form in an actor's tree and gives each one a soft body. The same walk and
+     * the same path convention as the rigid bodies, because the path is how the sheet's animated
+     * frame is read back per tick.
+     */
+    private void discoverCloths(Form form, String path, MatrixCache matrices, Matrix4f actorWorld, List<ClothRig> out)
+    {
+        if (form instanceof ClothForm cloth)
+        {
+            ClothRig rig = ClothRig.build(this.world, cloth, path, matrices, actorWorld, this);
+
+            if (rig != null)
+            {
+                out.add(rig);
+            }
+        }
+
+        int i = 0;
+
+        for (BodyPart part : form.parts.getAllTyped())
+        {
+            Form child = part.getForm();
+
+            if (child != null)
+            {
+                this.discoverCloths(child, StringUtils.combinePaths(path, String.valueOf(i)), matrices, actorWorld, out);
+            }
+
+            /* Outside the null check, mirroring the walk: a partless slot still takes an index. */
+            i += 1;
+        }
+    }
+
     /** Registers a body to be drawn by the debug overlay, with a channel of its own to be read from. */
     public void addDebugBody(SceneBody body)
     {
@@ -642,10 +680,16 @@ public class FilmScene implements AutoCloseable
         this.distribute(this.filmTick);
     }
 
-    /** Claims a slot in the recording. Only valid while the scene is being assembled. */
+    /** Claims a transform slot in the recording. Only valid while the scene is being assembled. */
     public int addChannel()
     {
         return this.cache.addChannel();
+    }
+
+    /** Claims a wide slot — a cloth's vertices. Only valid while the scene is being assembled. */
+    public int addChannel(int floats)
+    {
+        return this.cache.addChannel(floats);
     }
 
     public PhysicsWorld getWorld()
@@ -703,6 +747,14 @@ public class FilmScene implements AutoCloseable
                 if (this.window != null && this.window.boxes() > 0 && !this.window.contains(this.probe.x, this.probe.y, this.probe.z))
                 {
                     outside += 1;
+                }
+            }
+
+            for (ClothRig cloth : rigs.cloths)
+            {
+                if (cloth.isLost())
+                {
+                    lost += 1;
                 }
             }
         }
@@ -892,6 +944,11 @@ public class FilmScene implements AutoCloseable
             {
                 ragdoll.record(this.world, this, this.cache, tick);
             }
+
+            for (ClothRig cloth : rigs.cloths)
+            {
+                cloth.record(this.world, this, this.cache, tick);
+            }
         }
 
         this.cache.commit(tick);
@@ -921,6 +978,11 @@ public class FilmScene implements AutoCloseable
             for (ActorRagdoll ragdoll : rigs.ragdolls)
             {
                 ragdoll.readCache(this.cache, tick, jumped);
+            }
+
+            for (ClothRig cloth : rigs.cloths)
+            {
+                cloth.readCache(this.cache, tick, jumped);
             }
         }
 
@@ -1082,6 +1144,11 @@ public class FilmScene implements AutoCloseable
             for (PhysicsBodyRig rig : rigs.bodyRigs)
             {
                 rig.update(this.world, this, matrices, actorWorld, reset);
+            }
+
+            for (ClothRig cloth : rigs.cloths)
+            {
+                cloth.update(this.world, this, matrices, actorWorld, reset);
             }
 
             rigs.broken = false;
@@ -1261,6 +1328,11 @@ public class FilmScene implements AutoCloseable
             for (ActorRagdoll ragdoll : rigs.ragdolls)
             {
                 ragdoll.release();
+            }
+
+            for (ClothRig cloth : rigs.cloths)
+            {
+                cloth.release();
             }
         }
 

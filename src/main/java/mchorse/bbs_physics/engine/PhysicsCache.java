@@ -18,19 +18,23 @@ import java.util.Arrays;
  * array; there is no "arrived by a different route", because there is only one route.</p>
  *
  * <p><b>What a channel is.</b> Everything that has an answer per tick registers one: a physics body
- * form, one bone of a ragdoll, one debug body. A channel stores a position and a rotation — and one
- * extra number, which is the only thing that is not geometry. That is the authority handle as it
- * stood on the simulated tick, and it is cached rather than read from the form because the form's
- * keyframed values are written at draw time on a fractional tick; the recording has to say what was
- * true when the tick was <em>simulated</em>.</p>
+ * form, one bone of a ragdoll, one debug body — or a whole sheet of cloth. A channel has a width of
+ * its own, claimed when it is registered: a rigid transform is {@value #FLOATS} floats (position,
+ * rotation, and one number that is not geometry — the authority handle as it stood on the simulated
+ * tick, cached rather than read from the form because the form's keyframed values are written at
+ * draw time on a fractional tick), while a soft body's channel is three floats per vertex. Whatever
+ * the width, the <em>last</em> float of a channel is its marker: the authority for a transform,
+ * and {@link #SILENT} for a tick the channel had nothing to say on.</p>
  *
  * <p><b>What is not cached is the reason this is cheap.</b> The frames a body's answer is expressed
- * in — actor-local for a body, the model's group space for a ragdoll bone — depend only on the tick,
- * so the conversion is done once during recording and the numbers stored are the ones the renderer
- * substitutes directly. Playing back a recorded film therefore evaluates no poses at all.</p>
+ * in — actor-local for a body, the model's group space for a ragdoll bone, the form's own frame for
+ * cloth — depend only on the tick, so the conversion is done once during recording and the numbers
+ * stored are the ones the renderer substitutes directly. Playing back a recorded film therefore
+ * evaluates no poses at all.</p>
  *
- * <p>A tick costs {@value #FLOATS} floats per channel: thirty-two bytes. A thousand-tick film with
- * thirty channels is under a megabyte, which is why the whole thing can simply be kept.</p>
+ * <p>A transform channel costs thirty-two bytes a tick; a thousand-tick film with thirty of them is
+ * under a megabyte, which is why the whole thing can simply be kept. Cloth is the reason the ceiling
+ * exists: a hundred-vertex sheet is twelve hundred bytes a tick all by itself.</p>
  */
 public class PhysicsCache
 {
@@ -38,8 +42,8 @@ public class PhysicsCache
     public static final int FLOATS = 8;
 
     /**
-     * The authority written for a channel that has nothing to say on a tick — a ragdoll whose model
-     * had not loaded when that tick was simulated, say.
+     * The marker written for a channel that has nothing to say on a tick — a ragdoll whose model
+     * had not loaded when that tick was simulated, say. It sits in the channel's last float.
      *
      * <p>Silence has to be written rather than skipped. The array outlives an invalidation (only
      * the counter is reset, so that re-recording does not reallocate), which means an untouched
@@ -59,6 +63,13 @@ public class PhysicsCache
     private int channels;
     private boolean sealed;
 
+    /** Where each channel's floats start within a tick, and how many it has. */
+    private int[] offsets = new int[8];
+    private int[] widths = new int[8];
+
+    /** Floats per tick: the sum of every channel's width. */
+    private int stride;
+
     private float[] data = new float[0];
 
     /** How many ticks the array has room for, and how many are actually recorded. */
@@ -66,16 +77,36 @@ public class PhysicsCache
     private int computed;
 
     /**
-     * Claims a channel. Called while the scene is being built, once per thing that will have an
-     * answer per tick; the index returned is how that thing addresses itself for the rest of the
-     * scene's life.
+     * Claims a transform channel — position, rotation, authority. Called while the scene is being
+     * built, once per thing that will have an answer per tick; the index returned is how that thing
+     * addresses itself for the rest of the scene's life.
      */
     public int addChannel()
+    {
+        return this.addChannel(FLOATS);
+    }
+
+    /**
+     * Claims a channel of {@code floats} floats per tick — a soft body's vertices, say. The last
+     * float is the channel's marker and belongs to the recording: writers hand it the authority the
+     * tick was simulated under, or {@link #SILENT}.
+     */
+    public int addChannel(int floats)
     {
         if (this.sealed)
         {
             throw new IllegalStateException("Physics cache channels are fixed once the scene is built.");
         }
+
+        if (this.channels >= this.offsets.length)
+        {
+            this.offsets = Arrays.copyOf(this.offsets, this.offsets.length * 2);
+            this.widths = Arrays.copyOf(this.widths, this.widths.length * 2);
+        }
+
+        this.offsets[this.channels] = this.stride;
+        this.widths[this.channels] = floats;
+        this.stride += floats;
 
         return this.channels++;
     }
@@ -105,7 +136,7 @@ public class PhysicsCache
     /** The last tick this recording can ever hold, given the memory ceiling. */
     public int getLimit()
     {
-        if (this.channels <= 0)
+        if (this.stride <= 0)
         {
             /* Nothing is stored per tick, so nothing limits how many ticks there can be.
              *
@@ -119,7 +150,7 @@ public class PhysicsCache
             return Integer.MAX_VALUE;
         }
 
-        return MAX_BYTES / (this.channels * FLOATS * 4);
+        return MAX_BYTES / (this.stride * 4);
     }
 
     /**
@@ -144,19 +175,18 @@ public class PhysicsCache
     }
 
     /**
-     * Writes one channel's answer for a tick that is being recorded. Call {@link #commit(int)} once
-     * every channel of that tick has been written — a tick is only readable when it is whole.
+     * Writes one transform channel's answer for a tick that is being recorded. Call
+     * {@link #commit(int)} once every channel of that tick has been written — a tick is only
+     * readable when it is whole.
      */
     public void write(int tick, int channel, Vector3f position, Quaternionf rotation, float authority)
     {
-        if (channel < 0 || channel >= this.channels || !this.canWrite(tick))
+        int at = this.writable(tick, channel, FLOATS);
+
+        if (at < 0)
         {
             return;
         }
-
-        this.ensureCapacity(tick + 1);
-
-        int at = (tick * this.channels + channel) * FLOATS;
 
         this.data[at] = position.x;
         this.data[at + 1] = position.y;
@@ -166,6 +196,22 @@ public class PhysicsCache
         this.data[at + 5] = rotation.z;
         this.data[at + 6] = rotation.w;
         this.data[at + 7] = authority;
+    }
+
+    /**
+     * Writes a wide channel's answer whole — every float of it, the marker in the last slot
+     * included. {@code values} must be exactly the channel's claimed width.
+     */
+    public void writeFloats(int tick, int channel, float[] values)
+    {
+        int at = this.writable(tick, channel, values.length);
+
+        if (at < 0)
+        {
+            return;
+        }
+
+        System.arraycopy(values, 0, this.data, at, values.length);
     }
 
     /** The tick is complete: everything after this point may read it. */
@@ -178,7 +224,7 @@ public class PhysicsCache
     }
 
     /**
-     * Reads a channel's answer into the outputs.
+     * Reads a transform channel's answer into the outputs.
      *
      * @return false when the tick is not recorded, or when this channel had nothing to say on it,
      *         in which case the outputs are untouched — the caller shows plain animation for that
@@ -199,12 +245,49 @@ public class PhysicsCache
         return true;
     }
 
+    /**
+     * Reads a wide channel's answer whole, marker included, into {@code out} — which must be
+     * exactly the channel's claimed width.
+     *
+     * @return false when the tick is not recorded or the channel was silent on it, in which case
+     *         {@code out} is untouched
+     */
+    public boolean readFloats(int tick, int channel, float[] out)
+    {
+        int at = this.at(tick, channel);
+
+        if (at < 0 || out.length != this.widths[channel] || this.data[at + out.length - 1] == SILENT)
+        {
+            return false;
+        }
+
+        System.arraycopy(this.data, at, out, 0, out.length);
+
+        return true;
+    }
+
     /** The authority this channel was simulated under on {@code tick}, or 1 when unrecorded. */
     public float readAuthority(int tick, int channel)
     {
         int at = this.at(tick, channel);
 
-        return at < 0 ? 1F : this.data[at + 7];
+        return at < 0 ? 1F : this.data[at + this.widths[channel] - 1];
+    }
+
+    /**
+     * Where a channel's floats start for a tick that is being written, or -1 when the write is not
+     * allowed — outside the recording head, or sized wrong for the channel.
+     */
+    private int writable(int tick, int channel, int floats)
+    {
+        if (channel < 0 || channel >= this.channels || this.widths[channel] != floats || !this.canWrite(tick))
+        {
+            return -1;
+        }
+
+        this.ensureCapacity(tick + 1);
+
+        return tick * this.stride + this.offsets[channel];
     }
 
     /**
@@ -220,9 +303,9 @@ public class PhysicsCache
             return -1;
         }
 
-        int at = (tick * this.channels + channel) * FLOATS;
+        int at = tick * this.stride + this.offsets[channel];
 
-        return at + FLOATS > this.data.length ? -1 : at;
+        return at + this.widths[channel] > this.data.length ? -1 : at;
     }
 
     /**
@@ -245,7 +328,7 @@ public class PhysicsCache
             wanted = Math.min(wanted, limit);
         }
 
-        this.data = Arrays.copyOf(this.data, wanted * this.channels * FLOATS);
+        this.data = Arrays.copyOf(this.data, wanted * this.stride);
         this.capacity = wanted;
     }
 }

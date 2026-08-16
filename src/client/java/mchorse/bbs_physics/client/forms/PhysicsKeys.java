@@ -16,7 +16,6 @@ public class PhysicsKeys
     public static final IKey PHYSICS_ADD_BODY = L10n.lang("bbs_physics.forms.physics.add_body");
     public static final IKey PHYSICS_ADD_RAGDOLL = L10n.lang("bbs_physics.forms.physics.add_ragdoll");
     public static final IKey PHYSICS_ADD_OBSTACLE = L10n.lang("bbs_physics.forms.physics.add_obstacle");
-    public static final IKey PHYSICS_ADD_CLOTH = L10n.lang("bbs_physics.forms.physics.add_cloth");
     public static final IKey PHYSICS_REMOVE = L10n.lang("bbs_physics.forms.physics.remove");
     public static final IKey PHYSICS_UNMARKED = L10n.lang("bbs_physics.forms.physics.unmarked");
 
@@ -41,6 +40,22 @@ public class PhysicsKeys
     public static final IKey MASS = L10n.lang("bbs_physics.forms.body.mass");
     public static final IKey FRICTION = L10n.lang("bbs_physics.forms.body.friction");
     public static final IKey RESTITUTION = L10n.lang("bbs_physics.forms.body.restitution");
+
+    public static final IKey CLOTH_TITLE = L10n.lang("bbs_physics.forms.cloth.title");
+    public static final IKey CLOTH_SHEET = L10n.lang("bbs_physics.forms.cloth.sheet");
+    public static final IKey CLOTH_FABRIC = L10n.lang("bbs_physics.forms.cloth.fabric");
+    public static final IKey CLOTH_WIDTH = L10n.lang("bbs_physics.forms.cloth.width");
+    public static final IKey CLOTH_HEIGHT = L10n.lang("bbs_physics.forms.cloth.height");
+    public static final IKey CLOTH_SEGMENTS_X = L10n.lang("bbs_physics.forms.cloth.segments_x");
+    public static final IKey CLOTH_SEGMENTS_Y = L10n.lang("bbs_physics.forms.cloth.segments_y");
+    public static final IKey CLOTH_EDGE_TOOLTIP = L10n.lang("bbs_physics.forms.cloth.edge_tooltip");
+    public static final IKey CLOTH_EDGE_TOP = L10n.lang("bbs_physics.forms.cloth.edge_top");
+    public static final IKey CLOTH_EDGE_LEFT = L10n.lang("bbs_physics.forms.cloth.edge_left");
+    public static final IKey CLOTH_EDGE_TOP_CORNERS = L10n.lang("bbs_physics.forms.cloth.edge_top_corners");
+    public static final IKey CLOTH_EDGE_NONE = L10n.lang("bbs_physics.forms.cloth.edge_none");
+    public static final IKey CLOTH_MASS = L10n.lang("bbs_physics.forms.cloth.mass");
+    public static final IKey CLOTH_STIFFNESS = L10n.lang("bbs_physics.forms.cloth.stiffness");
+    public static final IKey CLOTH_DAMPING = L10n.lang("bbs_physics.forms.cloth.damping");
 
     public static final IKey SCENE_TITLE = L10n.lang("bbs_physics.scene.title");
     public static final IKey SCENE_NONE = L10n.lang("bbs_physics.scene.none");
