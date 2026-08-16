@@ -75,8 +75,12 @@ public class ActorRig
      * become plain kinematic bones.</p>
      *
      * @param matrices the actor's pose, already evaluated for the tick the scene is being built at
+     * @param group    the actor's collision group — these bodies are in it so that its ragdolls'
+     *                 parts can be excused from them once released, which they must be: the two
+     *                 sets of shapes were cut from one skeleton and overlap wherever bones join,
+     *                 and a kinematic body cannot give way (see {@link ActorCollisionGroup})
      */
-    public static ActorRig build(PhysicsWorld physics, Form root, MatrixCache matrices, FilmScene scene, List<CollisionCollector.Piece> pieces)
+    public static ActorRig build(PhysicsWorld physics, Form root, MatrixCache matrices, FilmScene scene, List<CollisionCollector.Piece> pieces, ActorCollisionGroup group)
     {
         if (root == null)
         {
@@ -107,6 +111,7 @@ public class ActorRig
             BodyCreationSettings settings = new BodyCreationSettings(shape, new RVec3(0D, 0D, 0D), Quat.sIdentity(), EMotionType.Kinematic, PhysicsLayers.BONE);
 
             settings.setFriction(0.6F);
+            settings.setCollisionGroup(group.of(group.claimBone()));
 
             int id = bodies.createAndAddBody(settings, EActivation.Activate);
 

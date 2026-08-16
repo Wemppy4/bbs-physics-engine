@@ -68,6 +68,7 @@ public class PhysicsKeys
     public static final IKey HUD_NOT_RECORDED = L10n.lang("bbs_physics.hud.not_recorded");
     public static final IKey HUD_GHOSTS = L10n.lang("bbs_physics.hud.ghosts");
     public static final IKey HUD_OUTSIDE = L10n.lang("bbs_physics.hud.outside");
+    public static final IKey HUD_LOST = L10n.lang("bbs_physics.hud.lost");
 
     public static final IKey COLLISION_TITLE = L10n.lang("bbs_physics.forms.collision.title");
     public static final IKey COLLISION_PREVIEW = L10n.lang("bbs_physics.forms.collision.preview");

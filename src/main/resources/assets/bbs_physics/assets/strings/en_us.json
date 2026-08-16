@@ -41,6 +41,7 @@
     "bbs_physics.hud.not_recorded": "Tick %s is not computed yet — showing plain animation",
     "bbs_physics.hud.ghosts": "Nothing marked up: %s — they fall through everything",
     "bbs_physics.hud.outside": "Past the scene's blocks: %s — there is no ground under them",
+    "bbs_physics.hud.lost": "Lost by the solver: %s — pushed by an impossible force; the overlay cannot draw them",
 
     "bbs_physics.forms.physics.title": "Physics",
     "bbs_physics.forms.physics.add": "Add a modifier",

@@ -3,9 +3,7 @@ package mchorse.bbs_physics.client.scene;
 import com.github.stephengold.joltjni.Body;
 import com.github.stephengold.joltjni.BodyCreationSettings;
 import com.github.stephengold.joltjni.BodyInterface;
-import com.github.stephengold.joltjni.CollisionGroup;
 import com.github.stephengold.joltjni.FixedConstraintSettings;
-import com.github.stephengold.joltjni.GroupFilterTable;
 import com.github.stephengold.joltjni.HingeConstraintSettings;
 import com.github.stephengold.joltjni.Quat;
 import com.github.stephengold.joltjni.RVec3;
@@ -37,7 +35,6 @@ import mchorse.bbs_physics.ragdoll.FormRagdoll;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 import mchorse.bbs_physics.ragdoll.RagdollJoint;
 import mchorse.bbs_physics.ragdoll.RagdollState;
-import org.joml.AxisAngle4f;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -100,17 +97,26 @@ public class ActorRagdoll
     /** Spin bleeds off faster than travel — the standard ragdoll tuning against limbs that windmill. */
     private static final float ANGULAR_DAMPING = 0.3F;
 
+    /**
+     * Speeds no part of a character ever reaches honestly, in blocks and radians per second: a film
+     * tick is fifty milliseconds, so this is five blocks or four turns in a single tick.
+     *
+     * <p>Diagnostics only — nothing is clamped or cancelled. A part that leaves the world is already
+     * reported, but by then every number about it is infinity and says nothing about what happened;
+     * these catch it on the way up, while the numbers still describe the push it was given.</p>
+     */
+    private static final float RUNAWAY_SPEED = 100F;
+    private static final float RUNAWAY_SPIN = 25F;
+
     private final ModelForm form;
     private final String formPath;
     private final List<Part> parts = new ArrayList<>();
     private final RagdollState state = new RagdollState();
 
     /**
-     * Native objects Jolt holds by pointer: the group filter the parts' collision groups point at,
-     * and the joints themselves. Kept in fields so the Java side cannot collect them while the
-     * world still uses them; they die with the world.
+     * The joints, which Jolt holds by pointer. Kept in a field so the Java side cannot collect them
+     * while the world still uses them; they die with the world.
      */
-    private final GroupFilterTable filter;
     private final List<TwoBodyConstraint> joints = new ArrayList<>();
 
     /** Whether the parts are currently kinematic — the cached side of the motion type switch. */
@@ -118,6 +124,15 @@ public class ActorRagdoll
 
     /** Whether the frame drawn last had a recorded pose, so a gap in the recording reads as a jump. */
     private boolean recorded;
+
+    /** Whether a part has already been reported as having left the world — see {@link #record}. */
+    private boolean lost;
+
+    /** Whether a part has already been reported as running away — see {@link #reportRunaway}. */
+    private boolean runaway;
+
+    /** Whether a broken drive velocity has already been reported — see {@link #drive}. */
+    private boolean misfed;
 
     /* The frame the simulation's answer is expressed against: the model's flipped group space,
      * captured per tick because the actor moves. See read(). */
@@ -135,16 +150,14 @@ public class ActorRagdoll
     private final Quat currentRotation = new Quat();
     private final Quaternionf target = new Quaternionf();
     private final Quaternionf delta = new Quaternionf();
-    private final AxisAngle4f axisAngle = new AxisAngle4f();
     private final Vec3 linear = new Vec3();
     private final Vec3 angular = new Vec3();
     private final Matrix4f poseFrame = new Matrix4f();
 
-    private ActorRagdoll(ModelForm form, String formPath, GroupFilterTable filter)
+    private ActorRagdoll(ModelForm form, String formPath)
     {
         this.form = form;
         this.formPath = formPath;
-        this.filter = filter;
     }
 
     /**
@@ -153,12 +166,28 @@ public class ActorRagdoll
      *
      * @param pieces   the marked-up bone slots belonging to this form, already collected
      * @param matrices the actor's pose at scene build — the placement the bodies start from
-     * @param group    a collision group id no other ragdoll in this scene uses
+     * @param group    the actor's collision group, shared with its kinematic bones and with any
+     *                 other ragdoll hanging off the same actor
      */
-    public static ActorRagdoll build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> pieces, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, int group)
+    public static ActorRagdoll build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> pieces, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
     {
         ModelInstance instance = ModelFormRenderer.getModel(form);
-        Model model = instance != null && instance.model instanceof Model cubic ? cubic : null;
+
+        if (instance == null)
+        {
+            /* Not "this model cannot have a ragdoll" — "this model is not here yet". BBS loads
+             * models on a thread of its own and hands back null until one arrives, so a scene
+             * assembled in the same moment the film is opened sees nothing at all. Said apart from
+             * the case below because conflating the two cost a long hunt: the log claimed a
+             * perfectly ordinary cubic model was an unsupported format, and the real fault — a
+             * scene built too early and never rebuilt — went unnoticed behind it. The scene rebuilds
+             * itself once the model lands (see {@code FilmScene.needsRebuild}). */
+            BBSPhysics.LOGGER.info("A ragdoll is enabled on '{}', whose model has not finished loading; the scene will be built again when it has.", form.getDisplayName());
+
+            return null;
+        }
+
+        Model model = instance.model instanceof Model cubic ? cubic : null;
 
         if (model == null)
         {
@@ -181,7 +210,7 @@ public class ActorRagdoll
 
         FormRagdoll config = FormRagdolls.get(form);
         BodyInterface bodies = physics.getBodies();
-        ActorRagdoll ragdoll = new ActorRagdoll(form, formPath, new GroupFilterTable(pieces.size()));
+        ActorRagdoll ragdoll = new ActorRagdoll(form, formPath);
         Map<String, Part> byBone = new HashMap<>();
 
         for (CollisionCollector.Piece piece : pieces)
@@ -223,12 +252,13 @@ public class ActorRagdoll
              * one, and tested only at the ends it passes through the floor it slapped. */
             settings.setMotionQuality(EMotionQuality.LinearCast);
 
-            /* Same group: parts of one ragdoll ask the filter, which excuses only joined
-             * neighbours. Parts of different ragdolls have different group ids and collide
-             * normally — two fallen characters land on each other, not through. */
-            int sub = ragdoll.parts.size();
+            /* The actor's own group, which the kinematic bones are in too — see
+             * {@link ActorCollisionGroup} for which pairs it excuses and what each of them would
+             * otherwise do. Another actor's bodies are in a different group and collide normally,
+             * so two fallen characters land on each other rather than through. */
+            int sub = group.claimPart();
 
-            settings.setCollisionGroup(new CollisionGroup(ragdoll.filter, group, sub));
+            settings.setCollisionGroup(group.of(sub));
 
             /* Dynamic-capable from birth even though it starts kinematic: the body has to carry
              * proper mass and inertia for the moment the handle lets it go. Jolt weighs the shape
@@ -281,7 +311,7 @@ public class ActorRagdoll
 
             /* Neighbours share a joint; their shapes meet at it by design and always will. Letting
              * them also collide would have every joint permanently fighting its own limits. */
-            ragdoll.filter.disableCollision(part.sub, parent.sub);
+            group.excuse(part.sub, parent.sub);
         }
 
         FormRagdolls.setState(form, ragdoll.state);
@@ -325,6 +355,34 @@ public class ActorRagdoll
                 FixedConstraintSettings fixed = new FixedConstraintSettings();
 
                 fixed.setAutoDetectPoint(true);
+
+                /* Both bones' own axes as they stand, which is what tells Jolt the pose the weld is
+                 * meant to hold. Left at their defaults — the world's own X and Y for both sides —
+                 * the pair says "these two bones face the same way as the world", and that is a
+                 * pose no bone of a character is ever in: a cubic bone's frame is turned half a
+                 * circle to begin with (§10.1), and the two ends of a weld rarely agree even
+                 * before that. A constraint between two kinematic bodies does nothing, so the
+                 * violation is invisible while the animation is in charge and the whole of it comes
+                 * due on the one tick the parts are released — the weld hauling both bones round to
+                 * the world's axes with however much force that takes. */
+                MatrixCacheEntry parentEntry = matrices.get(parent.path);
+
+                if (parentEntry == null || parentEntry.matrix() == null)
+                {
+                    return null;
+                }
+
+                Quaternionf child = new Quaternionf();
+                Quaternionf above = new Quaternionf();
+
+                this.worldMatrix.getUnnormalizedRotation(child);
+                new Matrix4f(actorWorld).mul(parentEntry.matrix()).getUnnormalizedRotation(above);
+
+                /* One is the parent: the joint is created as create(parent.body, part.body). */
+                fixed.setAxisX1(axis(above, 1F, 0F, 0F));
+                fixed.setAxisY1(axis(above, 0F, 1F, 0F));
+                fixed.setAxisX2(axis(child, 1F, 0F, 0F));
+                fixed.setAxisY2(axis(child, 0F, 1F, 0F));
 
                 return fixed;
             }
@@ -441,6 +499,58 @@ public class ActorRagdoll
         return new Matrix4f(actorWorld).mul(entry.matrix()).getTranslation(new Vector3f());
     }
 
+    /**
+     * Says once, in numbers, when a part is being flung rather than falling.
+     *
+     * <p>Which of the two speeds is the absurd one is the whole of the diagnosis, and they mean
+     * different things. A huge spin with an ordinary speed is a joint pumping the part round against
+     * its own limits; a huge speed along one direction is a contact throwing it out of something it
+     * was inside; both huge, with the part already far from where the animation has it, is the drive
+     * chasing a pose it will never reach. There is no way to tell these apart from the viewport, and
+     * once the part is gone every number about it is infinity.</p>
+     */
+    private void reportRunaway(BodyInterface bodies, Part part, int tick, float authority)
+    {
+        if (this.runaway)
+        {
+            return;
+        }
+
+        Vec3 velocity = bodies.getLinearVelocity(part.id);
+        Vec3 spin = bodies.getAngularVelocity(part.id);
+
+        float speed = length(velocity.getX(), velocity.getY(), velocity.getZ());
+        float turn = length(spin.getX(), spin.getY(), spin.getZ());
+
+        if (speed < RUNAWAY_SPEED && turn < RUNAWAY_SPIN)
+        {
+            return;
+        }
+
+        this.runaway = true;
+
+        BBSPhysics.LOGGER.warn(
+            "Ragdoll runaway on '{}', bone '{}' at tick {}: speed {} blocks/s, spin {} rad/s, handle {}, at ({}, {}, {}) in scene coordinates.",
+            this.form.getDisplayName(), part.bone, tick,
+            String.format("%.1f", speed), String.format("%.1f", turn), String.format("%.3f", authority),
+            String.format("%.2f", this.scratchPosition.xx()),
+            String.format("%.2f", this.scratchPosition.yy()),
+            String.format("%.2f", this.scratchPosition.zz()));
+    }
+
+    private static float length(float x, float y, float z)
+    {
+        return (float) Math.sqrt(x * x + y * y + z * z);
+    }
+
+    /** One of a frame's own axes, in world space — what Jolt is handed to read a rest pose from. */
+    private static Vec3 axis(Quaternionf rotation, float x, float y, float z)
+    {
+        Vector3f result = rotation.transform(new Vector3f(x, y, z)).normalize();
+
+        return new Vec3(result.x, result.y, result.z);
+    }
+
     /** Any unit vector perpendicular to {@code axis} — crossed with whichever world axis it hugs least. */
     private static Vector3f perpendicular(Vector3f axis)
     {
@@ -519,7 +629,7 @@ public class ActorRagdoll
             }
             else if (authority > 0F)
             {
-                this.drive(bodies, part.id, authority);
+                this.drive(bodies, part, authority);
             }
         }
     }
@@ -530,12 +640,12 @@ public class ActorRagdoll
      * the handle's proportion. Mixing velocities rather than writing them is what keeps gravity in
      * the picture — a weakly animated limb sags instead of hovering.
      */
-    private void drive(BodyInterface bodies, int id, float authority)
+    private void drive(BodyInterface bodies, Part part, float authority)
     {
-        bodies.getPositionAndRotation(id, this.currentPosition, this.currentRotation);
+        bodies.getPositionAndRotation(part.id, this.currentPosition, this.currentRotation);
 
-        Vec3 velocity = bodies.getLinearVelocity(id);
-        Vec3 spin = bodies.getAngularVelocity(id);
+        Vec3 velocity = bodies.getLinearVelocity(part.id);
+        Vec3 spin = bodies.getAngularVelocity(part.id);
 
         this.linear.set(
             mix(velocity.getX(), (float) (this.scratchPosition.xx() - this.currentPosition.xx()) / PhysicsWorld.TICK, authority),
@@ -551,25 +661,83 @@ public class ActorRagdoll
             this.delta.set(-this.delta.x, -this.delta.y, -this.delta.z, -this.delta.w);
         }
 
-        this.axisAngle.set(this.delta);
+        /* The turn's axis and speed, by hand rather than through JOML's axis-angle conversion,
+         * because of one property of the tick a ragdoll is released on: the parts stood glued to
+         * the animation until this very moment, so the delta is the identity give or take float
+         * dust — and rounding can land that dust a hair ABOVE w = 1. JOML's conversion takes a
+         * square root of (1 - w²), negative there, behind a guard that catches infinity but walks
+         * straight past NaN; the axis comes out NaN, NaN times a zero angle is still NaN, and one
+         * poisoned velocity spreads through the joints to every part in a single solver pass. The
+         * whole ragdoll vanishes on the spot, sane one tick and not-a-number the next, with no
+         * runaway for the diagnostics to see. Clamped, the dust reads as what it is: no turn at
+         * all. Whether a given release explodes depends on the last bits of the pose, which is why
+         * it came and went with keyframe shuffling — and why a body released mid-swing survived
+         * where one released standing still did not. */
+        float w = Math.min(this.delta.w, 1F);
+        float sinHalfSquared = 1F - w * w;
+        float speed = 0F;
+        float axisX = 0F;
+        float axisY = 0F;
+        float axisZ = 0F;
 
-        float speed = this.axisAngle.angle / PhysicsWorld.TICK;
+        if (sinHalfSquared > 1e-12F)
+        {
+            float invSinHalf = (float) (1D / Math.sqrt(sinHalfSquared));
+
+            speed = 2F * (float) Math.acos(w) / PhysicsWorld.TICK;
+            axisX = this.delta.x * invSinHalf;
+            axisY = this.delta.y * invSinHalf;
+            axisZ = this.delta.z * invSinHalf;
+        }
 
         this.angular.set(
-            mix(spin.getX(), this.axisAngle.x * speed, authority),
-            mix(spin.getY(), this.axisAngle.y * speed, authority),
-            mix(spin.getZ(), this.axisAngle.z * speed, authority));
+            mix(spin.getX(), axisX * speed, authority),
+            mix(spin.getY(), axisY * speed, authority),
+            mix(spin.getZ(), axisZ * speed, authority));
 
-        bodies.setLinearAndAngularVelocity(id, this.linear, this.angular);
+        /* The last line of defence, because this is handed straight to the solver and one
+         * non-finite component in it is the whole jointed ragdoll gone next step. Whatever
+         * slipped through — a bone scaled to nothing turns the target rotation into NaN, a broken
+         * pose does the same to the position — the part is better left falling free for a tick
+         * than fed poison, and the log gets the numbers while they still mean something. */
+        if (!finite(this.linear) || !finite(this.angular))
+        {
+            if (!this.misfed)
+            {
+                this.misfed = true;
+
+                BBSPhysics.LOGGER.warn(
+                    "The drive for bone '{}' of a ragdoll on '{}' came out unusable — linear ({}, {}, {}), angular ({}, {}, {}), handle {} — so the part falls free instead. The pose it is pulled towards is broken.",
+                    part.bone, this.form.getDisplayName(),
+                    this.linear.getX(), this.linear.getY(), this.linear.getZ(),
+                    this.angular.getX(), this.angular.getY(), this.angular.getZ(), authority);
+            }
+
+            return;
+        }
+
+        bodies.setLinearAndAngularVelocity(part.id, this.linear, this.angular);
 
         /* A sleeping body ignores handed velocities, and a pulled limb that rested for a moment
          * would never pick its animation back up. */
-        bodies.activateBody(id);
+        bodies.activateBody(part.id);
+    }
+
+    /** Whether a velocity may be handed to the solver at all — see the guard in {@link #drive}. */
+    private static boolean finite(Vec3 velocity)
+    {
+        return Float.isFinite(velocity.getX()) && Float.isFinite(velocity.getY()) && Float.isFinite(velocity.getZ());
     }
 
     private static float mix(float physics, float animated, float authority)
     {
         return physics + (animated - physics) * authority;
+    }
+
+    /** Whether a coordinate is a place at all — not infinite, not the result of dividing by zero. */
+    private static boolean finite(double value)
+    {
+        return !Double.isNaN(value) && !Double.isInfinite(value);
     }
 
     /**
@@ -609,6 +777,38 @@ public class ActorRagdoll
         for (Part part : this.parts)
         {
             bodies.getPositionAndRotation(part.id, this.scratchPosition, this.scratchRotation);
+
+            if (!finite(this.scratchPosition.xx()) || !finite(this.scratchPosition.yy()) || !finite(this.scratchPosition.zz())
+                || !finite(this.scratchRotation.getX()) || !finite(this.scratchRotation.getY()) || !finite(this.scratchRotation.getZ()) || !finite(this.scratchRotation.getW()))
+            {
+                /* The simulation lost this part — an impossible impulse or a poisoned velocity is
+                 * the way that happens, sometimes over a few ticks of doubling and sometimes in a
+                 * single step. The rotation is checked alongside the position because it is where
+                 * a bad spin lands first: the part turns not-a-number a tick before it travels
+                 * there. Drawn, either one is a character that has silently vanished: the pose
+                 * applier would hand the renderer a bone at nowhere and nothing comes out of the
+                 * far end.
+                 *
+                 * So it is recorded as silence instead, which the reader already knows means plain
+                 * animation (Р8.1), and said out loud once — a bone that leaves the world is worth
+                 * a line in the log, and until it is there the only symptom is an actor going
+                 * missing with no explanation at all. */
+                if (!this.lost)
+                {
+                    this.lost = true;
+
+                    BBSPhysics.LOGGER.warn("The bone '{}' of a ragdoll on '{}' left the world at tick {}; it is drawn from its keyframes from here on. Something handed it an impossible push — the warnings above this line, if there are any, say who.", part.bone, this.form.getDisplayName(), tick);
+                }
+
+                this.translation.zero();
+                this.orientation.identity();
+
+                cache.write(tick, part.channel, this.translation, this.orientation, PhysicsCache.SILENT);
+
+                continue;
+            }
+
+            this.reportRunaway(bodies, part, tick, authority);
 
             this.orientation.set(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW());
             this.poseFrame.translationRotate(

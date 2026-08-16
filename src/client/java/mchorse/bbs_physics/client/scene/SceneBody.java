@@ -47,6 +47,9 @@ public class SceneBody
     /** Whether the frame being drawn has a recorded transform at all — see {@link #isKnown()}. */
     private boolean known;
 
+    /** Whether the last tick recorded put this body nowhere at all — see {@link #record}. */
+    private boolean lost;
+
     private final Vector3f previousPosition = new Vector3f();
     private final Vector3f position = new Vector3f();
 
@@ -118,7 +121,18 @@ public class SceneBody
         return this.known;
     }
 
-    /** Writes where the body stands into the recording, for the tick that has just been simulated. */
+    /**
+     * Writes where the body stands into the recording, for the tick that has just been simulated.
+     *
+     * <p>Unless it stands nowhere. A body the solver has lost — an impossible impulse takes a few
+     * ticks of doubling to reach infinity, and one more to reach "not a number" — is recorded as
+     * silence, exactly like a frame the recording has not reached, so the overlay draws nothing for
+     * it rather than a shape at a place that does not exist.</p>
+     *
+     * <p>Which was the whole problem with drawing it anyway: the shape simply vanished, and a
+     * vanished shape is indistinguishable from a shape that was never there. Counted here, it
+     * becomes a number the readout can say out loud — see {@link SceneStatus#lost()}.</p>
+     */
     public void record(BodyInterface bodies, PhysicsCache cache, int tick)
     {
         bodies.getPositionAndRotation(this.id, this.scratchPosition, this.scratchRotation);
@@ -126,7 +140,25 @@ public class SceneBody
         this.position.set(this.scratchPosition.x(), this.scratchPosition.y(), this.scratchPosition.z());
         this.rotation.set(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW());
 
-        cache.write(tick, this.channel, this.position, this.rotation, 1F);
+        this.lost = !finite(this.position.x) || !finite(this.position.y) || !finite(this.position.z)
+            || !finite(this.rotation.x) || !finite(this.rotation.y) || !finite(this.rotation.z) || !finite(this.rotation.w);
+
+        cache.write(tick, this.channel, this.position, this.rotation, this.lost ? PhysicsCache.SILENT : 1F);
+    }
+
+    /**
+     * Whether the simulation lost this body on the tick it last recorded. Clears itself: a body put
+     * back where the animation has it — a restart, an edit — records a place again.
+     */
+    public boolean isLost()
+    {
+        return this.lost;
+    }
+
+    /** Whether a coordinate is a place at all — not infinite, not the result of dividing by zero. */
+    private static boolean finite(float value)
+    {
+        return !Float.isNaN(value) && !Float.isInfinite(value);
     }
 
     /**

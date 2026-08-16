@@ -61,6 +61,15 @@ public final class SceneStatusHUD
             colors.add(Colors.A100 | Colors.NEGATIVE);
         }
 
+        if (status.lost() > 0)
+        {
+            /* The one warning about the overlay itself: these bodies are drawn nowhere because
+             * there is nowhere to draw them, and without a line saying so the overlay silently
+             * emptying out looks like the overlay being broken. */
+            lines.add(PhysicsKeys.HUD_LOST.format(status.lost()).get());
+            colors.add(Colors.A100 | Colors.NEGATIVE);
+        }
+
         /* Stacked upwards from the bottom left corner, so that adding a warning never moves the
          * line above it — a readout whose lines jump around is read as flickering rather than as
          * information. */

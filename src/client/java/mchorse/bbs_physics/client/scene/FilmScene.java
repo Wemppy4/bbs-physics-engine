@@ -147,6 +147,12 @@ public class FilmScene implements AutoCloseable
     /** The region the world's blocks were collected from — see {@link #buildGround()}. */
     private WorldCollider.Window window;
 
+    /**
+     * Model forms whose model had not finished loading when this scene was assembled, so nothing
+     * could be built for them — see {@link #needsRebuild()}.
+     */
+    private final List<ModelForm> awaited = new ArrayList<>(0);
+
     /** Scratch for the status readout, which runs per drawn frame. */
     private final Vector3f probe = new Vector3f();
 
@@ -172,6 +178,13 @@ public class FilmScene implements AutoCloseable
         private final List<ActorRagdoll> ragdolls;
 
         /**
+         * Who among this actor's bodies is excused from colliding with whom. Native and held by
+         * Jolt by pointer, so it lives here for as long as the bodies do rather than being dropped
+         * once the scene is assembled.
+         */
+        private final ActorCollisionGroup group;
+
+        /**
          * Whether this actor's last evaluation failed, so the failure is reported once instead of
          * sixty times a second. The usual cause is a model that has not loaded yet — BBS's matrix
          * walk trips over body parts when the animator is not there — and it clears itself once
@@ -179,13 +192,14 @@ public class FilmScene implements AutoCloseable
          */
         private boolean broken;
 
-        private EntityRigs(IEntity entity, Replay replay, ActorRig bones, List<PhysicsBodyRig> bodyRigs, List<ActorRagdoll> ragdolls)
+        private EntityRigs(IEntity entity, Replay replay, ActorRig bones, List<PhysicsBodyRig> bodyRigs, List<ActorRagdoll> ragdolls, ActorCollisionGroup group)
         {
             this.entity = entity;
             this.replay = replay;
             this.bones = bones;
             this.bodyRigs = bodyRigs;
             this.ragdolls = ragdolls;
+            this.group = group;
         }
     }
 
@@ -356,10 +370,10 @@ public class FilmScene implements AutoCloseable
      */
     private void buildRigs()
     {
-        /* Distinct per ragdoll: parts within one collision group consult its filter (which excuses
-         * joined neighbours), parts of different groups collide normally. Two ragdolls sharing an
-         * id would consult each other's filters by subgroup index — nonsense pairs. */
-        int ragdollGroup = 0;
+        /* Distinct per actor: bodies of one group consult its filter, bodies of different groups
+         * never do and collide normally. Two actors sharing an id would consult each other's filter
+         * by subgroup index — nonsense pairs, and one character's arm excused from another's. */
+        int actorGroup = 0;
 
         for (CastMember member : this.cast)
         {
@@ -370,6 +384,10 @@ public class FilmScene implements AutoCloseable
             {
                 continue;
             }
+
+            /* Before anything is measured, because a model that has not arrived measures to nothing
+             * and would otherwise leave this actor silently unsimulated for the rest of the film. */
+            collectAwaited(root, this.awaited);
 
             Replay replay = member.replay;
 
@@ -391,16 +409,21 @@ public class FilmScene implements AutoCloseable
             List<CollisionCollector.Piece> pieces = CollisionCollector.collectActor(root, matrices);
             List<ActorRagdoll> ragdolls = new ArrayList<>(0);
 
+            /* Sized before the markup is divided between owners, because that division does not
+             * change how many bodies there will be — only which half builds them. */
+            ActorCollisionGroup group = new ActorCollisionGroup(actorGroup, pieces.size());
+
+            actorGroup += 1;
+
             for (Pair<ModelForm, String> found : discoverRagdolls(root, "", new ArrayList<>(0)))
             {
                 List<CollisionCollector.Piece> claimed = claimBonePieces(pieces, found.b, FormRagdolls.get(found.a));
 
-                ActorRagdoll ragdoll = ActorRagdoll.build(this.world, found.a, found.b, claimed, matrices, actorWorld, this, ragdollGroup);
+                ActorRagdoll ragdoll = ActorRagdoll.build(this.world, found.a, found.b, claimed, matrices, actorWorld, this, group);
 
                 if (ragdoll != null)
                 {
                     ragdolls.add(ragdoll);
-                    ragdollGroup += 1;
                 }
                 else
                 {
@@ -410,7 +433,7 @@ public class FilmScene implements AutoCloseable
                 }
             }
 
-            ActorRig bones = ActorRig.build(this.world, root, matrices, this, pieces);
+            ActorRig bones = ActorRig.build(this.world, root, matrices, this, pieces, group);
             List<PhysicsBodyRig> bodyRigs = new ArrayList<>(0);
 
             this.discoverBodies(root, "", matrices, bodyRigs);
@@ -420,7 +443,11 @@ public class FilmScene implements AutoCloseable
                 continue;
             }
 
-            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls);
+            /* Both halves of the actor exist now, which is the first moment anything knows every
+             * ragdoll part and every kinematic bone at once. */
+            group.seal();
+
+            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls, group);
 
             this.rigs.add(rigs);
 
@@ -432,6 +459,42 @@ public class FilmScene implements AutoCloseable
              * with the author's coordinates never read at all. */
             this.updateRigs(rigs, 0, true);
         }
+    }
+
+    /**
+     * Finds every model form in a tree whose model BBS has not finished loading.
+     *
+     * <p>BBS loads models on a thread of its own and hands back null for one that has not arrived,
+     * which the scene has no way to work around: a form with no model has no bones, no geometry to
+     * measure collision from and no groups to hand a pose back through, so <em>nothing</em> is built
+     * for it — no ragdoll, no kinematic bones, not even a collision shape. A film opened from cold
+     * assembles its scene in the same moment its models are requested, so this is the common case
+     * and not the rare one.</p>
+     *
+     * <p>What made it a bug rather than a hiccup is that the scene never looked again: the actor
+     * stayed unsimulated for as long as the film was open, and the only symptom was physics quietly
+     * not existing — while the readout, having nothing to record, insisted the frame was merely not
+     * computed yet. Whoever eventually noticed had to notice it from a log line about model formats.
+     * Now the scene keeps the list and asks {@link #needsRebuild()} to say so.</p>
+     */
+    private static List<ModelForm> collectAwaited(Form form, List<ModelForm> out)
+    {
+        if (form instanceof ModelForm modelForm && ModelFormRenderer.getModel(modelForm) == null)
+        {
+            out.add(modelForm);
+        }
+
+        for (BodyPart part : form.parts.getAllTyped())
+        {
+            Form child = part.getForm();
+
+            if (child != null)
+            {
+                collectAwaited(child, out);
+            }
+        }
+
+        return out;
     }
 
     /**
@@ -602,6 +665,17 @@ public class FilmScene implements AutoCloseable
     {
         int ghosts = 0;
         int outside = 0;
+        int lost = 0;
+
+        /* Over the debug bodies rather than the rigs, because this is the one count that has to
+         * cover everything the world holds: a ragdoll's parts have no rig of their own. */
+        for (SceneBody body : this.bodies)
+        {
+            if (body.isLost())
+            {
+                lost += 1;
+            }
+        }
 
         for (EntityRigs rigs : this.rigs)
         {
@@ -628,7 +702,8 @@ public class FilmScene implements AutoCloseable
             this.cache.has(this.filmTick),
             this.world.getBodyCount(),
             ghosts,
-            outside);
+            outside,
+            lost);
     }
 
     public double getOriginX()
@@ -890,7 +965,30 @@ public class FilmScene implements AutoCloseable
         return this.window == null
             || this.window.radius() != BBSPhysicsSettings.worldRadius.get()
             || this.window.below() != BBSPhysicsSettings.worldBelow.get()
-            || this.window.above() != BBSPhysicsSettings.worldAbove.get();
+            || this.window.above() != BBSPhysicsSettings.worldAbove.get()
+            || this.modelArrived();
+    }
+
+    /**
+     * Whether a model this scene was assembled without has since finished loading. Same answer as
+     * the window: the set of bodies is different now, and a different set of bodies is a different
+     * shape of recording, so it is a rebuild and not a re-simulation.
+     *
+     * <p>Converges by construction. A model that never loads keeps handing back null and is never
+     * waited on again; one that loads triggers exactly one rebuild, and the scene that comes out of
+     * it lists only whatever is still missing.</p>
+     */
+    private boolean modelArrived()
+    {
+        for (ModelForm form : this.awaited)
+        {
+            if (ModelFormRenderer.getModel(form) != null)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

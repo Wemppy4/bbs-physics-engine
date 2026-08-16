@@ -107,7 +107,16 @@ public class PhysicsCache
     {
         if (this.channels <= 0)
         {
-            return 0;
+            /* Nothing is stored per tick, so nothing limits how many ticks there can be.
+             *
+             * Zero was the arithmetic's honest answer to "how many ticks fit in the ceiling" and a
+             * disaster as an answer to "may this tick be recorded": a scene with nothing simulated
+             * in it — a film whose models had not finished loading when it was assembled — refused
+             * to record its very first tick, reported itself as a recording that had run out of
+             * room, and left the readout saying "this frame is not computed yet" for the rest of
+             * the film. Which is the single most misleading thing this addon can say, because it is
+             * word for word what a scene that is merely behind says. */
+            return Integer.MAX_VALUE;
         }
 
         return MAX_BYTES / (this.channels * FLOATS * 4);

@@ -26,6 +26,10 @@ package mchorse.bbs_physics.client.scene;
  *                 on purpose, and that is a common reason for "it fell through"
  * @param outside  physics bodies that have left the region the world's blocks were collected in.
  *                 Beyond it there is no ground, which is the other common reason
+ * @param lost     bodies the solver has lost outright — their last recorded place was not a place
+ *                 at all. Nothing is drawn for them, which from the viewport is identical to their
+ *                 never having existed, and that silence is the third reason and the worst of them:
+ *                 an author sees a character's colliders simply stop being there
  */
 public record SceneStatus(
     int filmTick,
@@ -34,12 +38,13 @@ public record SceneStatus(
     boolean ready,
     int bodies,
     int ghosts,
-    int outside)
+    int outside,
+    int lost)
 {
     /** Whether anything here is worth saying out loud rather than just reporting. */
     public boolean hasWarnings()
     {
-        return !this.ready || this.ghosts > 0 || this.outside > 0;
+        return !this.ready || this.ghosts > 0 || this.outside > 0 || this.lost > 0;
     }
 
     /** How much of the film is recorded, 0 to 1 — the number the cache bar draws. */

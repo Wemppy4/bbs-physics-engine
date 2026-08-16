@@ -41,6 +41,7 @@
     "bbs_physics.hud.not_recorded": "Кадр %s ещё не посчитан — показана чистая анимация",
     "bbs_physics.hud.ghosts": "Без разметки: %s — проваливаются сквозь всё",
     "bbs_physics.hud.outside": "Вне блоков сцены: %s — под ними ничего нет",
+    "bbs_physics.hud.lost": "Потеряно солвером: %s — их толкнуло невозможной силой, отладка их не рисует",
 
     "bbs_physics.forms.physics.title": "Физика",
     "bbs_physics.forms.physics.add": "Добавить модификатор",

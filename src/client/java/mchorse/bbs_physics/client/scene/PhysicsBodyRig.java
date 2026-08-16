@@ -17,6 +17,7 @@ import com.github.stephengold.joltjni.readonly.ConstShape;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
+import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
@@ -26,7 +27,6 @@ import mchorse.bbs_physics.engine.PhysicsWorld;
 import mchorse.bbs_physics.forms.FormBody;
 import mchorse.bbs_physics.forms.PhysicsBodyState;
 import mchorse.bbs_physics.forms.PhysicsForms;
-import org.joml.AxisAngle4f;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -115,13 +115,15 @@ public class PhysicsBodyRig
     private final Quat currentRotation = new Quat();
     private final Quaternionf target = new Quaternionf();
     private final Quaternionf delta = new Quaternionf();
-    private final AxisAngle4f axisAngle = new AxisAngle4f();
     private final Vec3 linear = new Vec3();
     private final Vec3 angular = new Vec3();
 
     private final SceneBody debug;
 
     private boolean kinematic;
+
+    /** Whether a broken drive velocity has already been reported — see {@link #drive}. */
+    private boolean misfed;
 
     /* What the body in Jolt was last told. Compared against the form every tick, because the
      * author edits these while the film is open — and a setting that only took effect when the
@@ -406,20 +408,63 @@ public class PhysicsBodyRig
             this.delta.set(-this.delta.x, -this.delta.y, -this.delta.z, -this.delta.w);
         }
 
-        this.axisAngle.set(this.delta);
+        /* The axis and speed by hand, with w clamped to 1 — never through JOML's axis-angle
+         * conversion. A body standing exactly on its target (the tick the hand lets a held thing
+         * go always has it there) makes a delta of identity plus float dust, rounding can land
+         * that dust above w = 1, and JOML answers it with a NaN axis that poisons the velocity.
+         * {@link ActorRagdoll#drive} tells the whole story; this is its verbatim twin. */
+        float w = Math.min(this.delta.w, 1F);
+        float sinHalfSquared = 1F - w * w;
+        float speed = 0F;
+        float axisX = 0F;
+        float axisY = 0F;
+        float axisZ = 0F;
 
-        float speed = this.axisAngle.angle / PhysicsWorld.TICK;
+        if (sinHalfSquared > 1e-12F)
+        {
+            float invSinHalf = (float) (1D / Math.sqrt(sinHalfSquared));
+
+            speed = 2F * (float) Math.acos(w) / PhysicsWorld.TICK;
+            axisX = this.delta.x * invSinHalf;
+            axisY = this.delta.y * invSinHalf;
+            axisZ = this.delta.z * invSinHalf;
+        }
 
         this.angular.set(
-            mix(spin.getX(), this.axisAngle.x * speed, authority),
-            mix(spin.getY(), this.axisAngle.y * speed, authority),
-            mix(spin.getZ(), this.axisAngle.z * speed, authority));
+            mix(spin.getX(), axisX * speed, authority),
+            mix(spin.getY(), axisY * speed, authority),
+            mix(spin.getZ(), axisZ * speed, authority));
+
+        /* The last line of defence before the solver: one non-finite component would take the
+         * body — and anything constrained to it — out of the world next step. Falling free for a
+         * tick is the harmless version of every way this can go wrong. */
+        if (!finite(this.linear) || !finite(this.angular))
+        {
+            if (!this.misfed)
+            {
+                this.misfed = true;
+
+                BBSPhysics.LOGGER.warn(
+                    "The drive for the physics body '{}' at '{}' came out unusable — linear ({}, {}, {}), angular ({}, {}, {}), handle {} — so the body falls free instead. The pose it is pulled towards is broken.",
+                    this.form.getDisplayName(), this.path,
+                    this.linear.getX(), this.linear.getY(), this.linear.getZ(),
+                    this.angular.getX(), this.angular.getY(), this.angular.getZ(), authority);
+            }
+
+            return;
+        }
 
         bodies.setLinearAndAngularVelocity(this.bodyId, this.linear, this.angular);
 
         /* A body Jolt has put to sleep ignores the velocity it is handed, and a pulled body that
          * settled on the floor for a moment would never take the animation back up again. */
         bodies.activateBody(this.bodyId);
+    }
+
+    /** Whether a velocity may be handed to the solver at all — see the guard in {@link #drive}. */
+    private static boolean finite(Vec3 velocity)
+    {
+        return Float.isFinite(velocity.getX()) && Float.isFinite(velocity.getY()) && Float.isFinite(velocity.getZ());
     }
 
     private static float mix(float physics, float animated, float authority)
