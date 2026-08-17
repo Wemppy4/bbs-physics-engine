@@ -300,6 +300,25 @@ public class ActorChain
 
         chain.kinematic = PhysicsForms.isKinematic(form);
 
+        /* 🔴 The "strands collide with each other" switch, which until now was stored and never
+         * read — so strands always collided, whatever it said. Off means every pair of this
+         * modifier's segments is excused: not only the far ones, but the segments of one strand
+         * against each other, which is what a strand curling onto itself is. On, only neighbours
+         * are excused (below, where the joints are made), because those overlap by construction.
+         *
+         * Per modifier rather than per actor: the switch sits on this form and describes its own
+         * hair — two models on one character each answer for their own. */
+        if (!config.selfCollision())
+        {
+            for (int i = 0; i < chain.segments.size(); i++)
+            {
+                for (int j = i + 1; j < chain.segments.size(); j++)
+                {
+                    group.excuse(chain.segments.get(i).sub, chain.segments.get(j).sub);
+                }
+            }
+        }
+
         /* Then the joints: each segment onto its parent bone — a fellow segment, the parent's
          * kinematic body, or a pin of our own following that bone. */
         for (Segment segment : chain.segments)
