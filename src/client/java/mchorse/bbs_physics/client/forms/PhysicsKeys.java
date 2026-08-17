@@ -71,6 +71,22 @@ public class PhysicsKeys
     public static final IKey BALLOON_GRAVITY = L10n.lang("bbs_physics.forms.balloon.gravity");
     public static final IKey BALLOON_DAMPING = L10n.lang("bbs_physics.forms.balloon.damping");
 
+    public static final IKey CHAIN_TITLE = L10n.lang("bbs_physics.forms.chain.title");
+    public static final IKey CHAIN_LINK_LABEL = L10n.lang("bbs_physics.forms.chain.link_label");
+    public static final IKey CHAIN_LINK = L10n.lang("bbs_physics.forms.chain.link");
+    public static final IKey CHAIN_STRAND = L10n.lang("bbs_physics.forms.chain.strand");
+    public static final IKey CHAIN_LENGTH = L10n.lang("bbs_physics.forms.chain.length");
+    public static final IKey CHAIN_SEGMENTS = L10n.lang("bbs_physics.forms.chain.segments");
+    public static final IKey CHAIN_RADIUS = L10n.lang("bbs_physics.forms.chain.radius");
+    public static final IKey CHAIN_FEEL = L10n.lang("bbs_physics.forms.chain.feel");
+    public static final IKey CHAIN_MASS = L10n.lang("bbs_physics.forms.chain.mass");
+    public static final IKey CHAIN_STIFFNESS = L10n.lang("bbs_physics.forms.chain.stiffness");
+    public static final IKey CHAIN_DAMPING = L10n.lang("bbs_physics.forms.chain.damping");
+    public static final IKey CHAIN_ENDS = L10n.lang("bbs_physics.forms.chain.ends");
+    public static final IKey CHAIN_HELD_START = L10n.lang("bbs_physics.forms.chain.held_start");
+    public static final IKey CHAIN_HELD_START_TOOLTIP = L10n.lang("bbs_physics.forms.chain.held_start_tooltip");
+    public static final IKey CHAIN_ATTACH_HINT = L10n.lang("bbs_physics.forms.chain.attach_hint");
+
     public static final IKey SCENE_TITLE = L10n.lang("bbs_physics.scene.title");
     public static final IKey SCENE_NONE = L10n.lang("bbs_physics.scene.none");
     public static final IKey SCENE_STATUS = L10n.lang("bbs_physics.scene.status");

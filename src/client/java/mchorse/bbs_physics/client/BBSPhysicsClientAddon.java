@@ -16,9 +16,12 @@ import mchorse.bbs_physics.actions.TearActionClip;
 import mchorse.bbs_physics.balloon.BalloonForm;
 import mchorse.bbs_physics.client.clips.UIImpulseActionClip;
 import mchorse.bbs_physics.client.clips.UITearActionClip;
+import mchorse.bbs_physics.chain.ChainForm;
 import mchorse.bbs_physics.client.forms.BalloonFormRenderer;
+import mchorse.bbs_physics.client.forms.ChainFormRenderer;
 import mchorse.bbs_physics.client.forms.ClothFormRenderer;
 import mchorse.bbs_physics.client.forms.UIBalloonForm;
+import mchorse.bbs_physics.client.forms.UIChainForm;
 import mchorse.bbs_physics.client.forms.UIClothForm;
 import mchorse.bbs_physics.cloth.ClothForm;
 
@@ -52,6 +55,8 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
         UIFormEditor.register(ClothForm.class, UIClothForm::new);
         FormUtilsClient.register(BalloonForm.class, BalloonFormRenderer::new);
         UIFormEditor.register(BalloonForm.class, UIBalloonForm::new);
+        FormUtilsClient.register(ChainForm.class, ChainFormRenderer::new);
+        UIFormEditor.register(ChainForm.class, UIChainForm::new);
 
         /* The Э5 action clips' panels — the same static registry BBS's own clip panels sit in. */
         UIClip.register(ImpulseActionClip.class, UIImpulseActionClip::new);

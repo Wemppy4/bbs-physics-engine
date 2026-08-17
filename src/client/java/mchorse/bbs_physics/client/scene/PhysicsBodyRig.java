@@ -702,6 +702,18 @@ public class PhysicsBodyRig
         return this.debug.getPosition(1F, out);
     }
 
+    /** The path this body's form lives at in the actor's tree — "" for the root form. */
+    public String getPath()
+    {
+        return this.path;
+    }
+
+    /** The body's id in the world — what a chain's bottom end is tied to. */
+    public int getBodyId()
+    {
+        return this.bodyId;
+    }
+
     /**
      * Lets go of the form, so it goes back to being drawn from its keyframes. Called when the
      * scene is closed: the body behind this rig is about to stop existing.

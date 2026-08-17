@@ -6,7 +6,9 @@ import mchorse.bbs_mod.forms.sections.FormSection;
 import mchorse.bbs_mod.resources.Link;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.balloon.BalloonForm;
+import mchorse.bbs_physics.chain.ChainForm;
 import mchorse.bbs_physics.cloth.ClothForm;
+import mchorse.bbs_physics.forms.PhysicsForms;
 
 import java.util.Collections;
 import java.util.List;
@@ -45,9 +47,19 @@ public class PhysicsFormSection extends FormSection
 
         balloon.texture.set(new Link(BBSPhysics.ASSETS, "textures/balloon.png"));
 
+        /* The chain draws its own built-in rope, so it needs no texture — but it does start at
+         * authority 0, deliberately: a rope that hangs and swings the moment it is dropped into a
+         * scene is what anyone reaching for a rope wants, where every other physics form starts
+         * owned by its animation. The palette entry is what gets copied on picking, so the default
+         * lives here. */
+        ChainForm chain = new ChainForm();
+
+        PhysicsForms.setAuthority(chain, 0F);
+
         this.category = new FormCategory(PhysicsKeys.CATEGORY, this.parent.visibility.get("bbs_physics"));
         this.category.addForm(cloth);
         this.category.addForm(balloon);
+        this.category.addForm(chain);
     }
 
     @Override

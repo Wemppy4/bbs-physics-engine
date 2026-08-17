@@ -11,6 +11,7 @@ import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_physics.actions.ImpulseActionClip;
 import mchorse.bbs_physics.actions.TearActionClip;
 import mchorse.bbs_physics.balloon.BalloonForm;
+import mchorse.bbs_physics.chain.ChainForm;
 import mchorse.bbs_physics.cloth.ClothForm;
 import net.fabricmc.loader.api.FabricLoader;
 
@@ -60,6 +61,7 @@ public class BBSPhysicsAddon implements BBSAddonMod
     {
         BBSMod.getForms().register(new Link(BBSPhysics.MOD_ID, "cloth"), ClothForm.class, null);
         BBSMod.getForms().register(new Link(BBSPhysics.MOD_ID, "balloon"), BalloonForm.class, null);
+        BBSMod.getForms().register(new Link(BBSPhysics.MOD_ID, "chain"), ChainForm.class, null);
 
         /* The Э5 action clips — "a push at a point" and "this bone comes off" — live on the same
          * action timeline as BBS's own clips and are registered the same way. Both sides again:

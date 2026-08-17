@@ -1,7 +1,9 @@
 package mchorse.bbs_physics.client.scene;
 
+import com.github.stephengold.joltjni.Body;
 import com.github.stephengold.joltjni.BodyCreationSettings;
 import com.github.stephengold.joltjni.BodyInterface;
+import com.github.stephengold.joltjni.BodyLockWrite;
 import com.github.stephengold.joltjni.BoxShape;
 import com.github.stephengold.joltjni.Quat;
 import com.github.stephengold.joltjni.RVec3;
@@ -28,7 +30,9 @@ import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.actions.ImpulseActionClip;
 import mchorse.bbs_physics.actions.TearActionClip;
+import mchorse.bbs_mod.forms.forms.utils.Anchor;
 import mchorse.bbs_physics.balloon.BalloonForm;
+import mchorse.bbs_physics.chain.ChainForm;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.cloth.ClothForm;
 import mchorse.bbs_physics.client.ragdoll.RagdollPoseApplier;
@@ -203,6 +207,7 @@ public class FilmScene implements AutoCloseable
         private final List<ActorRagdoll> ragdolls;
         private final List<ClothRig> cloths;
         private final List<BalloonRig> balloons;
+        private final List<ChainRig> chains;
 
         /**
          * Who among this actor's bodies is excused from colliding with whom. Native and held by
@@ -227,7 +232,7 @@ public class FilmScene implements AutoCloseable
          */
         private boolean broken;
 
-        private EntityRigs(IEntity entity, Replay replay, ActorRig bones, List<PhysicsBodyRig> bodyRigs, List<ActorRagdoll> ragdolls, List<ClothRig> cloths, List<BalloonRig> balloons, ActorCollisionGroup group)
+        private EntityRigs(IEntity entity, Replay replay, ActorRig bones, List<PhysicsBodyRig> bodyRigs, List<ActorRagdoll> ragdolls, List<ClothRig> cloths, List<BalloonRig> balloons, List<ChainRig> chains, ActorCollisionGroup group)
         {
             this.entity = entity;
             this.replay = replay;
@@ -236,6 +241,7 @@ public class FilmScene implements AutoCloseable
             this.ragdolls = ragdolls;
             this.cloths = cloths;
             this.balloons = balloons;
+            this.chains = chains;
             this.group = group;
         }
     }
@@ -559,6 +565,7 @@ public class FilmScene implements AutoCloseable
             List<PhysicsBodyRig> bodyRigs = new ArrayList<>(0);
             List<ClothRig> cloths = new ArrayList<>(0);
             List<BalloonRig> balloons = new ArrayList<>(0);
+            List<ChainRig> chains = new ArrayList<>(0);
 
             this.discoverBodies(root, "", matrices, bodyRigs, null);
 
@@ -568,7 +575,11 @@ public class FilmScene implements AutoCloseable
 
             this.discoverBalloons(root, "", matrices, actorWorld, balloons, null);
 
-            if (bones == null && bodyRigs.isEmpty() && ragdolls.isEmpty() && cloths.isEmpty() && balloons.isEmpty())
+            /* Each strand takes an id from the same counter too — its neighbours are excused from
+             * each other through its own filter, and a shared id would read another rig's table. */
+            group = this.discoverChains(root, "", matrices, actorWorld, chains, group, null);
+
+            if (bones == null && bodyRigs.isEmpty() && ragdolls.isEmpty() && cloths.isEmpty() && balloons.isEmpty() && chains.isEmpty())
             {
                 continue;
             }
@@ -577,7 +588,7 @@ public class FilmScene implements AutoCloseable
              * ragdoll part and every kinematic bone at once. */
             actorGroup.seal();
 
-            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls, cloths, balloons, actorGroup);
+            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls, cloths, balloons, chains, actorGroup);
 
             this.rigs.add(rigs);
 
@@ -588,6 +599,67 @@ public class FilmScene implements AutoCloseable
              * starts, and without this it would begin its fall from the scene's origin instead,
              * with the author's coordinates never read at all. */
             this.updateRigs(rigs, 0, true);
+        }
+
+        this.linkChainTargets();
+    }
+
+    /**
+     * The second build pass for the chains' bottom ends: a disabled tie from every strand to every
+     * simulated root body in the scene, so a keyframe can grab any of them mid-film without the
+     * world ever changing shape mid-recording. Runs after the whole cast is built, because a rope
+     * on the first actor may be tied to a crate on the last.
+     */
+    private void linkChainTargets()
+    {
+        Map<Integer, Body> candidates = new HashMap<>(0);
+
+        for (EntityRigs rigs : this.rigs)
+        {
+            for (PhysicsBodyRig rig : rigs.bodyRigs)
+            {
+                if (rig.getPath().isEmpty())
+                {
+                    Body body = this.bodyRef(rig.getBodyId());
+
+                    if (body != null)
+                    {
+                        candidates.put(rig.getBodyId(), body);
+                    }
+                }
+            }
+        }
+
+        if (candidates.isEmpty())
+        {
+            return;
+        }
+
+        for (EntityRigs rigs : this.rigs)
+        {
+            for (ChainRig chain : rigs.chains)
+            {
+                chain.linkTargets(this.world, candidates);
+            }
+        }
+    }
+
+    /**
+     * The {@code Body} reference behind an id — constraint settings take a body, not an id. The
+     * pointer stays valid for as long as the body exists, which is as long as this scene does; the
+     * lock is only for the lookup, since everything here runs on one thread.
+     */
+    private Body bodyRef(int id)
+    {
+        BodyLockWrite lock = new BodyLockWrite(this.world.getSystem().getBodyLockInterface(), id);
+
+        try
+        {
+            return lock.succeeded() ? lock.getBody() : null;
+        }
+        finally
+        {
+            lock.releaseLock();
         }
     }
 
@@ -773,6 +845,51 @@ public class FilmScene implements AutoCloseable
                     : anchor;
 
                 group = this.discoverCloths(child, StringUtils.combinePaths(path, String.valueOf(i)), matrices, actorWorld, out, group, childAnchor);
+            }
+
+            /* Outside the null check, mirroring the walk: a partless slot still takes an index. */
+            i += 1;
+        }
+
+        return group;
+    }
+
+    /**
+     * Finds every chain form in an actor's tree and gives each one a strand of rigid segments.
+     * The cloth walk with the same group counter: a strand's neighbours are excused from each
+     * other through a filter of its own.
+     */
+    private int discoverChains(Form form, String path, MatrixCache matrices, Matrix4f actorWorld, List<ChainRig> out, int group, String anchor)
+    {
+        if (form instanceof ChainForm chain)
+        {
+            ChainRig rig = ChainRig.build(this.world, chain, path, matrices, actorWorld, this, group, anchor);
+
+            if (rig != null)
+            {
+                out.add(rig);
+            }
+
+            /* Taken whether or not the strand was built — an id spent is cheaper than an id
+             * reused by mistake. */
+            group += 1;
+        }
+
+        int i = 0;
+
+        for (BodyPart part : form.parts.getAllTyped())
+        {
+            Form child = part.getForm();
+
+            if (child != null)
+            {
+                /* The same anchor rule as cloth: descending out of a model means everything below
+                 * hangs on one of its bones, and that bone is what a ragdoll moves. */
+                String childAnchor = form instanceof ModelForm
+                    ? StringUtils.combinePaths(path, part.bone.get())
+                    : anchor;
+
+                group = this.discoverChains(child, StringUtils.combinePaths(path, String.valueOf(i)), matrices, actorWorld, out, group, childAnchor);
             }
 
             /* Outside the null check, mirroring the walk: a partless slot still takes an index. */
@@ -971,6 +1088,18 @@ public class FilmScene implements AutoCloseable
                     lost += 1;
                 }
                 else if (this.isOutside(balloon.getRecordedCenter(this.probe)))
+                {
+                    outside += 1;
+                }
+            }
+
+            for (ChainRig chain : rigs.chains)
+            {
+                if (chain.isLost())
+                {
+                    lost += 1;
+                }
+                else if (this.isOutside(chain.getRecordedCenter(this.probe)))
                 {
                     outside += 1;
                 }
@@ -1187,6 +1316,11 @@ public class FilmScene implements AutoCloseable
             {
                 balloon.record(this.world, this, this.cache, tick);
             }
+
+            for (ChainRig chain : rigs.chains)
+            {
+                chain.record(this.world, this, this.cache, tick);
+            }
         }
 
         this.cache.commit(tick);
@@ -1229,9 +1363,109 @@ public class FilmScene implements AutoCloseable
             {
                 balloon.readCache(this.cache, tick, jumped);
             }
+
+            for (ChainRig chain : rigs.chains)
+            {
+                chain.readCache(this.cache, tick, jumped);
+            }
         }
 
         this.drawnTick = tick;
+    }
+
+    /**
+     * What a chain's bottom end is told to do on the tick being simulated, resolved from its
+     * anchor track the way the old chain solver resolved its physics target: the bound side is
+     * taken at its full position and the fade becomes a 0..1 weight, because feeding a fading
+     * anchor straight to {@code getTotalMatrix} lerps the position from the world origin across a
+     * "no target" key and yanks the end to (0,0,0).
+     *
+     * <p>An anchor whose target actor is itself a simulated root body becomes a real tie to that
+     * body — the rope pulls it. Anything else the anchor can name resolves to a point, and the end
+     * is pinned there kinematically.</p>
+     */
+    private ChainRig.Attach resolveAttach(ChainForm form)
+    {
+        Anchor anchor = form.attach.get();
+
+        if (anchor == null)
+        {
+            return ChainRig.Attach.NONE;
+        }
+
+        Anchor resolve;
+        float weight;
+
+        if (anchor.previous != null && anchor.isFadeIn())
+        {
+            resolve = anchor;
+            weight = anchor.x;
+        }
+        else if (anchor.previous != null && anchor.isFadeOut())
+        {
+            resolve = anchor.previous;
+            weight = 1F - anchor.x;
+        }
+        else
+        {
+            resolve = anchor;
+            weight = 1F;
+        }
+
+        if (weight <= 0F || resolve.replay == Anchor.NO_ATTACHMENT)
+        {
+            return ChainRig.Attach.NONE;
+        }
+
+        IEntity target = this.entities.get(resolve.replay);
+
+        if (target == null)
+        {
+            return ChainRig.Attach.NONE;
+        }
+
+        /* A simulated root body wins over its animated frame: tying the rope to where the crate
+         * would have been had it not fallen is nobody's intention. The attachment name is ignored
+         * for a body — a crate has no bones. */
+        for (EntityRigs rigs : this.rigs)
+        {
+            if (rigs.entity != target)
+            {
+                continue;
+            }
+
+            for (PhysicsBodyRig rig : rigs.bodyRigs)
+            {
+                if (rig.getPath().isEmpty())
+                {
+                    /* Whatever the body's handle says right now: a tie to a body the animation
+                     * still owns simply hangs off it — Jolt holds a dynamic-kinematic pair fine —
+                     * and starts dragging the moment the handle lets the body go. */
+                    return new ChainRig.Attach(ChainRig.ATTACH_BODY, weight, 0F, 0F, 0F, rig.getBodyId());
+                }
+            }
+        }
+
+        /* Everything else is a point: the actor itself, a bone of it, with the anchor's own
+         * offset — the same resolution the film's anchors go through, at the tick the cast is
+         * standing on and at transition 1 (0 is the previous tick — the Э1 lesson). */
+        Pair<Matrix4f, Float> matrix = BaseFilmController.getTotalMatrix(
+            this.entities, resolve, new Matrix4f(), 0D, 0D, 0D, 1F, 0, true, null);
+
+        if (matrix.a == null)
+        {
+            return ChainRig.Attach.NONE;
+        }
+
+        Vector3f position = matrix.a.getTranslation(new Vector3f());
+
+        return new ChainRig.Attach(
+            ChainRig.ATTACH_PIN,
+            weight,
+            (float) (position.x - this.originX),
+            (float) (position.y - this.originY),
+            (float) (position.z - this.originZ),
+            -1);
     }
 
     /**
@@ -1384,6 +1618,11 @@ public class FilmScene implements AutoCloseable
             for (BalloonRig balloon : rigs.balloons)
             {
                 balloon.impulse(this.world, push);
+            }
+
+            for (ChainRig chain : rigs.chains)
+            {
+                chain.impulse(this.world, push);
             }
         }
     }
@@ -1589,6 +1828,11 @@ public class FilmScene implements AutoCloseable
             for (BalloonRig balloon : rigs.balloons)
             {
                 balloon.update(this.world, this, matrices, actorWorld, reset, rigs.boneDeltas);
+            }
+
+            for (ChainRig chain : rigs.chains)
+            {
+                chain.update(this.world, this, matrices, actorWorld, reset, rigs.boneDeltas, this.resolveAttach(chain.getForm()));
             }
 
             rigs.broken = false;
@@ -1797,6 +2041,11 @@ public class FilmScene implements AutoCloseable
             for (BalloonRig balloon : rigs.balloons)
             {
                 balloon.release();
+            }
+
+            for (ChainRig chain : rigs.chains)
+            {
+                chain.release();
             }
         }
 

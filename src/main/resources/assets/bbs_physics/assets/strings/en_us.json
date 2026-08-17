@@ -121,6 +121,22 @@
     "bbs_physics.forms.balloon.gravity": "Gravity: 1 is normal weight, 0 is weightless, below zero floats up like a helium balloon. Takes effect when the form editor is closed.",
     "bbs_physics.forms.balloon.damping": "Damping: how quickly the ball settles. A resting ball may creep into a slow roll — raise this to keep it put",
 
+    "bbs_physics.forms.chain.title": "Chain",
+    "bbs_physics.forms.chain.link_label": "Link — any form, repeated along the strand. With none, a built-in rope is drawn.",
+    "bbs_physics.forms.chain.link": "One link's form. Drawn from the segment's start downwards; size it to the segment's length (length ÷ segments) so the chain reads as continuous.",
+    "bbs_physics.forms.chain.strand": "Strand",
+    "bbs_physics.forms.chain.length": "The chain's length in blocks. Hangs down from wherever the form is placed.",
+    "bbs_physics.forms.chain.segments": "Segments — more bends softer and costs more: every segment is a body of its own",
+    "bbs_physics.forms.chain.radius": "Thickness in blocks — what the chain rests on the world and catches on props with",
+    "bbs_physics.forms.chain.feel": "Feel",
+    "bbs_physics.forms.chain.mass": "Whole chain's weight (kg). A heavy chain drags a crate harder.",
+    "bbs_physics.forms.chain.stiffness": "Springiness: 0 is a rope, 1 is a hose that straightens itself",
+    "bbs_physics.forms.chain.damping": "Damping: how quickly the chain stops swinging",
+    "bbs_physics.forms.chain.ends": "Ends",
+    "bbs_physics.forms.chain.held_start": "Top held by the form",
+    "bbs_physics.forms.chain.held_start_tooltip": "On, the chain hangs from wherever the form is placed and follows it. Off, the whole strand is loose — a thrown rope.",
+    "bbs_physics.forms.chain.attach_hint": "The bottom end is tied by the \"attach\" track on the timeline: key an actor and a bone, like an anchor. If the actor carries the Rigid Body modifier, the chain honestly drags it along. Keys mid-film re-tie the end.",
+
     "bbs_physics.forms.collision.title": "Collision",
     "bbs_physics.forms.collision.preview": "Show markup",
 
