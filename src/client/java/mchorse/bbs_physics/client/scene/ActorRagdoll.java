@@ -126,21 +126,30 @@ public class ActorRagdoll
     private final RagdollState state = new RagdollState();
 
     /**
-     * The joints, which Jolt holds by pointer. Kept in a field so the Java side cannot collect them
-     * while the world still uses them; they die with the world.
+     * The joints with both their ends, which Jolt holds by pointer. Kept in a field so the Java
+     * side cannot collect them while the world still uses them; they die with the world. The ends
+     * are kept because a tear has to reason about the whole neighbourhood of a bone — see
+     * {@link #tear} for why "the bone's own joint" was not enough.
      */
-    private final List<TwoBodyConstraint> joints = new ArrayList<>();
-
-    /** The same joints by the bone hanging off each — what a tear looks its constraint up in. */
-    private final Map<String, TwoBodyConstraint> jointByBone = new HashMap<>();
+    private final List<Joint> joints = new ArrayList<>();
 
     /**
-     * Bones a tear clip has ripped off (Э5): the joint holding each is switched off and the part is
-     * dynamic whatever the handle says — a torn head cannot be walked by keyframes it no longer
-     * follows. Grows during recording, emptied when the scene starts over, which is the only way
-     * back on: the recording is linear, so "before the tear" only ever exists as a re-recording.
+     * Bones a tear clip has ripped off (Э5): the joints between each and the rest of the skeleton
+     * are switched off and the part is dynamic whatever the handle says — a torn head cannot be
+     * walked by keyframes it no longer follows. Grows during recording, emptied when the scene
+     * starts over, which is the only way back on: the recording is linear, so "before the tear"
+     * only ever exists as a re-recording.
      */
     private final Set<String> torn = new HashSet<>();
+
+    /** The joints the tears switched off, so a restart can switch exactly those back on. */
+    private final List<TwoBodyConstraint> severed = new ArrayList<>();
+
+    /**
+     * The model's bone tree, kept for one question a tear asks: is this neighbour a descendant of
+     * the torn bone — hair on a head, riding along — or the rest of the character, being left.
+     */
+    private Map<String, ModelGroup> groups = Map.of();
 
     /** Whether the parts are currently kinematic — the cached side of the motion type switch. */
     private boolean kinematic = true;
@@ -262,6 +271,8 @@ public class ActorRagdoll
         BodyInterface bodies = physics.getBodies();
         ActorRagdoll ragdoll = new ActorRagdoll(form, formPath);
         Map<String, Part> byBone = new HashMap<>();
+
+        ragdoll.groups = groups;
 
         /* The welded bones, gathered under the part each of them belongs to, and the parts on their
          * own — the joint search must not see a welded bone, which has no body to be jointed to. */
@@ -396,8 +407,7 @@ public class ActorRagdoll
             TwoBodyConstraint constraint = settings.create(parent != null ? parent.body : rigParent.body(), part.body);
 
             physics.getSystem().addConstraint(constraint);
-            ragdoll.joints.add(constraint);
-            ragdoll.jointByBone.put(part.bone, constraint);
+            ragdoll.joints.add(new Joint(part.bone, parentBone, constraint));
 
             /* Neighbours share a joint; their shapes meet at it by design and always will. Letting
              * them also collide would have every joint permanently fighting its own limits. A
@@ -798,18 +808,28 @@ public class ActorRagdoll
     }
 
     /**
-     * Rips {@code bone} off this ragdoll (Э5): its joint is switched off, the part goes dynamic
-     * whatever the handle says, and the given send-off is added to whatever velocity it carried —
-     * the head of a running character flies out of the run, plus the kick.
+     * Rips {@code bone} off this ragdoll (Э5): every joint tying it to the rest of the skeleton is
+     * switched off, the part goes dynamic whatever the handle says, and the given send-off is added
+     * to whatever velocity it carried — the head of a running character flies out of the run, plus
+     * the kick.
+     *
+     * <p><b>Every joint between the bone and the rest — not "the bone's own joint".</b> Who
+     * attaches to whom is the auto-attachment's decision, and its trunk is the bulkiest part —
+     * which on Minecraft proportions is the <em>head</em> (8×8×8 beats the 8×12×4 torso). Tear
+     * only its own upward link and a trunk bone has none: the kick landed, nothing broke, and the
+     * whole character flew off after its own head — the first live run's exact report. So the
+     * break is decided per neighbour instead, direction-blind: a joint to a bone-tree
+     * <em>descendant</em> of the torn bone survives (hair on a torn head flies with it), a joint
+     * to anything else is severed (whichever end happened to be the "parent").</p>
      *
      * <p>Runs inside the recording, on the tick the tear clip fires, which is what makes it
-     * deterministic: a re-recording replays the same clip on the same tick. The joint object stays
+     * deterministic: a re-recording replays the same clip on the same tick. The joint objects stay
      * owned and in the world — {@code setEnabled(false)} is the whole of the break — so the scene's
      * set of bodies and constraints never changes shape and nothing about the recording moves.</p>
      *
-     * <p>The part stays excused from colliding with its former parent. Their shapes overlap at the
-     * joint on the tick of the tear, and letting them collide right then would fire the head off
-     * the depenetration instead of the author's kick.</p>
+     * <p>The part stays excused from colliding with its former neighbours. Their shapes overlap at
+     * the joint on the tick of the tear, and letting them collide right then would fire the head
+     * off the depenetration instead of the author's kick.</p>
      *
      * @return whether this ragdoll has that bone as a part at all
      */
@@ -836,11 +856,34 @@ public class ActorRagdoll
 
         if (this.torn.add(bone))
         {
-            TwoBodyConstraint joint = this.jointByBone.get(bone);
-
-            if (joint != null)
+            for (Joint joint : this.joints)
             {
-                joint.setEnabled(false);
+                boolean severs;
+
+                if (joint.child.equals(bone))
+                {
+                    /* The bone's own upward link always breaks: whatever it was held by, it is
+                     * being torn away from it. */
+                    severs = true;
+                }
+                else if (joint.parent.equals(bone))
+                {
+                    /* Something hangs off the torn bone. Hair on a head rides along — its joint
+                     * survives and it flies with the head. A bone that merely got attached here by
+                     * the trunk choice — the torso of a big-headed character — is the rest of the
+                     * body, and the joint is exactly what a tear exists to break. */
+                    severs = !this.isTreeDescendant(joint.child, bone);
+                }
+                else
+                {
+                    continue;
+                }
+
+                if (severs && joint.constraint.getEnabled())
+                {
+                    joint.constraint.setEnabled(false);
+                    this.severed.add(joint.constraint);
+                }
             }
 
             bodies.setMotionType(found.id, EMotionType.Dynamic, EActivation.Activate);
@@ -868,6 +911,15 @@ public class ActorRagdoll
             return;
         }
 
+        /* Exactly the joints the tears switched off — not "the torn bones' joints", because a tear
+         * severs by neighbourhood and the bookkeeping must match it break for break. */
+        for (TwoBodyConstraint constraint : this.severed)
+        {
+            constraint.setEnabled(true);
+        }
+
+        this.severed.clear();
+
         for (Part part : this.parts)
         {
             if (!this.torn.contains(part.bone))
@@ -875,18 +927,34 @@ public class ActorRagdoll
                 continue;
             }
 
-            TwoBodyConstraint joint = this.jointByBone.get(part.bone);
-
-            if (joint != null)
-            {
-                joint.setEnabled(true);
-            }
-
             bodies.setMotionType(part.id, this.kinematic ? EMotionType.Kinematic : EMotionType.Dynamic, EActivation.Activate);
             bodies.setObjectLayer(part.id, this.kinematic ? PhysicsLayers.BONE : PhysicsLayers.MOVING);
         }
 
         this.torn.clear();
+    }
+
+    /**
+     * Whether {@code bone} sits under {@code ancestor} in the model's own bone tree. The tree, not
+     * the attachment graph, deliberately: attachment is a solver detail that flips with cube
+     * volumes, while "the hair is part of the head" is a fact of the model.
+     */
+    private boolean isTreeDescendant(String bone, String ancestor)
+    {
+        ModelGroup group = this.groups.get(bone);
+        ModelGroup parent = group == null ? null : group.parent;
+
+        while (parent != null)
+        {
+            if (parent.id.equals(ancestor))
+            {
+                return true;
+            }
+
+            parent = parent.parent;
+        }
+
+        return false;
     }
 
     /**
@@ -1266,5 +1334,13 @@ public class ActorRagdoll
      * its slot in the film's recording.
      */
     private record Part(String bone, String path, int id, Body body, int sub, int channel)
+    {}
+
+    /**
+     * One joint with its two ends: the bone hanging ({@code child}) and what it hangs on
+     * ({@code parent} — a fellow part or a kinematic bone). Which end is which is the attachment
+     * solver's choice, which is exactly why a tear reads both.
+     */
+    private record Joint(String child, String parent, TwoBodyConstraint constraint)
     {}
 }
