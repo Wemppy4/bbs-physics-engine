@@ -126,7 +126,7 @@ public class UIChainSection extends UIElement
         this.takeFromModel = new UIButton(PhysicsKeys.CHAIN_TAKE_FROM_MODEL, (b) -> this.takeFromModel());
         this.takeFromModel.tooltip(PhysicsKeys.CHAIN_TAKE_FROM_MODEL_TOOLTIP);
 
-        this.clear = new UIButton(PhysicsKeys.CHAIN_CLEAR, (b) -> this.edit((chain) -> chain.withBones(Set.of())));
+        this.clear = new UIButton(PhysicsKeys.CHAIN_CLEAR, (b) -> this.editComposition((chain) -> chain.withBones(Set.of())));
 
         this.stiffness = this.knob(0D, 1D, PhysicsKeys.CHAIN_STIFFNESS, (chain, v) -> chain.withStiffness(v));
         this.damping = this.knob(0D, 1D, PhysicsKeys.CHAIN_DAMPING, (chain, v) -> chain.withDamping(v));
@@ -165,7 +165,7 @@ public class UIChainSection extends UIElement
 
     private void toggleBone(String bone)
     {
-        this.edit((chain) -> chain.withBone(bone, !chain.bones().contains(bone)));
+        this.editComposition((chain) -> chain.withBone(bone, !chain.bones().contains(bone)));
     }
 
     /**
@@ -185,9 +185,20 @@ public class UIChainSection extends UIElement
 
         bones.addAll(ChainBones.of(this.form, cubic));
 
-        this.edit((chain) -> chain.withBones(bones));
+        this.editComposition((chain) -> chain.withBones(bones));
     }
 
+    /**
+     * Writes one edit and nothing else.
+     *
+     * <p>🔴 <b>It must not touch the layout</b>, and that is not tidiness: a trackpad calls its
+     * callback while it is being dragged, which happens inside the render pass, so rebuilding this
+     * element's children from here tore the list the renderer was walking — a
+     * {@code ConcurrentModificationException} that took the game down the moment an author dragged
+     * the stiffness slider. The ragdoll's knobs have always written and stopped, for the same
+     * reason; only the edits that change what rows there <em>are</em> may rebuild, and those all
+     * come from clicks.</p>
+     */
     private void edit(UnaryOperator<FormChain> edit)
     {
         if (this.form == null)
@@ -198,7 +209,26 @@ public class UIChainSection extends UIElement
         this.chain = edit.apply(this.chain);
 
         FormChains.set(this.form, this.chain);
-        this.updateLabels();
+    }
+
+    /**
+     * An edit that can change which rows exist — ticking a bone, importing, clearing. Safe to
+     * rebuild from: every caller is a click, and clicks are not the render pass.
+     */
+    private void editComposition(UnaryOperator<FormChain> edit)
+    {
+        boolean had = !this.chain.bones().isEmpty();
+
+        this.edit(edit);
+
+        if (had != !this.chain.bones().isEmpty())
+        {
+            this.updateLabels();
+        }
+        else
+        {
+            this.syncKnobs();
+        }
     }
 
     /* Syncing the UI */
@@ -237,6 +267,13 @@ public class UIChainSection extends UIElement
 
     private void updateLabels()
     {
+        this.syncKnobs();
+        this.rebuild();
+    }
+
+    /** The values only — never the layout. See {@link #edit} for why that separation is load-bearing. */
+    private void syncKnobs()
+    {
         if (this.stiffness == null)
         {
             return;
@@ -256,11 +293,14 @@ public class UIChainSection extends UIElement
         {
             this.syncing = false;
         }
-
-        this.rebuild();
     }
 
-    /** The knobs only appear once there is a strand for them to describe. */
+    /**
+     * The knobs only appear once there is a strand for them to describe.
+     *
+     * <p>Only ever called from a click or from {@link #setForm} — never from a value callback, and
+     * never from the render pass; see {@link #edit}.</p>
+     */
     private void rebuild()
     {
         this.removeAll();
