@@ -1,5 +1,6 @@
 package mchorse.bbs_physics.mixin.client;
 
+import mchorse.bbs_mod.ui.forms.editors.UIFormEditor;
 import mchorse.bbs_mod.ui.forms.editors.utils.UIPickableFormRenderer;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_physics.client.EditorPreview;
@@ -31,7 +32,11 @@ public class UIPickableFormRendererMixin
 
         /* The target entity, not the renderer's own stub: when the editor was opened from a film,
          * the preview is posed by the actor it belongs to, and the markup has to be measured
-         * against the same pose the model is drawn in. */
-        EditorPreview.render(renderer.form, renderer.getTargetEntity(), renderer.area, context);
+         * against the same pose the model is drawn in.
+         *
+         * The editor comes along so the overlay can draw the selected body part alone — found by
+         * walking up the UI tree, because this viewport is a child of it and nothing else knows
+         * which entry the author is standing on. */
+        EditorPreview.render(renderer.form, renderer.getTargetEntity(), renderer.area, context, renderer.getParent(UIFormEditor.class));
     }
 }

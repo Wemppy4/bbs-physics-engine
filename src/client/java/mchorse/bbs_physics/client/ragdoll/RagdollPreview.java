@@ -3,6 +3,7 @@ package mchorse.bbs_physics.client.ragdoll;
 import com.mojang.blaze3d.systems.RenderSystem;
 import mchorse.bbs_mod.cubic.ModelInstance;
 import mchorse.bbs_mod.cubic.data.model.Model;
+import mchorse.bbs_mod.forms.FormUtils;
 import mchorse.bbs_mod.forms.FormUtilsClient;
 import mchorse.bbs_mod.forms.entities.IEntity;
 import mchorse.bbs_mod.forms.forms.Form;
@@ -56,7 +57,19 @@ public final class RagdollPreview
 
     public static void render(Form form, IEntity entity, MatrixStack stack, float transition)
     {
-        if (form == null || entity == null || stack == null || !(form instanceof ModelForm modelForm))
+        render(form, entity, stack, transition, null);
+    }
+
+    /**
+     * @param selection the path of the body part the editor has selected, whose joints are the ones
+     *                  worth drawing; null means the root is selected and the root model's joints
+     *                  are drawn, as before. A selected part that is not a ragdolled model draws
+     *                  nothing at all — which is the honest answer, and quieter than showing
+     *                  somebody else's skeleton over it
+     */
+    public static void render(Form form, IEntity entity, MatrixStack stack, float transition, String selection)
+    {
+        if (form == null || entity == null || stack == null)
         {
             return;
         }
@@ -66,7 +79,12 @@ public final class RagdollPreview
             return;
         }
 
-        if (!FormRagdolls.isEnabled(form))
+        /* The tree is walked from the root either way — the matrices are keyed by paths from it —
+         * but whose ragdoll is drawn is the selection's business. */
+        String prefix = selection == null ? "" : selection;
+        Form target = selection == null ? form : FormUtils.getForm(form, selection);
+
+        if (!(target instanceof ModelForm modelForm) || !FormRagdolls.isEnabled(target))
         {
             return;
         }
@@ -82,15 +100,15 @@ public final class RagdollPreview
         try
         {
             MatrixCache matrices = FormUtilsClient.getRenderer(form).collectMatrices(entity, transition);
-            FormRagdoll config = FormRagdolls.get(form);
-            List<CollisionCollector.Piece> bones = bonePieces(form, matrices, model);
+            FormRagdoll config = FormRagdolls.get(target);
+            List<CollisionCollector.Piece> bones = bonePieces(form, matrices, model, prefix);
 
             if (bones.isEmpty())
             {
                 return;
             }
 
-            Map<String, String> welds = RagdollWelds.resolve(config, bones, "", model);
+            Map<String, String> welds = RagdollWelds.resolve(config, bones, prefix, model);
             List<CollisionCollector.Piece> pieces = new ArrayList<>(bones.size());
             List<CollisionCollector.Piece> candidates = new ArrayList<>(bones.size());
 
@@ -231,15 +249,15 @@ public final class RagdollPreview
      * built. A bone that ends up in neither list draws nothing, and correctly so: it stays a
      * kinematic body riding the animation, with no joint and nothing to be welded into.
      */
-    private static List<CollisionCollector.Piece> bonePieces(Form form, MatrixCache matrices, Model model)
+    private static List<CollisionCollector.Piece> bonePieces(Form form, MatrixCache matrices, Model model, String prefix)
     {
         List<CollisionCollector.Piece> pieces = new ArrayList<>();
 
         for (CollisionCollector.Piece piece : CollisionCollector.collectAll(form, matrices))
         {
-            /* Bone slots only: a piece whose path is the form's own path is the form's shape, not a
-             * bone, and it never becomes a ragdoll part. */
-            if (RagdollWelds.isBonePiece(piece, "") && model.getGroup(piece.label()) != null)
+            /* Bone slots of the selected model only: a piece whose path is the form's own path is
+             * the form's shape, not a bone, and it never becomes a ragdoll part. */
+            if (RagdollWelds.isBonePiece(piece, prefix) && model.getGroup(piece.label()) != null)
             {
                 pieces.add(piece);
             }

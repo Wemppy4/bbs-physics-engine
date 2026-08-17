@@ -38,6 +38,16 @@ public final class CollisionPreview
 
     public static void render(Form form, IEntity entity, MatrixStack stack, float transition)
     {
+        render(form, entity, stack, transition, null);
+    }
+
+    /**
+     * @param selection the path of the body part the editor has selected, so only its markup is
+     *                  drawn; null draws the whole tree (the root is selected, or there is no
+     *                  editor at all). See {@code EditorPreview.selection}
+     */
+    public static void render(Form form, IEntity entity, MatrixStack stack, float transition, String selection)
+    {
         if (form == null || entity == null || stack == null)
         {
             return;
@@ -63,6 +73,11 @@ public final class CollisionPreview
 
             for (CollisionCollector.Piece piece : pieces)
             {
+                if (!owns(selection, piece.path()))
+                {
+                    continue;
+                }
+
                 MatrixCacheEntry entry = matrices.get(piece.path());
 
                 if (entry == null || entry.matrix() == null)
@@ -99,5 +114,16 @@ public final class CollisionPreview
         {
             RenderSystem.enableDepthTest();
         }
+    }
+
+    /**
+     * Whether a piece belongs to the selected body part — itself, its bones, or a form nested
+     * inside it. A piece of the part at {@code 0/2} is {@code 0/2}, {@code 0/2/head} or
+     * {@code 0/2/…}; the check is on the separator so that {@code 0/21} is not mistaken for a
+     * child of {@code 0/2}.
+     */
+    static boolean owns(String selection, String path)
+    {
+        return selection == null || path.equals(selection) || path.startsWith(selection + "/");
     }
 }
