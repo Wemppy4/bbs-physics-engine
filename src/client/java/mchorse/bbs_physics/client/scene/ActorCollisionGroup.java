@@ -84,6 +84,21 @@ public class ActorCollisionGroup
         return sub;
     }
 
+    /**
+     * A place for a chain segment or one of its pins — a body that neither {@link #seal} case
+     * applies to.
+     *
+     * <p>Deliberately not a part: sealing excuses every part from every kinematic bone, which is
+     * right for a ragdoll (its shapes were cut from the same skeleton and overlap everywhere) and
+     * exactly wrong for hair, whose whole job is to rest on the shoulders it is told to collide
+     * with. The one pair a strand must not have — its first segment against the bone it hangs from
+     * — is excused by hand where that joint is made.</p>
+     */
+    public int claimChain()
+    {
+        return this.next++;
+    }
+
     /** What a body is told to carry, so that it consults this table rather than colliding blindly. */
     public CollisionGroup of(int sub)
     {

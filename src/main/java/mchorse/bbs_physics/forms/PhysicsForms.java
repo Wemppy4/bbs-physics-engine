@@ -8,6 +8,7 @@ import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 import mchorse.bbs_mod.utils.MathUtils;
 import mchorse.bbs_physics.balloon.BalloonForm;
 import mchorse.bbs_physics.chain.ChainForm;
+import mchorse.bbs_physics.chain.FormChains;
 import mchorse.bbs_physics.cloth.ClothForm;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 
@@ -66,7 +67,8 @@ public final class PhysicsForms
     /** Whether the form is simulated at all — by either modifier, or by being a soft form. */
     public static boolean isSimulated(Form form)
     {
-        return isBody(form) || FormRagdolls.isEnabled(form) || form instanceof ClothForm || form instanceof BalloonForm || form instanceof ChainForm;
+        return isBody(form) || FormRagdolls.isEnabled(form) || FormChains.isEnabled(form)
+            || form instanceof ClothForm || form instanceof BalloonForm || form instanceof ChainForm;
     }
 
     /**

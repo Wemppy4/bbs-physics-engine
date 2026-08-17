@@ -64,6 +64,7 @@
     "bbs_physics.forms.physics.add": "Add a modifier",
     "bbs_physics.forms.physics.add_body": "Rigid body",
     "bbs_physics.forms.physics.add_ragdoll": "Ragdoll",
+    "bbs_physics.forms.physics.add_chain": "Chain (hair, tail)",
     "bbs_physics.forms.physics.add_obstacle": "Obstacle (later)",
     "bbs_physics.forms.physics.remove": "Remove the modifier",
     "bbs_physics.forms.physics.unmarked": "Set up collision first — the Collision tab. Without it there is nothing for physics to take hold of: the form falls through everything and touches nothing.",
@@ -136,6 +137,14 @@
     "bbs_physics.forms.chain.held_start": "Top held by the form",
     "bbs_physics.forms.chain.held_start_tooltip": "On, the chain hangs from wherever the form is placed and follows it. Off, the whole strand is loose — a thrown rope.",
     "bbs_physics.forms.chain.attach_hint": "The bottom end is tied by the \"attach\" track on the timeline: key an actor and a bone, like an anchor. If the actor carries the Rigid Body modifier, the chain honestly drags it along. Keys mid-film re-tie the end.",
+
+    "bbs_physics.forms.chain.modifier_title": "Chain",
+    "bbs_physics.forms.chain.take_from_model": "Take chains from the model",
+    "bbs_physics.forms.chain.take_from_model_tooltip": "Ticks the bones the model's own physics already describes (start of the chain down to its end) — usually the hair and tails. From then on those bones are ours and BBS's own chain solver is switched off on them: two owners for one strand is a strand doing neither thing convincingly. Use the knobs on this panel.",
+    "bbs_physics.forms.chain.clear": "Untick all",
+    "bbs_physics.forms.chain.bone_radius": "Strand thickness in blocks — what it rests on the body and the world with",
+    "bbs_physics.forms.chain.self_collision": "Strands collide with each other",
+    "bbs_physics.forms.chain.self_collision_tooltip": "Every segment against every other — costly and jittery, and barely visible on screen. A strand always collides with the body, the bones and the world: mark the character up in the Collision tab and the hair will rest on it.",
 
     "bbs_physics.forms.collision.title": "Collision",
     "bbs_physics.forms.collision.preview": "Show markup",

@@ -4,6 +4,7 @@ import mchorse.bbs_mod.cubic.ModelInstance;
 import mchorse.bbs_mod.cubic.data.model.Model;
 import mchorse.bbs_mod.cubic.data.model.ModelGroup;
 import mchorse.bbs_mod.forms.forms.Form;
+import mchorse.bbs_physics.chain.FormChains;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 import mchorse.bbs_physics.ragdoll.RagdollState;
 import org.joml.Matrix4f;
@@ -79,23 +80,29 @@ public final class RagdollPoseApplier
             return;
         }
 
-        RagdollState state = FormRagdolls.getState(form);
+        /* Two sets of simulated bones, applied in this order and never mixed: the ragdoll's parts,
+         * then the chain modifier's strands. Separate walks rather than one merged state because
+         * they answer about different bones and the second one is composed on top of the first —
+         * hair on a fallen head has to be placed against the head as it fell, and a walk that
+         * started from the animation would place it where the head would have been.
+         *
+         * Order matters for nothing else: a bone belongs to one of them, never both (the chain
+         * modifier claims bones the ragdoll does not have shapes for). */
+        walk(cubic, FormRagdolls.getState(form), transition);
+        walk(cubic, FormChains.getState(form), transition);
+    }
 
-        if (state == null || !state.isActive())
+    /** One state's substitution pass, when it has anything to say about this frame. */
+    private static void walk(Model cubic, RagdollState state, float transition)
+    {
+        if (state == null || !state.isActive() || state.getWeight(transition) <= 0F)
         {
             return;
         }
 
-        /* Since Э5 the weight is a per-bone question — a torn head is wholly the simulation's
-         * while the body around it walks a full handle — so the walk asks it bone by bone. The
-         * form-wide weight is the loosest bone's (the state aggregates by minimum authority), so
-         * a zero here really does mean no bone anywhere has any weight and the walk is not worth
-         * running. */
-        if (state.getWeight(transition) <= 0F)
-        {
-            return;
-        }
-
+        /* Any simulated bone at all means the old chain solver must read the offsets we are about
+         * to write — its anchor walk skips them by default (the IK stretch rule), so a strand's
+         * anchor would be read where the animation had it. */
         chainStretch = true;
 
         Walker walker = new Walker(state, transition);

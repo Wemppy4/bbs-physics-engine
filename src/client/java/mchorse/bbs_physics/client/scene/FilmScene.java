@@ -33,6 +33,7 @@ import mchorse.bbs_physics.actions.TearActionClip;
 import mchorse.bbs_mod.forms.forms.utils.Anchor;
 import mchorse.bbs_physics.balloon.BalloonForm;
 import mchorse.bbs_physics.chain.ChainForm;
+import mchorse.bbs_physics.chain.FormChains;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.cloth.ClothForm;
 import mchorse.bbs_physics.client.ragdoll.RagdollPoseApplier;
@@ -209,6 +210,9 @@ public class FilmScene implements AutoCloseable
         private final List<BalloonRig> balloons;
         private final List<ChainRig> chains;
 
+        /** The bone strands — hair and tails driven by the chain modifier (Э8's second half). */
+        private final List<ActorChain> boneChains;
+
         /**
          * Who among this actor's bodies is excused from colliding with whom. Native and held by
          * Jolt by pointer, so it lives here for as long as the bodies do rather than being dropped
@@ -232,7 +236,7 @@ public class FilmScene implements AutoCloseable
          */
         private boolean broken;
 
-        private EntityRigs(IEntity entity, Replay replay, ActorRig bones, List<PhysicsBodyRig> bodyRigs, List<ActorRagdoll> ragdolls, List<ClothRig> cloths, List<BalloonRig> balloons, List<ChainRig> chains, ActorCollisionGroup group)
+        private EntityRigs(IEntity entity, Replay replay, ActorRig bones, List<PhysicsBodyRig> bodyRigs, List<ActorRagdoll> ragdolls, List<ClothRig> cloths, List<BalloonRig> balloons, List<ChainRig> chains, List<ActorChain> boneChains, ActorCollisionGroup group)
         {
             this.entity = entity;
             this.replay = replay;
@@ -242,6 +246,7 @@ public class FilmScene implements AutoCloseable
             this.cloths = cloths;
             this.balloons = balloons;
             this.chains = chains;
+            this.boneChains = boneChains;
             this.group = group;
         }
     }
@@ -496,8 +501,11 @@ public class FilmScene implements AutoCloseable
             List<ActorRagdoll> ragdolls = new ArrayList<>(0);
 
             /* Sized before the markup is divided between owners, because that division does not
-             * change how many bodies there will be — only which half builds them. */
-            ActorCollisionGroup actorGroup = new ActorCollisionGroup(group, pieces.size());
+             * change how many bodies there will be — only which half builds them. The chain
+             * modifier's bodies are counted on top: they are not markup at all, and Jolt indexes
+             * this table unchecked, so a subgroup past its size is memory nobody owns. Two per
+             * claimed bone — the segment, and at worst a pin of its own for the bone above it. */
+            ActorCollisionGroup actorGroup = new ActorCollisionGroup(group, pieces.size() + chainBudget(root) * 2);
 
             group += 1;
 
@@ -579,7 +587,13 @@ public class FilmScene implements AutoCloseable
              * each other through its own filter, and a shared id would read another rig's table. */
             group = this.discoverChains(root, "", matrices, actorWorld, chains, group, null);
 
-            if (bones == null && bodyRigs.isEmpty() && ragdolls.isEmpty() && cloths.isEmpty() && balloons.isEmpty() && chains.isEmpty())
+            /* After the kinematic bones, like the ragdolls: a strand hangs off the bone above it,
+             * and that bone is usually one the animation kept. */
+            List<ActorChain> boneChains = new ArrayList<>(0);
+
+            this.discoverChainBones(root, "", bones, matrices, actorWorld, boneChains, actorGroup);
+
+            if (bones == null && bodyRigs.isEmpty() && ragdolls.isEmpty() && cloths.isEmpty() && balloons.isEmpty() && chains.isEmpty() && boneChains.isEmpty())
             {
                 continue;
             }
@@ -588,7 +602,7 @@ public class FilmScene implements AutoCloseable
              * ragdoll part and every kinematic bone at once. */
             actorGroup.seal();
 
-            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls, cloths, balloons, chains, actorGroup);
+            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls, cloths, balloons, chains, boneChains, actorGroup);
 
             this.rigs.add(rigs);
 
@@ -854,6 +868,56 @@ public class FilmScene implements AutoCloseable
         return group;
     }
 
+    /** How many bones the chain modifiers in this tree claim — what the filter table is sized for. */
+    private static int chainBudget(Form form)
+    {
+        int count = FormChains.get(form).enabled() ? FormChains.get(form).bones().size() : 0;
+
+        for (BodyPart part : form.parts.getAllTyped())
+        {
+            Form child = part.getForm();
+
+            if (child != null)
+            {
+                count += chainBudget(child);
+            }
+        }
+
+        return count;
+    }
+
+    /**
+     * Finds every model form carrying the chain modifier and builds its strands. Runs after the
+     * kinematic bones exist, like the ragdolls and for the same reason: a strand hangs off the bone
+     * above it, and that bone is usually one the animation keeps.
+     */
+    private void discoverChainBones(Form form, String path, ActorRig rig, MatrixCache matrices, Matrix4f actorWorld, List<ActorChain> out, ActorCollisionGroup group)
+    {
+        if (form instanceof ModelForm modelForm && FormChains.isEnabled(modelForm))
+        {
+            ActorChain chain = ActorChain.build(this.world, modelForm, path, rig, matrices, actorWorld, this, group);
+
+            if (chain != null)
+            {
+                out.add(chain);
+            }
+        }
+
+        int i = 0;
+
+        for (BodyPart part : form.parts.getAllTyped())
+        {
+            Form child = part.getForm();
+
+            if (child != null)
+            {
+                this.discoverChainBones(child, StringUtils.combinePaths(path, String.valueOf(i)), rig, matrices, actorWorld, out, group);
+            }
+
+            i += 1;
+        }
+    }
+
     /**
      * Finds every chain form in an actor's tree and gives each one a strand of rigid segments.
      * The cloth walk with the same group counter: a strand's neighbours are excused from each
@@ -1104,6 +1168,14 @@ public class FilmScene implements AutoCloseable
                     outside += 1;
                 }
             }
+
+            for (ActorChain chain : rigs.boneChains)
+            {
+                if (chain.isLost())
+                {
+                    lost += 1;
+                }
+            }
         }
 
         return new SceneStatus(
@@ -1321,6 +1393,11 @@ public class FilmScene implements AutoCloseable
             {
                 chain.record(this.world, this, this.cache, tick);
             }
+
+            for (ActorChain chain : rigs.boneChains)
+            {
+                chain.record(this.world, this, this.cache, tick);
+            }
         }
 
         this.cache.commit(tick);
@@ -1365,6 +1442,11 @@ public class FilmScene implements AutoCloseable
             }
 
             for (ChainRig chain : rigs.chains)
+            {
+                chain.readCache(this.cache, tick, jumped);
+            }
+
+            for (ActorChain chain : rigs.boneChains)
             {
                 chain.readCache(this.cache, tick, jumped);
             }
@@ -1624,6 +1706,11 @@ public class FilmScene implements AutoCloseable
             {
                 chain.impulse(this.world, push);
             }
+
+            for (ActorChain chain : rigs.boneChains)
+            {
+                chain.impulse(this.world, push);
+            }
         }
     }
 
@@ -1835,6 +1922,13 @@ public class FilmScene implements AutoCloseable
                 chain.update(this.world, this, matrices, actorWorld, reset, rigs.boneDeltas, this.resolveAttach(chain.getForm()));
             }
 
+            /* After the ragdolls too: hair hangs off bones that may themselves be falling, and the
+             * pin that holds it reads this tick's pose rather than the one before it. */
+            for (ActorChain chain : rigs.boneChains)
+            {
+                chain.update(this.world, this, matrices, actorWorld, reset);
+            }
+
             rigs.broken = false;
         }
         catch (Throwable e)
@@ -2044,6 +2138,11 @@ public class FilmScene implements AutoCloseable
             }
 
             for (ChainRig chain : rigs.chains)
+            {
+                chain.release();
+            }
+
+            for (ActorChain chain : rigs.boneChains)
             {
                 chain.release();
             }

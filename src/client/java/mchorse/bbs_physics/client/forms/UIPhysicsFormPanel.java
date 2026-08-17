@@ -15,6 +15,9 @@ import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_mod.utils.colors.Colors;
+import mchorse.bbs_physics.chain.FormChain;
+import mchorse.bbs_physics.chain.FormChains;
+import mchorse.bbs_physics.client.chain.UIChainSection;
 import mchorse.bbs_physics.client.ragdoll.UIRagdollSection;
 import mchorse.bbs_physics.collision.FormCollisions;
 import mchorse.bbs_physics.forms.FormBody;
@@ -57,6 +60,11 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
 
     private final UIModifierSection ragdollSection;
     private final UIRagdollSection ragdollBones;
+
+    private final UIModifierSection chainSection;
+    private final UIChainSection chainBones;
+    private final UITrackpad chainAuthority;
+    private final UIElement chainAuthorityRow;
 
     /** One per modifier, because the same element cannot hang under two parents. */
     private final UITrackpad bodyAuthority;
@@ -122,6 +130,12 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.ragdollSection = new UIModifierSection(PhysicsKeys.RAGDOLL_TITLE, "physics.ragdoll", () -> this.toggleRagdoll(false));
         this.ragdollSection.fields.add(this.ragdollAuthorityRow, this.ragdollBones);
 
+        this.chainAuthority = this.authority();
+        this.chainAuthorityRow = UI.labelRow(PhysicsKeys.AUTHORITY, this.chainAuthority);
+        this.chainBones = new UIChainSection(() -> this.options.resize());
+        this.chainSection = new UIModifierSection(PhysicsKeys.CHAIN_MODIFIER_TITLE, "physics.chain", () -> this.toggleChain(false));
+        this.chainSection.fields.add(this.chainAuthorityRow, this.chainBones);
+
         /* Wrapped rather than a one-line label: the column is narrow, and the sentence that has to
          * be read here is the one a single line cuts in half. */
         this.unmarked = new UIText(PhysicsKeys.PHYSICS_UNMARKED).color(Colors.LIGHTER_GRAY, true).padding(0, 2);
@@ -159,6 +173,7 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
             if (model)
             {
                 menu.action(Icons.LIMB, PhysicsKeys.PHYSICS_ADD_RAGDOLL, () -> this.toggleRagdoll(true));
+                menu.action(Icons.CURVES, PhysicsKeys.PHYSICS_ADD_CHAIN, () -> this.toggleChain(true));
             }
 
             menu.action(Icons.STRUCTURE, PhysicsKeys.PHYSICS_ADD_OBSTACLE, () -> {});
@@ -216,6 +231,33 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.sync();
     }
 
+    /**
+     * Adds or removes the chain modifier.
+     *
+     * <p>Adding one also drops the handle to 0, and that is not a liberty: hair is not a thing an
+     * author "releases" the way a crate is — it hangs, always — so a strand left at the resting 1
+     * would be a modifier that visibly does nothing until the author finds an unrelated slider.
+     * The chain form does the same on the palette entry it is copied from, for the same reason.
+     * Only when nothing else on the form uses the handle, though: the ragdoll shares it (§4), and
+     * dropping it there would floor the character on the spot.</p>
+     */
+    private void toggleChain(boolean add)
+    {
+        if (!(this.form instanceof ModelForm))
+        {
+            return;
+        }
+
+        FormChains.set(this.form, add ? FormChain.added() : FormChain.EMPTY);
+
+        if (add && !FormRagdolls.isEnabled(this.form) && !PhysicsForms.getBody(this.form).enabled())
+        {
+            PhysicsForms.setAuthority(this.form, 0F);
+        }
+
+        this.sync();
+    }
+
     private void setAuthority(float value)
     {
         if (!this.syncing && this.form != null)
@@ -242,6 +284,7 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         super.startEdit(form);
 
         this.ragdollBones.setForm(form);
+        this.chainBones.setForm(form);
         this.sync();
     }
 
@@ -252,7 +295,17 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
     @Override
     public boolean pickBoneInList(String bone)
     {
-        return this.form != null && FormRagdolls.isEnabled(this.form) && this.ragdollBones.pickBoneInList(bone);
+        if (this.form == null)
+        {
+            return false;
+        }
+
+        if (FormRagdolls.isEnabled(this.form) && this.ragdollBones.pickBoneInList(bone))
+        {
+            return true;
+        }
+
+        return FormChains.isEnabled(this.form) && this.chainBones.pickBoneInList(bone);
     }
 
     private void sync()
@@ -266,6 +319,7 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
 
         FormBody body = PhysicsForms.getBody(this.form);
         boolean ragdoll = FormRagdolls.isEnabled(this.form);
+        boolean chain = FormChains.isEnabled(this.form);
         float authority = PhysicsForms.getAuthority(this.form);
 
         this.type.setValue(body.passive() ? 1 : 0);
@@ -274,13 +328,19 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.restitution.setValue(body.restitution());
         this.bodyAuthority.setValue(authority);
         this.ragdollAuthority.setValue(authority);
+        this.chainAuthority.setValue(authority);
 
         if (ragdoll)
         {
             this.ragdollBones.setForm(this.form);
         }
 
-        this.rebuild(body.enabled(), ragdoll);
+        if (chain)
+        {
+            this.chainBones.setForm(this.form);
+        }
+
+        this.rebuild(body.enabled(), ragdoll, chain);
 
         this.syncing = false;
     }
@@ -292,7 +352,7 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
      * an element from drawing but leaves it holding its place in the column, so a tab that hid the
      * halves it did not need was a tab full of unexplained gaps.</p>
      */
-    private void rebuild(boolean body, boolean ragdoll)
+    private void rebuild(boolean body, boolean ragdoll, boolean chain)
     {
         this.marked = FormCollisions.has(this.form);
 
@@ -300,16 +360,21 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
 
         /* First, above the modifier it blocks: a modifier with nothing to collide as does nothing
          * at all, and since Р11 nothing marks the form up on the author's behalf. Read before the
-         * settings, it is an instruction; read under them, it is an epitaph. */
+         * settings, it is an instruction; read under them, it is an epitaph.
+         *
+         * The chain modifier is deliberately not in this test: a strand brings a shape of its own
+         * (a capsule sized by the thickness knob), so hair works on a model nobody marked up —
+         * which is the common case, since nobody marks up a scalp. */
         if ((body || ragdoll) && !this.marked)
         {
             this.options.add(this.unmarked);
         }
 
         /* A form is a body or a ragdoll, never both: welding a model into one falling lump and
-         * jointing its bones are two answers to the same question. So the button that adds one is
-         * only there while there is nothing to conflict with. */
-        if (!body && !ragdoll)
+         * jointing its bones are two answers to the same question. The chain modifier is not in
+         * that quarrel — it claims bones neither of them touches — so it may sit alongside either,
+         * and the add button stays while it is the only one still available. */
+        if (!body && !ragdoll || !chain && this.form instanceof ModelForm)
         {
             this.options.add(this.addModifier);
         }
@@ -322,6 +387,11 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         if (ragdoll)
         {
             this.options.add(this.ragdollSection);
+        }
+
+        if (chain)
+        {
+            this.options.add(this.chainSection);
         }
 
         this.options.resize();
@@ -339,7 +409,7 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
     {
         if (this.form != null && FormCollisions.has(this.form) != this.marked)
         {
-            this.rebuild(PhysicsForms.getBody(this.form).enabled(), FormRagdolls.isEnabled(this.form));
+            this.rebuild(PhysicsForms.getBody(this.form).enabled(), FormRagdolls.isEnabled(this.form), FormChains.isEnabled(this.form));
         }
 
         super.render(context);

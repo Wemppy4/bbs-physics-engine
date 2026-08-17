@@ -3,6 +3,8 @@ package mchorse.bbs_physics.mixin;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.settings.values.core.ValueData;
+import mchorse.bbs_physics.chain.FormChains;
+import mchorse.bbs_physics.chain.IChainForm;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 import mchorse.bbs_physics.ragdoll.IRagdollForm;
 import mchorse.bbs_physics.ragdoll.RagdollState;
@@ -23,7 +25,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * thing by it and an author should only have to learn it once.</p>
  */
 @Mixin(ModelForm.class)
-public class ModelFormMixin implements IRagdollForm
+public class ModelFormMixin implements IRagdollForm, IChainForm
 {
     @Unique
     private ValueData bbs_physics$ragdoll;
@@ -31,16 +33,46 @@ public class ModelFormMixin implements IRagdollForm
     @Unique
     private RagdollState bbs_physics$ragdollState;
 
+    @Unique
+    private ValueData bbs_physics$chain;
+
+    @Unique
+    private RagdollState bbs_physics$chainState;
+
     @Inject(method = "<init>", at = @At("RETURN"))
     private void bbs_physics$addRagdoll(CallbackInfo info)
     {
         ValueData ragdoll = new ValueData(FormRagdolls.KEY);
+        ValueData chain = new ValueData(FormChains.KEY);
 
         ragdoll.invisible();
+        chain.invisible();
 
         this.bbs_physics$ragdoll = ragdoll;
+        this.bbs_physics$chain = chain;
 
-        ((Form) (Object) this).add(ragdoll);
+        Form form = (Form) (Object) this;
+
+        form.add(ragdoll);
+        form.add(chain);
+    }
+
+    @Override
+    public ValueData bbs_physics$getChain()
+    {
+        return this.bbs_physics$chain;
+    }
+
+    @Override
+    public RagdollState bbs_physics$getChainState()
+    {
+        return this.bbs_physics$chainState;
+    }
+
+    @Override
+    public void bbs_physics$setChainState(RagdollState state)
+    {
+        this.bbs_physics$chainState = state;
     }
 
     @Override
