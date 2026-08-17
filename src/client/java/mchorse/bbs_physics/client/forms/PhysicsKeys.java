@@ -92,7 +92,7 @@ public class PhysicsKeys
     public static final IKey CHAIN_TAKE_FROM_MODEL = L10n.lang("bbs_physics.forms.chain.take_from_model");
     public static final IKey CHAIN_TAKE_FROM_MODEL_TOOLTIP = L10n.lang("bbs_physics.forms.chain.take_from_model_tooltip");
     public static final IKey CHAIN_CLEAR = L10n.lang("bbs_physics.forms.chain.clear");
-    public static final IKey CHAIN_BONE_RADIUS = L10n.lang("bbs_physics.forms.chain.bone_radius");
+    public static final IKey CHAIN_SHAPE_HINT = L10n.lang("bbs_physics.forms.chain.shape_hint");
     public static final IKey CHAIN_SELF_COLLISION = L10n.lang("bbs_physics.forms.chain.self_collision");
     public static final IKey CHAIN_SELF_COLLISION_TOOLTIP = L10n.lang("bbs_physics.forms.chain.self_collision_tooltip");
 

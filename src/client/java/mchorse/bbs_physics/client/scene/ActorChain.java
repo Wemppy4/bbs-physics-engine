@@ -29,9 +29,10 @@ import mchorse.bbs_mod.utils.StringUtils;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.chain.FormChain;
 import mchorse.bbs_physics.chain.FormChains;
+import mchorse.bbs_physics.client.collision.CollisionCollector;
+import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
 import mchorse.bbs_physics.collision.CollisionKind;
-import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsWorld;
@@ -93,6 +94,13 @@ public class ActorChain
     /** The shortest a bone may be measured as, so a leaf with no child still gets a body. */
     private static final float MIN_LENGTH = 0.05F;
 
+    /**
+     * The thickness of the invisible stand-in an unshaped bone is weighed by. Never collides with
+     * anything — it exists so that Jolt has a shape to take inertia from, and a thin rod's inertia
+     * is what makes a strand swing like a strand rather than spin like a needle.
+     */
+    private static final float INERTIA_RADIUS = 0.02F;
+
     private final ModelForm form;
     private final String formPath;
     private final RagdollState state = new RagdollState();
@@ -144,13 +152,22 @@ public class ActorChain
      * @param rig   the actor's kinematic bones, for hanging a strand off a marked-up bone; may be null
      * @param group the actor's collision group, shared with its bones and ragdolls
      */
-    public static ActorChain build(PhysicsWorld physics, ModelForm form, String formPath, ActorRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
+    public static ActorChain build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> claimed, ActorRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
     {
         FormChain config = FormChains.get(form);
 
         if (!config.enabled() || config.bones().isEmpty())
         {
             return null;
+        }
+
+        /* What each claimed bone collides as, by the bone's name — straight from the Collision tab
+         * and nowhere else. A bone the author has not shaped is absent here and gets no collision. */
+        Map<String, CollisionCollector.Piece> marked = new HashMap<>();
+
+        for (CollisionCollector.Piece piece : claimed)
+        {
+            marked.put(piece.label(), piece);
         }
 
         ModelInstance instance = ModelFormRenderer.getModel(form);
@@ -192,22 +209,31 @@ public class ActorChain
                 continue;
             }
 
-            /* The capsule runs from this bone's pivot towards its first child's, which is the
-             * direction the strand visibly goes; a leaf continues its own local down. Measured in
-             * the bone's own frame, so the shape is built once and travels with the body. */
-            Vector3f towards = childDirection(boneGroup, config, formPath, matrices, entry, groups);
+            /* 🔴 The strand describes no shapes of its own — the Collision tab does, exactly as it
+             * does for the ragdoll. The modifier used to build a capsule from a "thickness" knob,
+             * and an author's first live run said why that is wrong: the capsule was thicker than
+             * the hair it stood for, so the strands floated off the shoulders they were supposed to
+             * lie on, and colliders appeared on a model nobody had marked up at all (against Р6).
+             *
+             * A claimed bone the author has not shaped still hangs and swings — it simply meets
+             * nothing until it is given a shape, which is the same bargain a rigid body without a
+             * collider gets (§5.1). Its invisible stand-in exists only so Jolt can weigh the bone:
+             * a body has to have some shape, and inertia taken from a speck would make the strand
+             * spin like a compass needle. */
+            CollisionCollector.Piece piece = marked.get(bone);
+            List<CollisionShapes.SubShape> shapes = piece == null ? null : piece.shapes();
+            boolean collides = shapes != null && !shapes.isEmpty();
+
+            Vector3f towards = childDirection(boneGroup, formPath, matrices, entry);
             float length = Math.max(towards.length(), MIN_LENGTH);
-            float radius = Math.min(config.radius(), length * 0.45F);
 
             towards.normalize();
 
-            CollisionShapes.SubShape capsule = new CollisionShapes.SubShape(
+            ConstShape shape = collides ? JoltShapes.build(shapes) : JoltShapes.leaf(new CollisionShapes.SubShape(
                 CollisionKind.CAPSULE,
-                new Vector3f(radius, Math.max(length / 2F - radius, 0.005F), radius),
+                new Vector3f(INERTIA_RADIUS, Math.max(length / 2F - INERTIA_RADIUS, 0.005F), INERTIA_RADIUS),
                 new Vector3f(towards).mul(length / 2F),
-                new Quaternionf().rotationTo(new Vector3f(0F, 1F, 0F), towards));
-
-            ConstShape shape = JoltShapes.build(List.of(capsule));
+                new Quaternionf().rotationTo(new Vector3f(0F, 1F, 0F), towards)));
 
             if (shape == null)
             {
@@ -228,7 +254,7 @@ public class ActorChain
                     chain.translation.z - scene.getOriginZ()),
                 new Quat(chain.orientation.x, chain.orientation.y, chain.orientation.z, chain.orientation.w),
                 kinematic ? EMotionType.Kinematic : EMotionType.Dynamic,
-                kinematic ? PhysicsLayers.BONE : PhysicsLayers.MOVING);
+                layer(collides, kinematic));
 
             settings.setFriction(0.4F);
             settings.setRestitution(0.05F);
@@ -250,15 +276,21 @@ public class ActorChain
 
             bodies.addBody(body.getId(), EActivation.Activate);
 
-            Segment segment = new Segment(bone, path, body.getId(), body, sub, scene.addChannel());
+            Segment segment = new Segment(bone, path, body.getId(), body, sub, scene.addChannel(), collides);
 
             chain.segments.add(segment);
             byBone.put(bone, segment);
 
-            SceneBody debug = new SceneBody(body.getId(), 0.4F, 1F, 0.75F);
+            /* Only what really collides is drawn: the invisible stand-in of an unshaped bone is not
+             * a collider, and drawing it would be the overlay claiming a shape the author never
+             * described — which is how the thickness capsules read in the first place. */
+            if (collides)
+            {
+                SceneBody debug = new SceneBody(body.getId(), 0.4F, 1F, 0.75F);
 
-            debug.addShapes(List.of(capsule));
-            scene.addDebugBody(debug);
+                debug.addShapes(shapes);
+                scene.addDebugBody(debug);
+            }
         }
 
         if (chain.segments.isEmpty())
@@ -317,7 +349,7 @@ public class ActorChain
      * A leaf — the last bone of a strand — has nothing to point at, so it continues straight down
      * the bone's own axis, which is where a strand of hair goes anyway.
      */
-    private static Vector3f childDirection(ModelGroup group, FormChain config, String formPath, MatrixCache matrices, MatrixCacheEntry entry, Map<String, ModelGroup> groups)
+    private static Vector3f childDirection(ModelGroup group, String formPath, MatrixCache matrices, MatrixCacheEntry entry)
     {
         Matrix4f inverse = new Matrix4f(entry.matrix()).invert();
 
@@ -531,7 +563,7 @@ public class ActorChain
             for (Segment segment : this.segments)
             {
                 bodies.setMotionType(segment.id, wanted ? EMotionType.Kinematic : EMotionType.Dynamic, EActivation.Activate);
-                bodies.setObjectLayer(segment.id, wanted ? PhysicsLayers.BONE : PhysicsLayers.MOVING);
+                bodies.setObjectLayer(segment.id, layer(segment.collides, wanted));
             }
 
             this.kinematic = wanted;
@@ -832,6 +864,21 @@ public class ActorChain
         FormChains.setState(this.form, null);
     }
 
+    /**
+     * Which layer a segment belongs in: the props layer while it is loose and collides, the bone
+     * layer while the animation owns it, and the layer that meets nothing when the author has given
+     * it no shape — a strand with no markup swings through everything, deliberately.
+     */
+    private static int layer(boolean collides, boolean kinematic)
+    {
+        if (!collides)
+        {
+            return PhysicsLayers.GHOST;
+        }
+
+        return kinematic ? PhysicsLayers.BONE : PhysicsLayers.MOVING;
+    }
+
     /** Any unit vector perpendicular to {@code axis} — the joint's plane axis. */
     private static Vector3f perpendicular(Vector3f axis)
     {
@@ -855,8 +902,11 @@ public class ActorChain
         return physics + (animated - physics) * authority;
     }
 
-    /** One claimed bone as a strand segment. */
-    private record Segment(String bone, String path, int id, Body body, int sub, int channel)
+    /**
+     * One claimed bone as a strand segment. {@code collides} is whether the Collision tab gave it
+     * a shape — an unshaped bone hangs in the layer that meets nothing.
+     */
+    private record Segment(String bone, String path, int id, Body body, int sub, int channel, boolean collides)
     {}
 
     /** A kinematic handle following a bone that has no body of its own — see {@link #anchorFor}. */

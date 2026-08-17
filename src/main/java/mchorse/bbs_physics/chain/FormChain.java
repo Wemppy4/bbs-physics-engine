@@ -31,19 +31,17 @@ public record FormChain(
     float stiffness,
     float damping,
     float gravity,
-    float radius,
     float mass,
     boolean selfCollision)
 {
     public static final float DEFAULT_STIFFNESS = 0.15F;
     public static final float DEFAULT_DAMPING = 0.25F;
     public static final float DEFAULT_GRAVITY = 1F;
-    public static final float DEFAULT_RADIUS = 0.06F;
     public static final float DEFAULT_MASS = 1F;
 
     public static final FormChain EMPTY = new FormChain(
         false, Collections.emptySet(),
-        DEFAULT_STIFFNESS, DEFAULT_DAMPING, DEFAULT_GRAVITY, DEFAULT_RADIUS, DEFAULT_MASS, false);
+        DEFAULT_STIFFNESS, DEFAULT_DAMPING, DEFAULT_GRAVITY, DEFAULT_MASS, false);
 
     public FormChain
     {
@@ -70,7 +68,7 @@ public record FormChain(
 
     public FormChain withEnabled(boolean enabled)
     {
-        return new FormChain(enabled, this.bones, this.stiffness, this.damping, this.gravity, this.radius, this.mass, this.selfCollision);
+        return new FormChain(enabled, this.bones, this.stiffness, this.damping, this.gravity, this.mass, this.selfCollision);
     }
 
     /** The same setup with one bone taken into the chain, or left out of it. */
@@ -87,42 +85,37 @@ public record FormChain(
             bones.remove(bone);
         }
 
-        return new FormChain(this.enabled, bones, this.stiffness, this.damping, this.gravity, this.radius, this.mass, this.selfCollision);
+        return new FormChain(this.enabled, bones, this.stiffness, this.damping, this.gravity, this.mass, this.selfCollision);
     }
 
     /** The same setup with a whole set of bones claimed — what "take the chains from the model" does. */
     public FormChain withBones(Set<String> bones)
     {
-        return new FormChain(this.enabled, bones, this.stiffness, this.damping, this.gravity, this.radius, this.mass, this.selfCollision);
+        return new FormChain(this.enabled, bones, this.stiffness, this.damping, this.gravity, this.mass, this.selfCollision);
     }
 
     public FormChain withStiffness(float stiffness)
     {
-        return new FormChain(this.enabled, this.bones, stiffness, this.damping, this.gravity, this.radius, this.mass, this.selfCollision);
+        return new FormChain(this.enabled, this.bones, stiffness, this.damping, this.gravity, this.mass, this.selfCollision);
     }
 
     public FormChain withDamping(float damping)
     {
-        return new FormChain(this.enabled, this.bones, this.stiffness, damping, this.gravity, this.radius, this.mass, this.selfCollision);
+        return new FormChain(this.enabled, this.bones, this.stiffness, damping, this.gravity, this.mass, this.selfCollision);
     }
 
     public FormChain withGravity(float gravity)
     {
-        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, gravity, this.radius, this.mass, this.selfCollision);
-    }
-
-    public FormChain withRadius(float radius)
-    {
-        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, this.gravity, radius, this.mass, this.selfCollision);
+        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, gravity, this.mass, this.selfCollision);
     }
 
     public FormChain withMass(float mass)
     {
-        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, this.gravity, this.radius, mass, this.selfCollision);
+        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, this.gravity, mass, this.selfCollision);
     }
 
     public FormChain withSelfCollision(boolean selfCollision)
     {
-        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, this.gravity, this.radius, this.mass, selfCollision);
+        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, this.gravity, this.mass, selfCollision);
     }
 }

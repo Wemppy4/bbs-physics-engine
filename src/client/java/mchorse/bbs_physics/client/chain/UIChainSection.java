@@ -12,6 +12,7 @@ import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
+import mchorse.bbs_mod.ui.framework.elements.utils.UIText;
 import mchorse.bbs_mod.ui.utils.PickedBone;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
@@ -30,9 +31,14 @@ import java.util.function.UnaryOperator;
  * The chain modifier's body: which bones hang, and what the strands are like.
  *
  * <p>Ticks in a bone list, deliberately the same gesture the ragdoll uses — an author who has
- * ticked "these bones fall" already knows how to tick "these bones hang". Unlike the ragdoll, a
- * bone needs no collision markup to be ticked: hair has no shape anyone marked up, and the strand
- * brings a capsule of its own sized by the thickness knob.</p>
+ * ticked "these bones fall" already knows how to tick "these bones hang".</p>
+ *
+ * <p>🔴 <b>And, like the ragdoll, this modifier describes no shapes at all</b> — the Collision tab
+ * does. It briefly did the opposite: a "thickness" knob here built a capsule per bone, which read
+ * as physics inventing colliders on a model nobody had marked up (against Р6) and, worse, held the
+ * hair off the shoulders it was meant to lie on, because the capsule was fatter than the strand it
+ * stood for. A ticked bone with no markup still hangs and swings; it simply meets nothing until it
+ * is given a shape in the tab where every other shape lives.</p>
  *
  * <p><b>"Take the chains from the model" is an import, not a link.</b> BBS's own chain physics
  * already lists the strands of a model — from bone X down to bone Y — and that list is the obvious
@@ -56,10 +62,12 @@ public class UIChainSection extends UIElement
 
     public UITrackpad stiffness;
     public UITrackpad damping;
-    public UITrackpad radius;
     public UITrackpad mass;
     public UITrackpad gravity;
     public UIToggle selfCollision;
+
+    /** Says where a strand's shape comes from — see the class note on why it comes from there. */
+    private final UIText shapeHint;
 
     private final Runnable relayout;
 
@@ -122,7 +130,6 @@ public class UIChainSection extends UIElement
 
         this.stiffness = this.knob(0D, 1D, PhysicsKeys.CHAIN_STIFFNESS, (chain, v) -> chain.withStiffness(v));
         this.damping = this.knob(0D, 1D, PhysicsKeys.CHAIN_DAMPING, (chain, v) -> chain.withDamping(v));
-        this.radius = this.knob(0.01D, 0.5D, PhysicsKeys.CHAIN_BONE_RADIUS, (chain, v) -> chain.withRadius(v));
         this.mass = this.knob(0.01D, 100D, PhysicsKeys.CHAIN_MASS, (chain, v) -> chain.withMass(v));
         this.gravity = this.knob(-2D, 2D, PhysicsKeys.BALLOON_GRAVITY, (chain, v) -> chain.withGravity(v));
 
@@ -134,6 +141,8 @@ public class UIChainSection extends UIElement
             }
         });
         this.selfCollision.tooltip(PhysicsKeys.CHAIN_SELF_COLLISION_TOOLTIP);
+
+        this.shapeHint = new UIText(PhysicsKeys.CHAIN_SHAPE_HINT).color(Colors.LIGHTER_GRAY, true).padding(0, 2);
     }
 
     private UITrackpad knob(double min, double max, mchorse.bbs_mod.l10n.keys.IKey tooltip, ChainEdit edit)
@@ -239,7 +248,6 @@ public class UIChainSection extends UIElement
         {
             this.stiffness.setValue(this.chain.stiffness());
             this.damping.setValue(this.chain.damping());
-            this.radius.setValue(this.chain.radius());
             this.mass.setValue(this.chain.mass());
             this.gravity.setValue(this.chain.gravity());
             this.selfCollision.setValue(this.chain.selfCollision());
@@ -261,8 +269,8 @@ public class UIChainSection extends UIElement
         if (!this.chain.bones().isEmpty())
         {
             this.add(this.stiffness, this.damping);
-            this.add(UI.row(this.radius, this.mass));
-            this.add(this.gravity, this.selfCollision);
+            this.add(UI.row(this.mass, this.gravity));
+            this.add(this.selfCollision, this.shapeHint);
         }
 
         this.relayout.run();

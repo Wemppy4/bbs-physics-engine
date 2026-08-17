@@ -33,6 +33,7 @@ import mchorse.bbs_physics.actions.TearActionClip;
 import mchorse.bbs_mod.forms.forms.utils.Anchor;
 import mchorse.bbs_physics.balloon.BalloonForm;
 import mchorse.bbs_physics.chain.ChainForm;
+import mchorse.bbs_physics.chain.FormChain;
 import mchorse.bbs_physics.chain.FormChains;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.cloth.ClothForm;
@@ -280,6 +281,10 @@ public class FilmScene implements AutoCloseable
      * part can be jointed to a bone the animation kept.
      */
     private record ClaimedRagdoll(ModelForm form, String formPath, FormRagdoll config, Map<String, String> welds, List<CollisionCollector.Piece> claimed)
+    {}
+
+    /** The same for a chain modifier: the markup of its bones, taken before the kinematic rig. */
+    private record ClaimedChain(ModelForm form, String formPath, List<CollisionCollector.Piece> claimed)
     {}
 
     public FilmScene(BaseFilmController controller)
@@ -538,6 +543,18 @@ public class FilmScene implements AutoCloseable
                 }
             }
 
+            /* The chain modifier claims its bones from the same markup, and before the kinematic
+             * rig for the same reason the ragdoll does: a bone that is going to hang must not also
+             * become a kinematic body standing on the animation. A claimed bone with no markup
+             * simply is not in this list — it hangs with no collision at all, which is exactly what
+             * "the modifier describes no shapes" means. */
+            List<ClaimedChain> chainClaims = new ArrayList<>(0);
+
+            for (Pair<ModelForm, String> found : discoverChainModels(root, "", new ArrayList<>(0)))
+            {
+                chainClaims.add(new ClaimedChain(found.a, found.b, claimChainPieces(pieces, found.b, FormChains.get(found.a))));
+            }
+
             ActorRig bones = ActorRig.build(this.world, root, matrices, this, pieces, actorGroup);
 
             for (ClaimedRagdoll claim : claims)
@@ -591,7 +608,15 @@ public class FilmScene implements AutoCloseable
              * and that bone is usually one the animation kept. */
             List<ActorChain> boneChains = new ArrayList<>(0);
 
-            this.discoverChainBones(root, "", bones, matrices, actorWorld, boneChains, actorGroup);
+            for (ClaimedChain claim : chainClaims)
+            {
+                ActorChain chain = ActorChain.build(this.world, claim.form, claim.formPath, claim.claimed, bones, matrices, actorWorld, this, actorGroup);
+
+                if (chain != null)
+                {
+                    boneChains.add(chain);
+                }
+            }
 
             if (bones == null && bodyRigs.isEmpty() && ragdolls.isEmpty() && cloths.isEmpty() && balloons.isEmpty() && chains.isEmpty() && boneChains.isEmpty())
             {
@@ -868,6 +893,59 @@ public class FilmScene implements AutoCloseable
         return group;
     }
 
+    /** Every model form carrying the chain modifier, with the path it lives at. */
+    private static List<Pair<ModelForm, String>> discoverChainModels(Form form, String path, List<Pair<ModelForm, String>> out)
+    {
+        if (form instanceof ModelForm modelForm && FormChains.isEnabled(modelForm))
+        {
+            out.add(new Pair<>(modelForm, path));
+        }
+
+        int i = 0;
+
+        for (BodyPart part : form.parts.getAllTyped())
+        {
+            Form child = part.getForm();
+
+            if (child != null)
+            {
+                discoverChainModels(child, StringUtils.combinePaths(path, String.valueOf(i)), out);
+            }
+
+            i += 1;
+        }
+
+        return out;
+    }
+
+    /**
+     * Takes the marked-up slots of the bones a chain modifier claims out of the actor's piece list.
+     *
+     * <p>Exactly what {@link #claimBonePieces} does for a ragdoll, and for the same reason: those
+     * bones are about to become bodies of their own, and a kinematic copy left behind would be a
+     * second collider standing on the animation while the strand swings away from it. A claimed
+     * bone that has no markup produces no piece at all — the strand still hangs, it simply collides
+     * with nothing until the author gives it a shape in the Collision tab.</p>
+     */
+    private static List<CollisionCollector.Piece> claimChainPieces(List<CollisionCollector.Piece> pieces, String formPath, FormChain config)
+    {
+        List<CollisionCollector.Piece> claimed = new ArrayList<>(0);
+
+        for (int i = pieces.size() - 1; i >= 0; i--)
+        {
+            CollisionCollector.Piece piece = pieces.get(i);
+
+            if (RagdollWelds.isBonePiece(piece, formPath) && config.claims(piece.label()))
+            {
+                claimed.add(pieces.remove(i));
+            }
+        }
+
+        Collections.reverse(claimed);
+
+        return claimed;
+    }
+
     /** How many bones the chain modifiers in this tree claim — what the filter table is sized for. */
     private static int chainBudget(Form form)
     {
@@ -884,38 +962,6 @@ public class FilmScene implements AutoCloseable
         }
 
         return count;
-    }
-
-    /**
-     * Finds every model form carrying the chain modifier and builds its strands. Runs after the
-     * kinematic bones exist, like the ragdolls and for the same reason: a strand hangs off the bone
-     * above it, and that bone is usually one the animation keeps.
-     */
-    private void discoverChainBones(Form form, String path, ActorRig rig, MatrixCache matrices, Matrix4f actorWorld, List<ActorChain> out, ActorCollisionGroup group)
-    {
-        if (form instanceof ModelForm modelForm && FormChains.isEnabled(modelForm))
-        {
-            ActorChain chain = ActorChain.build(this.world, modelForm, path, rig, matrices, actorWorld, this, group);
-
-            if (chain != null)
-            {
-                out.add(chain);
-            }
-        }
-
-        int i = 0;
-
-        for (BodyPart part : form.parts.getAllTyped())
-        {
-            Form child = part.getForm();
-
-            if (child != null)
-            {
-                this.discoverChainBones(child, StringUtils.combinePaths(path, String.valueOf(i)), rig, matrices, actorWorld, out, group);
-            }
-
-            i += 1;
-        }
     }
 
     /**

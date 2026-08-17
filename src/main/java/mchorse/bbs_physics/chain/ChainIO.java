@@ -21,7 +21,6 @@ public final class ChainIO
     private static final String KEY_STIFFNESS = "stiffness";
     private static final String KEY_DAMPING = "damping";
     private static final String KEY_GRAVITY = "gravity";
-    private static final String KEY_RADIUS = "radius";
     private static final String KEY_MASS = "mass";
     private static final String KEY_SELF_COLLISION = "self_collision";
 
@@ -58,7 +57,6 @@ public final class ChainIO
             map.getFloat(KEY_STIFFNESS, FormChain.DEFAULT_STIFFNESS),
             map.getFloat(KEY_DAMPING, FormChain.DEFAULT_DAMPING),
             map.getFloat(KEY_GRAVITY, FormChain.DEFAULT_GRAVITY),
-            map.getFloat(KEY_RADIUS, FormChain.DEFAULT_RADIUS),
             map.getFloat(KEY_MASS, FormChain.DEFAULT_MASS),
             map.getBool(KEY_SELF_COLLISION));
     }
@@ -92,7 +90,6 @@ public final class ChainIO
         putIfChanged(map, KEY_STIFFNESS, chain.stiffness(), FormChain.DEFAULT_STIFFNESS);
         putIfChanged(map, KEY_DAMPING, chain.damping(), FormChain.DEFAULT_DAMPING);
         putIfChanged(map, KEY_GRAVITY, chain.gravity(), FormChain.DEFAULT_GRAVITY);
-        putIfChanged(map, KEY_RADIUS, chain.radius(), FormChain.DEFAULT_RADIUS);
         putIfChanged(map, KEY_MASS, chain.mass(), FormChain.DEFAULT_MASS);
 
         if (chain.selfCollision())

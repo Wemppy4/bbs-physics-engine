@@ -142,9 +142,9 @@
     "bbs_physics.forms.chain.take_from_model": "Take chains from the model",
     "bbs_physics.forms.chain.take_from_model_tooltip": "Ticks the bones the model's own physics already describes (start of the chain down to its end) — usually the hair and tails. From then on those bones are ours and BBS's own chain solver is switched off on them: two owners for one strand is a strand doing neither thing convincingly. Use the knobs on this panel.",
     "bbs_physics.forms.chain.clear": "Untick all",
-    "bbs_physics.forms.chain.bone_radius": "Strand thickness in blocks — what it rests on the body and the world with",
+    "bbs_physics.forms.chain.shape_hint": "The chain creates no collision of its own — neither does the ragdoll. A strand hangs and swings straight away, but passes through everything; to have it rest on the character and the world, mark its bones up in the Collision tab, where the thickness is set too.",
     "bbs_physics.forms.chain.self_collision": "Strands collide with each other",
-    "bbs_physics.forms.chain.self_collision_tooltip": "Every segment against every other — costly and jittery, and barely visible on screen. A strand always collides with the body, the bones and the world: mark the character up in the Collision tab and the hair will rest on it.",
+    "bbs_physics.forms.chain.self_collision_tooltip": "Every segment against every other — costly and jittery, and barely visible on screen. A marked-up strand always collides with the body, the bones and the world.",
 
     "bbs_physics.forms.collision.title": "Collision",
     "bbs_physics.forms.collision.preview": "Show markup",
