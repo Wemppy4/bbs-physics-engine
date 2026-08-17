@@ -43,6 +43,16 @@ import java.util.function.Supplier;
  * can draw rides along and turns with the segment's own twist. With none, a built-in rope band is
  * drawn: two crossed strips per segment wearing the addon's rope texture, so the form is never
  * invisible.</p>
+ *
+ * <p><b>The strand is drawn joint to joint, not segment by segment</b>, and that is the whole of
+ * why it has no gaps. A capsule of a fixed length drawn at each body's own place opens a hole
+ * between neighbours the moment the strand moves: a joint holds its two bodies together only as
+ * well as two solver sub-steps manage, a swinging rope pulls those millimetres open, and the draw
+ * interpolation widens them again by lerping positions while slerping rotations. So the renderer
+ * works out the <em>seams</em> first — each one the midpoint of where its two segments say it is,
+ * which makes it one point both of them share by construction — and then stretches every link
+ * between its two seams. Neighbours cannot come apart because they are drawn from the same
+ * numbers, whatever the solver did.</p>
  */
 public class ChainFormRenderer extends FormRenderer<ChainForm>
 {
@@ -51,6 +61,17 @@ public class ChainFormRenderer extends FormRenderer<ChainForm>
     private final Vector3f position = new Vector3f();
     private final Quaternionf rotation = new Quaternionf();
     private final Matrix4f segment = new Matrix4f();
+
+    /** The seams: one more than there are segments, the strand's top and tip included. */
+    private Vector3f[] seams = new Vector3f[0];
+
+    /** Each segment's own turn, kept so a stretched link still carries the strand's twist. */
+    private Quaternionf[] turns = new Quaternionf[0];
+
+    private final Vector3f end = new Vector3f();
+    private final Vector3f direction = new Vector3f();
+    private final Vector3f down = new Vector3f();
+    private final Quaternionf aim = new Quaternionf();
 
     public ChainFormRenderer(ChainForm form)
     {
@@ -101,25 +122,35 @@ public class ChainFormRenderer extends FormRenderer<ChainForm>
 
         Form link = context == null ? null : this.form.link.get();
 
+        this.fillSeams(segments, segmentLength, transition, simulated ? state : null);
+
         for (int i = 0; i < segments; i++)
         {
-            if (simulated)
+            this.direction.set(this.seams[i + 1]).sub(this.seams[i]);
+
+            float span = this.direction.length();
+
+            if (span < 1.0e-5F)
             {
-                state.getPosition(i, transition, this.position);
-                state.getRotation(i, transition, this.rotation);
-            }
-            else
-            {
-                this.position.set(0F, this.form.restY(i), 0F);
-                this.rotation.identity();
+                /* Two seams in the same spot — nothing to draw, and normalising would be a
+                 * division by zero handed to the matrix stack. */
+                continue;
             }
 
-            /* The segment's frame: its centre and turn, then up half a length so the origin sits
-             * at the segment's start — where a link naturally hangs from. */
+            this.direction.div(span);
+
+            /* The link's frame: standing on the seam it starts at, turned so that its own down
+             * axis points at the seam it ends on, and stretched to reach it. The segment's turn
+             * is kept underneath the aiming, so a link still twists with the strand — only its
+             * length and its lean are taken over. */
+            this.down.set(0F, -1F, 0F);
+            this.turns[i].transform(this.down);
+            this.aim.rotationTo(this.down, this.direction).mul(this.turns[i]);
+
             this.segment.identity()
-                .translate(this.position)
-                .rotate(this.rotation)
-                .translate(0F, segmentLength / 2F, 0F);
+                .translate(this.seams[i])
+                .rotate(this.aim)
+                .scale(1F, span / segmentLength, 1F);
 
             stack.push();
             MatrixStackUtils.multiply(stack, this.segment);
@@ -134,6 +165,78 @@ public class ChainFormRenderer extends FormRenderer<ChainForm>
             }
 
             stack.pop();
+        }
+    }
+
+    /**
+     * Works out where the strand's seams are for this frame, in the form's own frame.
+     *
+     * <p>A segment says where its own two ends are; two neighbours disagree about the seam they
+     * share by however much the solver and the frame interpolation let them drift. Taking the
+     * midpoint of the two answers gives both of them <em>one</em> point, so the links drawn from
+     * it meet exactly — the gap is closed by construction rather than by tightening anything in
+     * the simulation, which could only ever make it smaller.</p>
+     *
+     * @param state the recorded strand, or null to lay the seams out on the straight authored line
+     */
+    private void fillSeams(int segments, float segmentLength, float transition, ChainState state)
+    {
+        if (this.seams.length != segments + 1)
+        {
+            this.seams = new Vector3f[segments + 1];
+            this.turns = new Quaternionf[segments];
+
+            for (int i = 0; i <= segments; i++)
+            {
+                this.seams[i] = new Vector3f();
+
+                if (i < segments)
+                {
+                    this.turns[i] = new Quaternionf();
+                }
+            }
+        }
+
+        if (state == null)
+        {
+            for (int i = 0; i <= segments; i++)
+            {
+                this.seams[i].set(0F, -i * segmentLength, 0F);
+
+                if (i < segments)
+                {
+                    this.turns[i].identity();
+                }
+            }
+
+            return;
+        }
+
+        for (int i = 0; i < segments; i++)
+        {
+            state.getPosition(i, transition, this.position);
+            state.getRotation(i, transition, this.rotation);
+
+            this.turns[i].set(this.rotation);
+
+            /* This segment's own two ends, half a length either way along its local axis. */
+            this.down.set(0F, segmentLength / 2F, 0F);
+            this.rotation.transform(this.down);
+
+            this.end.set(this.position).sub(this.down);
+            this.position.add(this.down);
+
+            if (i == 0)
+            {
+                this.seams[0].set(this.position);
+            }
+            else
+            {
+                /* Halfway between what the two neighbours claim — the one point they now share. */
+                this.seams[i].add(this.position).mul(0.5F);
+            }
+
+            this.seams[i + 1].set(this.end);
         }
     }
 

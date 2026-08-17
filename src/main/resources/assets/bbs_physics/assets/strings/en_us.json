@@ -123,7 +123,7 @@
 
     "bbs_physics.forms.chain.title": "Chain",
     "bbs_physics.forms.chain.link_label": "Link — any form, repeated along the strand. With none, a built-in rope is drawn.",
-    "bbs_physics.forms.chain.link": "One link's form. Drawn from the segment's start downwards; size it to the segment's length (length ÷ segments) so the chain reads as continuous.",
+    "bbs_physics.forms.chain.link": "One link's form. Drawn seam to seam and stretched between them, so the chain never opens a gap. Draw the link as tall as one segment (length ÷ segments), hanging down from zero — then it only stretches when the strand itself is pulled taut.",
     "bbs_physics.forms.chain.strand": "Strand",
     "bbs_physics.forms.chain.length": "The chain's length in blocks. Hangs down from wherever the form is placed.",
     "bbs_physics.forms.chain.segments": "Segments — more bends softer and costs more: every segment is a body of its own",
