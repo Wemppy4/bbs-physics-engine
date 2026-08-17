@@ -59,13 +59,21 @@ public final class CollisionShapes
     private static final float MAX_CAPSULE_RADIUS = 0.12F;
 
     /**
-     * How thick a face plate is, in blocks — one model pixel.
+     * How thick a face plate is, in blocks — a quarter of a model pixel.
      *
-     * <p>As thin as it can be and still be a solid: the point of the mode is a surface to slide
-     * along, not a volume. Thinner than this and a body moving at any speed steps over it between
-     * two ticks, which is a plate things pass through.</p>
+     * <p>A pixel was the first answer and an author's eye rejected it on sight: at that thickness
+     * the overlay draws a visibly narrow <em>box</em>, and the mode is called a face. A quarter of
+     * a pixel reads as a surface and still behaves as a solid, because what a body may not do is
+     * step over the plate between two ticks — and the bodies that could are swept ({@code
+     * LinearCast}), which tests the whole path rather than the endpoints.</p>
      */
-    private static final float PLATE_THICKNESS = 0.0625F;
+    private static final float PLATE_THICKNESS = 0.015625F;
+
+    /**
+     * The floor under a plate's half thickness, in blocks. Deliberately far below {@link #MIN_HALF},
+     * which exists to keep a <em>volume</em> solvable — a plate is not trying to be one.
+     */
+    private static final float PLATE_MIN_HALF = 0.004F;
 
     private static final float EPS = 1.0e-6F;
 
@@ -210,10 +218,18 @@ public final class CollisionShapes
         center[axis] = face.sign > 0F ? max[axis] : min[axis];
         size[axis] = PLATE_THICKNESS;
 
-        Vector3f half = new Vector3f(
-            Math.max(size[0] * 0.5F * scale.x, MIN_HALF),
-            Math.max(size[1] * 0.5F * scale.y, MIN_HALF),
-            Math.max(size[2] * 0.5F * scale.z, MIN_HALF));
+        /* The plate's own axis escapes the usual floor: MIN_HALF keeps a volume solvable, and
+         * applying it here would inflate the plate back into the narrow box this mode exists to
+         * stop being. The other two axes keep it — a face is as wide as the face. */
+        float[] scales = {scale.x, scale.y, scale.z};
+        Vector3f half = new Vector3f();
+
+        for (int i = 0; i < 3; i++)
+        {
+            float value = size[i] * 0.5F * scales[i];
+
+            half.setComponent(i, Math.max(value, i == axis ? PLATE_MIN_HALF : MIN_HALF));
+        }
 
         Vector3f offset = new Vector3f(center[0], center[1], center[2]);
         Quaternionf rotation = new Quaternionf();

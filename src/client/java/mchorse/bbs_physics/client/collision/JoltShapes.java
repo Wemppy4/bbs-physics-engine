@@ -73,11 +73,24 @@ public final class JoltShapes
 
         return switch (sub.kind())
         {
-            case BOX -> new BoxShape(vec(half), Math.min(CONVEX_RADIUS, Math.min(half.x, Math.min(half.y, half.z))));
+            case BOX -> new BoxShape(vec(half), rounding(Math.min(half.x, Math.min(half.y, half.z))));
             case SPHERE -> new SphereShape(half.x);
             case CAPSULE -> new CapsuleShape(half.y, half.x);
-            case CYLINDER -> new CylinderShape(half.y, half.x, Math.min(CONVEX_RADIUS, Math.min(half.x, half.y)));
+            case CYLINDER -> new CylinderShape(half.y, half.x, rounding(Math.min(half.x, half.y)));
         };
+    }
+
+    /**
+     * The corner rounding for a shape whose smallest half extent is {@code smallest}.
+     *
+     * <p>Strictly <em>under</em> that extent, not equal to it: a box rounded by exactly its own half
+     * thickness has no flat left, and Jolt rejects it outright. That never mattered while every
+     * shape was a volume; a face plate is a quarter of a pixel thick and would land exactly on the
+     * boundary.</p>
+     */
+    private static float rounding(float smallest)
+    {
+        return Math.max(Math.min(CONVEX_RADIUS, smallest * 0.5F), 1.0e-4F);
     }
 
     /**
