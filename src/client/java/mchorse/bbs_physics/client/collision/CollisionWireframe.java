@@ -1,6 +1,7 @@
 package mchorse.bbs_physics.client.collision;
 
 import mchorse.bbs_mod.graphics.Draw;
+import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.collision.CollisionKind;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.BufferRenderer;
@@ -31,6 +32,15 @@ public final class CollisionWireframe
     /** Segments per full ring. Enough to read as a circle at arm's length, cheap enough to spam. */
     private static final int SEGMENTS = 24;
 
+    /**
+     * Half thickness of an outline bar at the setting's default, in blocks — a third of what BBS's
+     * own box draws, which is what "thinner by default" asked for.
+     */
+    private static final float BASE_THICKNESS = 1F / 288F;
+
+    /** Below this a bar disappears into the depth buffer at any distance, setting or no setting. */
+    private static final float MIN_THICKNESS = 0.0006F;
+
     private CollisionWireframe()
     {}
 
@@ -38,14 +48,75 @@ public final class CollisionWireframe
     {
         switch (kind)
         {
-            case BOX -> Draw.renderBox(stack,
-                -half.x, -half.y, -half.z,
-                half.x * 2F, half.y * 2F, half.z * 2F,
-                red, green, blue, alpha);
+            case BOX -> box(stack, half, red, green, blue, alpha);
             case SPHERE -> sphere(stack, half.x, red, green, blue, alpha);
             case CAPSULE -> capsule(stack, half.x, half.y, red, green, blue, alpha);
             case CYLINDER -> cylinder(stack, half.x, half.y, red, green, blue, alpha);
         }
+    }
+
+    /**
+     * A box as twelve edge bars, thin enough to read as lines.
+     *
+     * <p>Written out here rather than handed to {@link Draw#renderBox} for one reason: BBS's own
+     * box bakes its bar thickness in (a ninety-sixth of a block, plus a little for size), and that
+     * is thicker than some of the shapes this overlay now draws. A face plate is a quarter of a
+     * pixel through — outlined with BBS's bars it reads as a narrow <em>box</em>, which is exactly
+     * what an author reported. So the thickness is ours, and a setting: fine lines to inspect a
+     * thin plate against the model, heavier ones to see a rig across a room.</p>
+     *
+     * <p>Bars rather than GL lines, and not by choice: a core profile is free to ignore any line
+     * width but one, so a line-width setting would do nothing on most machines. Bars are geometry
+     * — they scale, and they respect perspective the way the shape they outline does.</p>
+     */
+    public static void box(MatrixStack stack, Vector3f half, float red, float green, float blue, float alpha)
+    {
+        float t = thickness(half);
+
+        float x1 = -half.x;
+        float y1 = -half.y;
+        float z1 = -half.z;
+        float x2 = half.x;
+        float y2 = half.y;
+        float z2 = half.z;
+
+        BufferBuilder builder = Tessellator.getInstance().getBuffer();
+
+        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+        builder.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
+
+        /* Four uprights, then the two rings that cap them. Each bar is grown by t on every side, so
+         * the corners overlap and there are no gaps to look through. */
+        Draw.fillBox(builder, stack, x1 - t, y1 - t, z1 - t, x1 + t, y2 + t, z1 + t, red, green, blue, alpha);
+        Draw.fillBox(builder, stack, x2 - t, y1 - t, z1 - t, x2 + t, y2 + t, z1 + t, red, green, blue, alpha);
+        Draw.fillBox(builder, stack, x1 - t, y1 - t, z2 - t, x1 + t, y2 + t, z2 + t, red, green, blue, alpha);
+        Draw.fillBox(builder, stack, x2 - t, y1 - t, z2 - t, x2 + t, y2 + t, z2 + t, red, green, blue, alpha);
+
+        for (float y : new float[] {y1, y2})
+        {
+            Draw.fillBox(builder, stack, x1 - t, y - t, z1 - t, x2 + t, y + t, z1 + t, red, green, blue, alpha);
+            Draw.fillBox(builder, stack, x1 - t, y - t, z2 - t, x2 + t, y + t, z2 + t, red, green, blue, alpha);
+            Draw.fillBox(builder, stack, x1 - t, y - t, z1 - t, x1 + t, y + t, z2 + t, red, green, blue, alpha);
+            Draw.fillBox(builder, stack, x2 - t, y - t, z1 - t, x2 + t, y + t, z2 + t, red, green, blue, alpha);
+        }
+
+        BufferRenderer.drawWithGlobalProgram(builder.end());
+    }
+
+    /**
+     * Half the thickness of an outline bar, in blocks.
+     *
+     * <p>The author's setting scales a base that is deliberately finer than BBS's, and the bar is
+     * additionally never allowed past a third of the shape's own smallest half extent — outlining a
+     * quarter-pixel plate with a bar thicker than the plate is how the outline starts lying about
+     * the shape.</p>
+     */
+    private static float thickness(Vector3f half)
+    {
+        float scale = BBSPhysicsSettings.debugLineWidth == null ? 1F : BBSPhysicsSettings.debugLineWidth.get();
+        float smallest = Math.min(half.x, Math.min(half.y, half.z));
+
+        return Math.max(Math.min(BASE_THICKNESS * scale, smallest / 3F), MIN_THICKNESS);
     }
 
     private static void sphere(MatrixStack stack, float radius, float red, float green, float blue, float alpha)
@@ -155,6 +226,7 @@ public final class CollisionWireframe
         BufferBuilder builder = Tessellator.getInstance().getBuffer();
 
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+        RenderSystem.lineWidth(lineWidth());
         builder.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
 
         return builder;
@@ -163,5 +235,21 @@ public final class CollisionWireframe
     private static void end(BufferBuilder builder)
     {
         BufferRenderer.drawWithGlobalProgram(builder.end());
+        RenderSystem.lineWidth(1F);
+    }
+
+    /**
+     * The GL line width the round outlines are drawn with.
+     *
+     * <p>Only ever one or more: a hardware line cannot be thinner than a pixel, so the setting can
+     * make these heavier but not finer — which is why the boxes are bars of geometry instead. Kept
+     * on the same setting anyway, so that turning it up thickens the whole overlay rather than half
+     * of it.</p>
+     */
+    static float lineWidth()
+    {
+        float scale = BBSPhysicsSettings.debugLineWidth == null ? 1F : BBSPhysicsSettings.debugLineWidth.get();
+
+        return Math.max(1F, scale);
     }
 }

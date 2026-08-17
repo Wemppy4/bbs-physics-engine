@@ -6,6 +6,8 @@
     "bbs_physics.config.general.enabled-comment": "Главный выключатель движка. Когда выключен, ничего не считается и аддон не стоит ничего.",
     "bbs_physics.config.general.debug": "Отладочный слой",
     "bbs_physics.config.general.debug-comment": "Рисует поверх сцены те формы, с которыми на самом деле работает симуляция.",
+    "bbs_physics.config.general.debug_line_width": "Толщина линий отладки",
+    "bbs_physics.config.general.debug_line_width-comment": "Насколько жирно рисуются контуры коллизий и суставов. По умолчанию тонко, чтобы пластину в четверть пикселя было видно как пластину, а не как узкий куб; поднимите, если смотрите на риг издалека. Круглые формы тоньше одного пикселя экрана стать не могут — это предел железа.",
     "bbs_physics.config.general.collision_preview": "Показывать разметку в редакторе",
     "bbs_physics.config.general.collision_preview-comment": "Рисует коллизию поверх модели в редакторе форм, чтобы её можно было расставлять на глаз.",
     "bbs_physics.config.general.world_radius": "Блоки вокруг сцены",

@@ -6,6 +6,8 @@
     "bbs_physics.config.general.enabled-comment": "The master switch of the physics engine. With it off, nothing is simulated and the addon costs nothing.",
     "bbs_physics.config.general.debug": "Debug overlay",
     "bbs_physics.config.general.debug-comment": "Draws the shapes the simulation actually works with, on top of the rendered scene.",
+    "bbs_physics.config.general.debug_line_width": "Debug line thickness",
+    "bbs_physics.config.general.debug_line_width-comment": "How heavily collision and joint outlines are drawn. Fine by default, so that a quarter-pixel plate reads as a plate rather than a narrow box; raise it when looking at a rig from across the set. Round outlines cannot go below one screen pixel — that is a hardware limit.",
     "bbs_physics.config.general.collision_preview": "Show markup in the editor",
     "bbs_physics.config.general.collision_preview-comment": "Draws collision over the model in the form editor, so shapes can be placed by eye.",
     "bbs_physics.config.general.world_radius": "Blocks around the scene",

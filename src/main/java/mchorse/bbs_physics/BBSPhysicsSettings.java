@@ -27,6 +27,21 @@ public class BBSPhysicsSettings
     public static ValueBoolean collisionPreview;
 
     /**
+     * How thick the outlines of the debug overlays are drawn, as a multiple of a deliberately fine
+     * default.
+     *
+     * <p>Author-facing because there is no one right weight: a quarter-pixel face plate has to be
+     * compared against the model up close, where a heavy outline is thicker than the thing it
+     * outlines and reads as a narrow box; a whole rig looked at from across the set needs lines that
+     * survive the distance.</p>
+     *
+     * <p>The outlines are bars of geometry rather than GL lines, so this is a real thickness in the
+     * world rather than a hint the driver may ignore — a core profile is free to clamp every line
+     * width to one, which is what a line-width setting would have run into.</p>
+     */
+    public static ValueFloat debugLineWidth;
+
+    /**
      * How far around the scene the world's blocks are collected, in blocks.
      *
      * <p>Author-facing because there is no right answer: a shot in a room needs a fraction of what
@@ -71,6 +86,7 @@ public class BBSPhysicsSettings
         enabled = builder.getBoolean("enabled", true);
         debug = builder.getBoolean("debug", false);
         collisionPreview = builder.getBoolean("collision_preview", true);
+        debugLineWidth = builder.getFloat("debug_line_width", 1F, 0.25F, 6F);
 
         gravity = builder.getFloat("gravity", 9.81F, 0F, 40F);
         collisionSteps = builder.getInt("collision_steps", 2, 1, 8);

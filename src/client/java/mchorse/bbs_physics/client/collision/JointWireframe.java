@@ -43,6 +43,7 @@ public final class JointWireframe
         Matrix4f matrix = stack.peek().getPositionMatrix();
 
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+        RenderSystem.lineWidth(CollisionWireframe.lineWidth());
         builder.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
 
         line(builder, matrix, pivot.x - MARK, pivot.y, pivot.z, pivot.x + MARK, pivot.y, pivot.z, red, green, blue, alpha);
@@ -55,6 +56,7 @@ public final class JointWireframe
         }
 
         BufferRenderer.drawWithGlobalProgram(builder.end());
+        RenderSystem.lineWidth(1F);
     }
 
     private static void line(BufferBuilder builder, Matrix4f matrix, float x1, float y1, float z1, float x2, float y2, float z2, float red, float green, float blue, float alpha)
