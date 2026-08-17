@@ -464,7 +464,7 @@ public class UIRagdollSection extends UIElement
         int color = switch (mode)
         {
             case AUTO -> Colors.CYAN;
-            case SHELL -> Colors.GREEN;
+            case FACE -> Colors.GREEN;
             default -> Colors.ORANGE;
         };
 

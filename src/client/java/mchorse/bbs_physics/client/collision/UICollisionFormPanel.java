@@ -40,6 +40,7 @@ import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
 import mchorse.bbs_physics.collision.CollisionIO;
 import mchorse.bbs_physics.collision.CollisionKind;
+import mchorse.bbs_physics.collision.CollisionFace;
 import mchorse.bbs_physics.collision.CollisionMode;
 import mchorse.bbs_physics.collision.CollisionShape;
 import mchorse.bbs_physics.collision.CollisionSlot;
@@ -89,6 +90,10 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
     public ModeCirculate mode;
     private final UIElement modeRow;
+
+    /** Which side of the cubes a face plate lies on — shown only in that mode. */
+    public UICirculate face;
+    private final UIElement faceRow;
 
     public UIStringList shapes;
     public UIIcon addShape;
@@ -170,13 +175,33 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
             this.setSlot(this.slot().withMode(CollisionMode.values()[b.getValue()]));
             this.updateLabels();
+
+            /* The side picker comes and goes with the mode, so the column has to be built again.
+             * Safe from here: this is a click, not the render pass. */
+            this.rebuild();
         });
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_NONE);
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_AUTO);
-        this.mode.addLabel(PhysicsKeys.COLLISION_MODE_SHELL);
+        this.mode.addLabel(PhysicsKeys.COLLISION_MODE_FACE);
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_SHAPES);
         this.mode.tooltip(PhysicsKeys.COLLISION_MODE_TOOLTIP);
         this.modeRow = UI.labelRow(PhysicsKeys.COLLISION_MODE, this.mode);
+
+        this.face = new UICirculate((b) ->
+        {
+            if (!this.syncing)
+            {
+                this.setSlot(this.slot().withFace(CollisionFace.values()[b.getValue()]));
+            }
+        });
+
+        for (CollisionFace value : CollisionFace.values())
+        {
+            this.face.addLabel(PhysicsKeys.face(value));
+        }
+
+        this.face.tooltip(PhysicsKeys.COLLISION_FACE_TOOLTIP);
+        this.faceRow = UI.labelRow(PhysicsKeys.COLLISION_FACE, this.face);
 
         this.shapes = new UIStringList((l) -> this.updateLabels());
         this.shapes.background();
@@ -632,7 +657,15 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             this.options.add(this.bonesSearch);
         }
 
-        this.options.add(this.modeRow, this.primitives);
+        this.options.add(this.modeRow);
+
+        /* The side picker belongs to one mode and would be a dead row in every other. */
+        if (this.slot().mode() == CollisionMode.FACE)
+        {
+            this.options.add(this.faceRow);
+        }
+
+        this.options.add(this.primitives);
 
         if (model)
         {
@@ -670,9 +703,9 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
          * none — the option would be a button that quietly does nothing. */
         this.mode.allow(CollisionMode.AUTO.ordinal(), this.model != null);
 
-        /* A shell is measured from cubes and pushed clear of the cubes above it, so it needs a
-         * cubic model — a BOBJ bone has neither, and would silently fall back to a plain measure. */
-        this.mode.allow(CollisionMode.SHELL.ordinal(), this.model != null && this.model.model instanceof Model);
+        /* A plate lies on a cube's side, so the mode needs cubes: a BOBJ bone has none and would
+         * silently fall back to a plain measure. */
+        this.mode.allow(CollisionMode.FACE.ordinal(), this.model != null && this.model.model instanceof Model);
         this.mode.allow(CollisionMode.SHAPES.ordinal(), hasShapes);
 
         this.syncing = true;
@@ -680,6 +713,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         try
         {
             this.mode.setValue(slot.mode().ordinal());
+            this.face.setValue(slot.face().ordinal());
             this.fillShapes(slot);
 
             CollisionShape shape = this.shape();
@@ -774,7 +808,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         int color = switch (mode)
         {
             case AUTO -> Colors.CYAN;
-            case SHELL -> Colors.GREEN;
+            case FACE -> Colors.GREEN;
             default -> Colors.ORANGE;
         };
 

@@ -17,19 +17,25 @@ public enum CollisionMode
     AUTO("auto"),
 
     /**
-     * Measured the same way, then flattened and pushed clear of the bone it hangs on.
+     * A plate on one chosen side of the bone's cubes — the author says which side, the geometry
+     * says where that side is.
      *
      * <p>For the case a cubic rig makes unavoidable: a second layer — hair, a jacket, a brim — is
-     * drawn as a thin cube <em>inside</em> the cube it sits on, because that is how the texture is
+     * drawn as a thin cube <em>inside</em> the cube it sits on, because that is how its texture is
      * made to appear over it. Two solids in the same place is the one thing a physics engine may
-     * not have: it must push them apart, it cannot, and the strand is thrown out of the head. So
-     * this mode keeps the shape the geometry describes but stands it on the outside of the owner
-     * instead of in it — the hair lies on the skull rather than through it.</p>
+     * not have — it must push them apart and cannot — so the strand is thrown out of the head. A
+     * plate on the outward-facing side is a surface to slide along instead of a volume to be
+     * expelled from.</p>
      *
-     * <p>Live, like {@link #AUTO}: nothing is written down, so a cube that changes size or moves
-     * takes its collision with it.</p>
+     * <p><b>Which side is the author's call</b>, and that is the whole design. The version before
+     * this one worked it out from the geometry — thinnest axis, whichever way the cube leaned — and
+     * a guess that is right most of the time is worse than a choice, because when it is wrong there
+     * is nothing to correct. Here there is a list of six.</p>
+     *
+     * <p>Live, like {@link #AUTO}: nothing is written down but the side, so a cube that changes
+     * size or moves takes its collision with it.</p>
      */
-    SHELL("shell"),
+    FACE("face"),
 
     /** The primitives the author placed by hand. */
     SHAPES("shapes");
