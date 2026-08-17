@@ -10,7 +10,10 @@ import mchorse.bbs_mod.ui.forms.editors.UIFormEditor;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
+import mchorse.bbs_physics.balloon.BalloonForm;
+import mchorse.bbs_physics.client.forms.BalloonFormRenderer;
 import mchorse.bbs_physics.client.forms.ClothFormRenderer;
+import mchorse.bbs_physics.client.forms.UIBalloonForm;
 import mchorse.bbs_physics.client.forms.UIClothForm;
 import mchorse.bbs_physics.cloth.ClothForm;
 
@@ -42,5 +45,7 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
          * is — see BBSPhysicsAddon. */
         FormUtilsClient.register(ClothForm.class, ClothFormRenderer::new);
         UIFormEditor.register(ClothForm.class, UIClothForm::new);
+        FormUtilsClient.register(BalloonForm.class, BalloonFormRenderer::new);
+        UIFormEditor.register(BalloonForm.class, UIBalloonForm::new);
     }
 }

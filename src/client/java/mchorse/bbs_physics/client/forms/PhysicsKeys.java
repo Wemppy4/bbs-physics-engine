@@ -59,6 +59,18 @@ public class PhysicsKeys
     public static final IKey CLOTH_STIFFNESS = L10n.lang("bbs_physics.forms.cloth.stiffness");
     public static final IKey CLOTH_DAMPING = L10n.lang("bbs_physics.forms.cloth.damping");
 
+    public static final IKey BALLOON_TITLE = L10n.lang("bbs_physics.forms.balloon.title");
+    public static final IKey BALLOON_BALL = L10n.lang("bbs_physics.forms.balloon.ball");
+    public static final IKey BALLOON_SKIN = L10n.lang("bbs_physics.forms.balloon.skin");
+    public static final IKey BALLOON_RADIUS = L10n.lang("bbs_physics.forms.balloon.radius");
+    public static final IKey BALLOON_SEGMENTS = L10n.lang("bbs_physics.forms.balloon.segments");
+    public static final IKey BALLOON_RINGS = L10n.lang("bbs_physics.forms.balloon.rings");
+    public static final IKey BALLOON_INFLATION = L10n.lang("bbs_physics.forms.balloon.inflation");
+    public static final IKey BALLOON_STIFFNESS = L10n.lang("bbs_physics.forms.balloon.stiffness");
+    public static final IKey BALLOON_MASS = L10n.lang("bbs_physics.forms.balloon.mass");
+    public static final IKey BALLOON_GRAVITY = L10n.lang("bbs_physics.forms.balloon.gravity");
+    public static final IKey BALLOON_DAMPING = L10n.lang("bbs_physics.forms.balloon.damping");
+
     public static final IKey SCENE_TITLE = L10n.lang("bbs_physics.scene.title");
     public static final IKey SCENE_NONE = L10n.lang("bbs_physics.scene.none");
     public static final IKey SCENE_STATUS = L10n.lang("bbs_physics.scene.status");

@@ -6,6 +6,7 @@ import mchorse.bbs_mod.events.Subscribe;
 import mchorse.bbs_mod.events.register.RegisterSettingsEvent;
 import mchorse.bbs_mod.events.register.RegisterSourcePacksEvent;
 import mchorse.bbs_mod.resources.Link;
+import mchorse.bbs_physics.balloon.BalloonForm;
 import mchorse.bbs_physics.cloth.ClothForm;
 import net.fabricmc.loader.api.FabricLoader;
 
@@ -54,6 +55,7 @@ public class BBSPhysicsAddon implements BBSAddonMod
     public void onRegisterSettings(RegisterSettingsEvent event)
     {
         BBSMod.getForms().register(new Link(BBSPhysics.MOD_ID, "cloth"), ClothForm.class, null);
+        BBSMod.getForms().register(new Link(BBSPhysics.MOD_ID, "balloon"), BalloonForm.class, null);
     }
 
     private static String version(String modId)

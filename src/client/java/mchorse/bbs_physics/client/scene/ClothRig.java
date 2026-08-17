@@ -101,6 +101,10 @@ public class ClothRig
     private final Vector3f point = new Vector3f();
     private final Vec3 scratch = new Vec3();
 
+    /** Where the sheet last was in scene coordinates — what the readout judges against the window. */
+    private final Vector3f recordedCenter = new Vector3f();
+    private boolean centered;
+
     private boolean lost;
     private boolean misfed;
 
@@ -443,8 +447,12 @@ public class ClothRig
         this.formWorldInverse.set(this.formWorld).invert();
 
         boolean sound = true;
+        double sumX = 0D;
+        double sumY = 0D;
+        double sumZ = 0D;
+        int count = this.columns * this.rows;
 
-        for (int i = 0; i < this.columns * this.rows; i++)
+        for (int i = 0; i < count; i++)
         {
             float x = this.locations.get(i * 3);
             float y = this.locations.get(i * 3 + 1);
@@ -456,6 +464,10 @@ public class ClothRig
 
                 break;
             }
+
+            sumX += x;
+            sumY += y;
+            sumZ += z;
 
             /* Scene coordinates → world → the form's own frame. */
             this.point.set(
@@ -469,6 +481,12 @@ public class ClothRig
             this.record[i * 3 + 2] = this.point.z;
         }
 
+        if (sound)
+        {
+            this.recordedCenter.set((float) (sumX / count), (float) (sumY / count), (float) (sumZ / count));
+            this.centered = true;
+        }
+
         this.lost = !sound;
         this.record[this.record.length - 1] = sound ? PhysicsForms.getAuthority(this.form) : PhysicsCache.SILENT;
 
@@ -479,6 +497,17 @@ public class ClothRig
     public boolean isLost()
     {
         return this.lost;
+    }
+
+    /** The sheet's centre on the last recorded tick, in scene coordinates; false until one exists. */
+    public boolean getRecordedCenter(Vector3f out)
+    {
+        if (this.centered)
+        {
+            out.set(this.recordedCenter);
+        }
+
+        return this.centered;
     }
 
     /**

@@ -92,6 +92,18 @@
     "bbs_physics.forms.cloth.stiffness": "Stiffness: 0 is knitwear, 1 is tarpaulin",
     "bbs_physics.forms.cloth.damping": "Damping: how quickly the sheet stops swinging",
 
+    "bbs_physics.forms.balloon.title": "Balloon",
+    "bbs_physics.forms.balloon.ball": "Ball",
+    "bbs_physics.forms.balloon.skin": "Skin",
+    "bbs_physics.forms.balloon.radius": "Radius in blocks",
+    "bbs_physics.forms.balloon.segments": "Segments around — more dents smoother and costs more",
+    "bbs_physics.forms.balloon.rings": "Rings top to bottom — more dents smoother and costs more",
+    "bbs_physics.forms.balloon.inflation": "Inflation: 0 is a deflated sack, 1 is pumped tight, swelling a little past the radius. Takes effect when the form editor is closed.",
+    "bbs_physics.forms.balloon.stiffness": "Skin stiffness: 0 is film, 1 is hard rubber",
+    "bbs_physics.forms.balloon.mass": "Whole ball's weight (kg)",
+    "bbs_physics.forms.balloon.gravity": "Gravity: 1 is normal weight, 0 is weightless, below zero floats up like a helium balloon. Takes effect when the form editor is closed.",
+    "bbs_physics.forms.balloon.damping": "Damping: how quickly the ball settles. A resting ball may creep into a slow roll — raise this to keep it put",
+
     "bbs_physics.forms.collision.title": "Collision",
     "bbs_physics.forms.collision.preview": "Show markup",
 

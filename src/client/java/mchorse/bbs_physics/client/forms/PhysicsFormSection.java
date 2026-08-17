@@ -5,6 +5,7 @@ import mchorse.bbs_mod.forms.categories.FormCategory;
 import mchorse.bbs_mod.forms.sections.FormSection;
 import mchorse.bbs_mod.resources.Link;
 import mchorse.bbs_physics.BBSPhysics;
+import mchorse.bbs_physics.balloon.BalloonForm;
 import mchorse.bbs_physics.cloth.ClothForm;
 
 import java.util.Collections;
@@ -38,8 +39,15 @@ public class PhysicsFormSection extends FormSection
          * cloth at a glance rather than as another picture. */
         cloth.texture.set(new Link(BBSPhysics.ASSETS, "textures/cloth.png"));
 
+        /* The ball needs no canned pose the way cloth does — a sphere already reads as one — but
+         * the same no-texture-draws-nothing rule applies, so it gets a beach ball to wear. */
+        BalloonForm balloon = new BalloonForm();
+
+        balloon.texture.set(new Link(BBSPhysics.ASSETS, "textures/balloon.png"));
+
         this.category = new FormCategory(PhysicsKeys.CATEGORY, this.parent.visibility.get("bbs_physics"));
         this.category.addForm(cloth);
+        this.category.addForm(balloon);
     }
 
     @Override

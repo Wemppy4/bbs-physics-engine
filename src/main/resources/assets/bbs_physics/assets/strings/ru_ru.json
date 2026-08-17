@@ -92,6 +92,18 @@
     "bbs_physics.forms.cloth.stiffness": "Жёсткость: 0 — трикотаж, 1 — брезент",
     "bbs_physics.forms.cloth.damping": "Затухание: насколько быстро полотно перестаёт болтаться",
 
+    "bbs_physics.forms.balloon.title": "Шар",
+    "bbs_physics.forms.balloon.ball": "Мяч",
+    "bbs_physics.forms.balloon.skin": "Оболочка",
+    "bbs_physics.forms.balloon.radius": "Радиус в блоках",
+    "bbs_physics.forms.balloon.segments": "Сегментов по кругу — чем больше, тем глаже мнётся и дороже расчёт",
+    "bbs_physics.forms.balloon.rings": "Колец сверху вниз — чем больше, тем глаже мнётся и дороже расчёт",
+    "bbs_physics.forms.balloon.inflation": "Надутость: 0 — сдутый мешок, 1 — накачан туго и чуть раздувается сверх радиуса. Вступает при выходе из редактора формы.",
+    "bbs_physics.forms.balloon.stiffness": "Жёсткость оболочки: 0 — плёнка, 1 — жёсткая резина",
+    "bbs_physics.forms.balloon.mass": "Вес всего шара (кг)",
+    "bbs_physics.forms.balloon.gravity": "Гравитация: 1 — обычный вес, 0 — невесомость, меньше нуля — всплывает, как гелиевый шарик. Вступает при выходе из редактора формы.",
+    "bbs_physics.forms.balloon.damping": "Затухание: насколько быстро шар успокаивается. Лежащий мяч может медленно катиться — подними затухание, чтобы стоял на месте",
+
     "bbs_physics.forms.collision.title": "Коллизия",
     "bbs_physics.forms.collision.preview": "Показывать разметку",
 

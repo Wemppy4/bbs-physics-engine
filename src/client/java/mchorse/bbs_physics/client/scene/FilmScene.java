@@ -23,6 +23,7 @@ import mchorse.bbs_mod.utils.Pair;
 import mchorse.bbs_mod.utils.StringUtils;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
+import mchorse.bbs_physics.balloon.BalloonForm;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.cloth.ClothForm;
 import mchorse.bbs_physics.client.ragdoll.RagdollPoseApplier;
@@ -181,6 +182,7 @@ public class FilmScene implements AutoCloseable
         private final List<PhysicsBodyRig> bodyRigs;
         private final List<ActorRagdoll> ragdolls;
         private final List<ClothRig> cloths;
+        private final List<BalloonRig> balloons;
 
         /**
          * Who among this actor's bodies is excused from colliding with whom. Native and held by
@@ -205,7 +207,7 @@ public class FilmScene implements AutoCloseable
          */
         private boolean broken;
 
-        private EntityRigs(IEntity entity, Replay replay, ActorRig bones, List<PhysicsBodyRig> bodyRigs, List<ActorRagdoll> ragdolls, List<ClothRig> cloths, ActorCollisionGroup group)
+        private EntityRigs(IEntity entity, Replay replay, ActorRig bones, List<PhysicsBodyRig> bodyRigs, List<ActorRagdoll> ragdolls, List<ClothRig> cloths, List<BalloonRig> balloons, ActorCollisionGroup group)
         {
             this.entity = entity;
             this.replay = replay;
@@ -213,6 +215,7 @@ public class FilmScene implements AutoCloseable
             this.bodyRigs = bodyRigs;
             this.ragdolls = ragdolls;
             this.cloths = cloths;
+            this.balloons = balloons;
             this.group = group;
         }
     }
@@ -457,6 +460,7 @@ public class FilmScene implements AutoCloseable
             ActorRig bones = ActorRig.build(this.world, root, matrices, this, pieces, actorGroup);
             List<PhysicsBodyRig> bodyRigs = new ArrayList<>(0);
             List<ClothRig> cloths = new ArrayList<>(0);
+            List<BalloonRig> balloons = new ArrayList<>(0);
 
             this.discoverBodies(root, "", matrices, bodyRigs);
 
@@ -464,7 +468,9 @@ public class FilmScene implements AutoCloseable
              * from it alone — see ClothProxy. */
             group = this.discoverCloths(root, "", matrices, actorWorld, cloths, group, null);
 
-            if (bones == null && bodyRigs.isEmpty() && ragdolls.isEmpty() && cloths.isEmpty())
+            this.discoverBalloons(root, "", matrices, actorWorld, balloons, null);
+
+            if (bones == null && bodyRigs.isEmpty() && ragdolls.isEmpty() && cloths.isEmpty() && balloons.isEmpty())
             {
                 continue;
             }
@@ -473,7 +479,7 @@ public class FilmScene implements AutoCloseable
              * ragdoll part and every kinematic bone at once. */
             actorGroup.seal();
 
-            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls, cloths, actorGroup);
+            EntityRigs rigs = new EntityRigs(entity, replay, bones, bodyRigs, ragdolls, cloths, balloons, actorGroup);
 
             this.rigs.add(rigs);
 
@@ -672,6 +678,44 @@ public class FilmScene implements AutoCloseable
         return group;
     }
 
+    /**
+     * Finds every balloon form in an actor's tree and gives each one a pressurized soft body. The
+     * cloth walk without the group counter — a ball asks for no stand-ins.
+     */
+    private void discoverBalloons(Form form, String path, MatrixCache matrices, Matrix4f actorWorld, List<BalloonRig> out, String anchor)
+    {
+        if (form instanceof BalloonForm balloon)
+        {
+            BalloonRig rig = BalloonRig.build(this.world, balloon, path, matrices, actorWorld, this, anchor);
+
+            if (rig != null)
+            {
+                out.add(rig);
+            }
+        }
+
+        int i = 0;
+
+        for (BodyPart part : form.parts.getAllTyped())
+        {
+            Form child = part.getForm();
+
+            if (child != null)
+            {
+                /* The same anchor rule as cloth: descending out of a model means everything below
+                 * hangs on one of its bones, and that bone is what a ragdoll moves. */
+                String childAnchor = form instanceof ModelForm
+                    ? StringUtils.combinePaths(path, part.bone.get())
+                    : anchor;
+
+                this.discoverBalloons(child, StringUtils.combinePaths(path, String.valueOf(i)), matrices, actorWorld, out, childAnchor);
+            }
+
+            /* Outside the null check, mirroring the walk: a partless slot still takes an index. */
+            i += 1;
+        }
+    }
+
     /** Registers a body to be drawn by the debug overlay, with a channel of its own to be read from. */
     public void addDebugBody(SceneBody body)
     {
@@ -778,11 +822,30 @@ public class FilmScene implements AutoCloseable
                 }
             }
 
+            /* The soft forms go through the same outside-the-window check as the rigid bodies —
+             * this very count is how "the balloon is falling where no world was collected" stops
+             * being invisible from the viewport. */
             for (ClothRig cloth : rigs.cloths)
             {
                 if (cloth.isLost())
                 {
                     lost += 1;
+                }
+                else if (this.isOutside(cloth.getRecordedCenter(this.probe)))
+                {
+                    outside += 1;
+                }
+            }
+
+            for (BalloonRig balloon : rigs.balloons)
+            {
+                if (balloon.isLost())
+                {
+                    lost += 1;
+                }
+                else if (this.isOutside(balloon.getRecordedCenter(this.probe)))
+                {
+                    outside += 1;
                 }
             }
         }
@@ -796,6 +859,16 @@ public class FilmScene implements AutoCloseable
             ghosts,
             outside,
             lost);
+    }
+
+    /**
+     * Whether {@link #probe} — filled by the caller's getter, whose return value is passed in —
+     * lies outside the world that was actually collected.
+     */
+    private boolean isOutside(boolean filled)
+    {
+        return filled && this.window != null && this.window.boxes() > 0
+            && !this.window.contains(this.probe.x, this.probe.y, this.probe.z);
     }
 
     public double getOriginX()
@@ -977,6 +1050,11 @@ public class FilmScene implements AutoCloseable
             {
                 cloth.record(this.world, this, this.cache, tick);
             }
+
+            for (BalloonRig balloon : rigs.balloons)
+            {
+                balloon.record(this.world, this, this.cache, tick);
+            }
         }
 
         this.cache.commit(tick);
@@ -1011,6 +1089,11 @@ public class FilmScene implements AutoCloseable
             for (ClothRig cloth : rigs.cloths)
             {
                 cloth.readCache(this.cache, tick, jumped);
+            }
+
+            for (BalloonRig balloon : rigs.balloons)
+            {
+                balloon.readCache(this.cache, tick, jumped);
             }
         }
 
@@ -1170,7 +1253,8 @@ public class FilmScene implements AutoCloseable
 
             for (ActorRagdoll ragdoll : rigs.ragdolls)
             {
-                ragdoll.update(this.world, this, matrices, actorWorld, reset, rigs.cloths.isEmpty() ? null : rigs.boneDeltas);
+                ragdoll.update(this.world, this, matrices, actorWorld, reset,
+                    rigs.cloths.isEmpty() && rigs.balloons.isEmpty() ? null : rigs.boneDeltas);
             }
 
             for (PhysicsBodyRig rig : rigs.bodyRigs)
@@ -1183,6 +1267,11 @@ public class FilmScene implements AutoCloseable
             for (ClothRig cloth : rigs.cloths)
             {
                 cloth.update(this.world, this, matrices, actorWorld, reset, rigs.boneDeltas);
+            }
+
+            for (BalloonRig balloon : rigs.balloons)
+            {
+                balloon.update(this.world, this, matrices, actorWorld, reset, rigs.boneDeltas);
             }
 
             rigs.broken = false;
@@ -1327,9 +1416,28 @@ public class FilmScene implements AutoCloseable
     {
         BodyInterface bodies = this.world.getBodies();
 
+        /* Where the world's collision must exist: around the origin, and around every actor whose
+         * tree carries any physics — the cast is standing on tick 0 right now, so these are the
+         * film's opening positions. One area was not enough: a balloon placed ninety blocks from
+         * the first actor fell through a world that had only ever been collected around that first
+         * actor, and nothing on screen said why. */
+        List<double[]> centers = new ArrayList<>(1);
+
+        centers.add(new double[] {this.originX, this.originY, this.originZ});
+
+        for (CastMember member : this.cast)
+        {
+            Form root = member.entity.getForm();
+
+            if (root != null && PhysicsForms.isSimulatedTree(root))
+            {
+                centers.add(new double[] {member.entity.getX(), member.entity.getY(), member.entity.getZ()});
+            }
+        }
+
         /* The blocks the film is actually shot among. Not drawn as debug boxes — there are
          * thousands of them and they are already visible as, well, the world. */
-        this.window = WorldCollider.build(this.world, MinecraftClient.getInstance().world, this.originX, this.originY, this.originZ);
+        this.window = WorldCollider.build(this.world, MinecraftClient.getInstance().world, this.originX, this.originY, this.originZ, centers);
 
         if (this.window.boxes() == 0)
         {
@@ -1367,6 +1475,11 @@ public class FilmScene implements AutoCloseable
             for (ClothRig cloth : rigs.cloths)
             {
                 cloth.release();
+            }
+
+            for (BalloonRig balloon : rigs.balloons)
+            {
+                balloon.release();
             }
         }
 
