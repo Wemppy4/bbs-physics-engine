@@ -36,11 +36,6 @@ public final class CollisionPreview
     private CollisionPreview()
     {}
 
-    public static void render(Form form, IEntity entity, MatrixStack stack, float transition)
-    {
-        render(form, entity, stack, transition, null);
-    }
-
     /**
      * @param selection the path of the body part the editor has selected, so only its markup is
      *                  drawn; null draws the whole tree (the root is selected, or there is no

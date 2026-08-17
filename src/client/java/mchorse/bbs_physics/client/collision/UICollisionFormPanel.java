@@ -37,6 +37,7 @@ import mchorse.bbs_mod.utils.StringUtils;
 import mchorse.bbs_mod.utils.colors.Colors;
 import mchorse.bbs_mod.utils.pose.Transform;
 import mchorse.bbs_physics.BBSPhysicsSettings;
+import mchorse.bbs_physics.client.forms.PhysicsColors;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
 import mchorse.bbs_physics.collision.CollisionIO;
 import mchorse.bbs_physics.collision.CollisionKind;
@@ -158,7 +159,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         this.bonesSearch = new UISearchList<>(this.bones);
         this.bonesSearch.label(UIKeys.GENERAL_SEARCH);
         this.bonesSearch.h(20 + UIConstants.LIST_ITEM_HEIGHT * 8);
-        this.bones.context(() -> new UIDataContextMenu(CollisionPresetManager.INSTANCE, this.presetGroup, this::toPresetData, this::applyPresetData).tooltips("_CopyCollision",
+        this.bones.context(() -> new UIDataContextMenu(PhysicsPresets.COLLISION, this.presetGroup, this::toPresetData, this::applyPresetData).tooltips("_CopyCollision",
             PhysicsKeys.COLLISION_CONTEXT_COPY,
             PhysicsKeys.COLLISION_CONTEXT_PASTE,
             PhysicsKeys.COLLISION_CONTEXT_RESET,
@@ -805,14 +806,8 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
         int x = this.bones.area.ex() - 9;
         int mid = y + UIConstants.LIST_ITEM_HEIGHT / 2 - 2;
-        int color = switch (mode)
-        {
-            case AUTO -> Colors.CYAN;
-            case FACE -> Colors.GREEN;
-            default -> Colors.ORANGE;
-        };
 
-        context.batcher.box(x, mid, x + 4, mid + 4, Colors.A100 | color);
+        context.batcher.box(x, mid, x + 4, mid + 4, Colors.A100 | PhysicsColors.markup(mode));
     }
 
     @Override

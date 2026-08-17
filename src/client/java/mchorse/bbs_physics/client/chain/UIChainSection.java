@@ -1,27 +1,18 @@
 package mchorse.bbs_physics.client.chain;
 
-import mchorse.bbs_mod.cubic.ModelInstance;
 import mchorse.bbs_mod.cubic.data.model.Model;
 import mchorse.bbs_mod.forms.forms.Form;
-import mchorse.bbs_mod.forms.forms.ModelForm;
-import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
-import mchorse.bbs_mod.ui.UIKeys;
-import mchorse.bbs_mod.ui.framework.UIContext;
-import mchorse.bbs_mod.ui.framework.elements.UIElement;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
-import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
 import mchorse.bbs_mod.ui.framework.elements.utils.UIText;
-import mchorse.bbs_mod.ui.utils.PickedBone;
 import mchorse.bbs_mod.ui.utils.UI;
-import mchorse.bbs_mod.ui.utils.UIConstants;
-import mchorse.bbs_mod.ui.utils.bones.UIBoneTreeList;
 import mchorse.bbs_mod.utils.colors.Colors;
 import mchorse.bbs_physics.chain.FormChain;
 import mchorse.bbs_physics.chain.FormChains;
 import mchorse.bbs_physics.client.collision.ChainBones;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
+import mchorse.bbs_physics.client.forms.UIBoneSection;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -30,15 +21,14 @@ import java.util.function.UnaryOperator;
 /**
  * The chain modifier's body: which bones hang, and what the strands are like.
  *
- * <p>Ticks in a bone list, deliberately the same gesture the ragdoll uses — an author who has
- * ticked "these bones fall" already knows how to tick "these bones hang".</p>
+ * <p>Ticks in a bone list, deliberately the same gesture the ragdoll uses — an author who has ticked
+ * "these bones fall" already knows how to tick "these bones hang". Unlike the ragdoll, an unmarked
+ * bone can be ticked: a strand with no shape still hangs and swings, it simply meets nothing.</p>
  *
- * <p>🔴 <b>And, like the ragdoll, this modifier describes no shapes at all</b> — the Collision tab
- * does. It briefly did the opposite: a "thickness" knob here built a capsule per bone, which read
- * as physics inventing colliders on a model nobody had marked up (against Р6) and, worse, held the
- * hair off the shoulders it was meant to lie on, because the capsule was fatter than the strand it
- * stood for. A ticked bone with no markup still hangs and swings; it simply meets nothing until it
- * is given a shape in the tab where every other shape lives.</p>
+ * <p>🔴 <b>This modifier describes no shapes at all</b> — the Collision tab does. It briefly did the
+ * opposite: a "thickness" knob here built a capsule per bone, which read as physics inventing
+ * colliders on a model nobody had marked up (against Р6) and, worse, held the hair off the shoulders
+ * it was meant to lie on, because the capsule was fatter than the strand it stood for.</p>
  *
  * <p><b>"Take the chains from the model" is an import, not a link.</b> BBS's own chain physics
  * already lists the strands of a model — from bone X down to bone Y — and that list is the obvious
@@ -48,15 +38,8 @@ import java.util.function.UnaryOperator;
  * turning knobs that no longer reach anything. Copied in, ownership is plain — the bones are ours,
  * the knobs are the ones on this panel.</p>
  */
-public class UIChainSection extends UIElement
+public class UIChainSection extends UIBoneSection
 {
-    /** How far from the list's right edge the tick sits — clear of the scrollbar. */
-    private static final int TICK_RIGHT = 20;
-    private static final int TICK_SIZE = 7;
-
-    public UIBoneTreeList bones;
-    public UISearchList<String> bonesSearch;
-
     public UIButton takeFromModel;
     public UIButton clear;
 
@@ -69,69 +52,21 @@ public class UIChainSection extends UIElement
     /** Says where a strand's shape comes from — see the class note on why it comes from there. */
     private final UIText shapeHint;
 
-    private final Runnable relayout;
-
-    private Form form;
     private FormChain chain = FormChain.EMPTY;
-    private ModelInstance model;
-    private boolean syncing;
 
     public UIChainSection(Runnable relayout)
     {
-        this.relayout = relayout;
-
-        this.column(UIConstants.MARGIN).vertical().stretch();
-
-        this.bones = new UIBoneTreeList((l) ->
-        {
-            if (this.model != null && !l.isEmpty())
-            {
-                PickedBone.set(l.get(0));
-            }
-        })
-        {
-            @Override
-            public void renderListElement(UIContext context, String element, int i, int x, int y, boolean hover, boolean selected)
-            {
-                super.renderListElement(context, element, i, x, y, hover, selected);
-
-                UIChainSection.this.renderTick(context, element, y);
-            }
-
-            @Override
-            public boolean subMouseClicked(UIContext context)
-            {
-                if (context.mouseButton == 0 && this.area.isInside(context)
-                    && context.mouseX >= this.area.ex() - TICK_RIGHT - TICK_SIZE
-                    && context.mouseX <= this.area.ex() - TICK_RIGHT + TICK_SIZE)
-                {
-                    int index = this.getIndexAtCursor(context);
-
-                    if (index >= 0 && index < this.getList().size())
-                    {
-                        UIChainSection.this.toggleBone(this.getList().get(index));
-
-                        return true;
-                    }
-                }
-
-                return super.subMouseClicked(context);
-            }
-        };
-        this.bones.background();
-        this.bonesSearch = new UISearchList<>(this.bones);
-        this.bonesSearch.label(UIKeys.GENERAL_SEARCH);
-        this.bonesSearch.h(20 + UIConstants.LIST_ITEM_HEIGHT * 8);
+        super(relayout);
 
         this.takeFromModel = new UIButton(PhysicsKeys.CHAIN_TAKE_FROM_MODEL, (b) -> this.takeFromModel());
         this.takeFromModel.tooltip(PhysicsKeys.CHAIN_TAKE_FROM_MODEL_TOOLTIP);
 
         this.clear = new UIButton(PhysicsKeys.CHAIN_CLEAR, (b) -> this.editComposition((chain) -> chain.withBones(Set.of())));
 
-        this.stiffness = this.knob(0D, 1D, PhysicsKeys.CHAIN_STIFFNESS, (chain, v) -> chain.withStiffness(v));
-        this.damping = this.knob(0D, 1D, PhysicsKeys.CHAIN_DAMPING, (chain, v) -> chain.withDamping(v));
-        this.mass = this.knob(0.01D, 100D, PhysicsKeys.CHAIN_MASS, (chain, v) -> chain.withMass(v));
-        this.gravity = this.knob(-2D, 2D, PhysicsKeys.BALLOON_GRAVITY, (chain, v) -> chain.withGravity(v));
+        this.stiffness = this.knob(0D, 1D, PhysicsKeys.CHAIN_STIFFNESS, (v) -> this.edit((chain) -> chain.withStiffness(v)));
+        this.damping = this.knob(0D, 1D, PhysicsKeys.CHAIN_DAMPING, (v) -> this.edit((chain) -> chain.withDamping(v)));
+        this.mass = this.knob(0.01D, 100D, PhysicsKeys.CHAIN_MASS, (v) -> this.edit((chain) -> chain.withMass(v)));
+        this.gravity = this.knob(-2D, 2D, PhysicsKeys.BALLOON_GRAVITY, (v) -> this.edit((chain) -> chain.withGravity(v)));
 
         this.selfCollision = new UIToggle(PhysicsKeys.CHAIN_SELF_COLLISION, false, (b) ->
         {
@@ -145,34 +80,26 @@ public class UIChainSection extends UIElement
         this.shapeHint = new UIText(PhysicsKeys.CHAIN_SHAPE_HINT).color(Colors.LIGHTER_GRAY, true).padding(0, 2);
     }
 
-    private UITrackpad knob(double min, double max, mchorse.bbs_mod.l10n.keys.IKey tooltip, ChainEdit edit)
-    {
-        UITrackpad pad = new UITrackpad((v) ->
-        {
-            if (!this.syncing)
-            {
-                this.edit((chain) -> edit.apply(chain, v.floatValue()));
-            }
-        });
-
-        pad.limit(min, max).increment(0.05D);
-        pad.tooltip(tooltip);
-
-        return pad;
-    }
-
     /* Editing */
 
-    private void toggleBone(String bone)
+    @Override
+    protected boolean toggleBone(String bone)
     {
         this.editComposition((chain) -> chain.withBone(bone, !chain.bones().contains(bone)));
+
+        return true;
+    }
+
+    @Override
+    protected boolean isTicked(String bone)
+    {
+        return this.chain.bones().contains(bone);
     }
 
     /**
-     * Copies the strands BBS's own chain physics lists for this model — every bone from each
-     * chain's start down to its end, which {@link ChainBones} already walks for the collision pass.
-     * Added to what is ticked rather than replacing it, so an author can import and then keep
-     * ticking.
+     * Copies the strands BBS's own chain physics lists for this model — every bone from each chain's
+     * start down to its end, which {@link ChainBones} already walks for the collision pass. Added to
+     * what is ticked rather than replacing it, so an author can import and then keep ticking.
      */
     private void takeFromModel()
     {
@@ -188,17 +115,7 @@ public class UIChainSection extends UIElement
         this.editComposition((chain) -> chain.withBones(bones));
     }
 
-    /**
-     * Writes one edit and nothing else.
-     *
-     * <p>🔴 <b>It must not touch the layout</b>, and that is not tidiness: a trackpad calls its
-     * callback while it is being dragged, which happens inside the render pass, so rebuilding this
-     * element's children from here tore the list the renderer was walking — a
-     * {@code ConcurrentModificationException} that took the game down the moment an author dragged
-     * the stiffness slider. The ragdoll's knobs have always written and stopped, for the same
-     * reason; only the edits that change what rows there <em>are</em> may rebuild, and those all
-     * come from clicks.</p>
-     */
+    /** Writes one edit and nothing else — see {@link UIBoneSection} on why it must not relayout. */
     private void edit(UnaryOperator<FormChain> edit)
     {
         if (this.form == null)
@@ -235,35 +152,15 @@ public class UIChainSection extends UIElement
 
     public void setForm(Form form)
     {
-        this.form = form;
         this.chain = FormChains.get(form);
-        this.model = form instanceof ModelForm modelForm ? ModelFormRenderer.getModel(modelForm) : null;
 
-        if (this.model != null && this.model.model != null)
-        {
-            this.bones.fillBones(this.model.model, this.model.getDisabledBones());
-            this.bones.filter(this.bonesSearch.search.getText());
-        }
-        else
-        {
-            this.model = null;
-        }
-
+        super.setForm(form, false);
         this.updateLabels();
     }
 
-    public boolean pickBoneInList(String bone)
-    {
-        if (this.model == null || bone == null || bone.isEmpty() || !this.bones.getList().contains(bone))
-        {
-            return false;
-        }
-
-        PickedBone.set(bone);
-        this.bones.setCurrentScroll(bone);
-
-        return true;
-    }
+    @Override
+    protected void onBonePicked()
+    {}
 
     private void updateLabels()
     {
@@ -313,32 +210,6 @@ public class UIChainSection extends UIElement
             this.add(this.selfCollision, this.shapeHint);
         }
 
-        this.relayout.run();
-    }
-
-    /** The tick that says this bone hangs. */
-    private void renderTick(UIContext context, String element, int y)
-    {
-        if (this.model == null || this.form == null)
-        {
-            return;
-        }
-
-        int mid = y + UIConstants.LIST_ITEM_HEIGHT / 2;
-        int x = this.bones.area.ex() - TICK_RIGHT - TICK_SIZE / 2;
-        int top = mid - TICK_SIZE / 2;
-
-        context.batcher.box(x, top, x + TICK_SIZE, top + TICK_SIZE, Colors.A50);
-
-        if (this.chain.bones().contains(element))
-        {
-            context.batcher.box(x + 1, top + 1, x + TICK_SIZE - 1, top + TICK_SIZE - 1, Colors.A100 | Colors.WHITE);
-        }
-    }
-
-    /** One edit of the modifier by a single number. */
-    private interface ChainEdit
-    {
-        FormChain apply(FormChain chain, float value);
+        this.relayout();
     }
 }

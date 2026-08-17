@@ -12,6 +12,7 @@ import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
 import mchorse.bbs_physics.engine.PhysicsLayers;
+import mchorse.bbs_physics.engine.PhysicsMath;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -48,8 +49,6 @@ public class ClothProxy
 
     /** How many slabs one sheet may ever build, so a 32×32 sheet cannot flood the world. */
     private static final int MAX_SLABS = 128;
-
-    private static final Vec3 ZERO = new Vec3(0F, 0F, 0F);
 
     /** Half the slab's thickness, in blocks — thin, but not so thin that contact is missed. */
     private static final float THICKNESS = 0.01F;
@@ -251,7 +250,7 @@ public class ClothProxy
             this.scratchRotation.set(this.rotation.x, this.rotation.y, this.rotation.z, this.rotation.w);
 
             bodyInterface.setPositionAndRotation(this.bodies[i], this.scratchPosition, this.scratchRotation, EActivation.Activate);
-            bodyInterface.setLinearAndAngularVelocity(this.bodies[i], ZERO, ZERO);
+            bodyInterface.setLinearAndAngularVelocity(this.bodies[i], PhysicsMath.ZERO, PhysicsMath.ZERO);
         }
     }
 
@@ -285,7 +284,7 @@ public class ClothProxy
         this.scratchRotation.set(0F, 0F, 0F, 1F);
 
         bodyInterface.setPositionAndRotation(body, this.scratchPosition, this.scratchRotation, EActivation.DontActivate);
-        bodyInterface.setLinearAndAngularVelocity(body, ZERO, ZERO);
+        bodyInterface.setLinearAndAngularVelocity(body, PhysicsMath.ZERO, PhysicsMath.ZERO);
     }
 
     private static void read(SoftBodyMotionProperties motion, int vertex, Vector3f out)

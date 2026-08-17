@@ -13,7 +13,6 @@ import mchorse.bbs_mod.ui.utils.UIConstants;
 import mchorse.bbs_mod.utils.colors.Colors;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
-import mchorse.bbs_physics.engine.PhysicsWorld;
 
 /**
  * The scene's own physics panel — Blender's Rigid Body World, in the dashboard (§7.4).

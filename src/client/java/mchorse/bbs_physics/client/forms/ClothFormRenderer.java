@@ -1,58 +1,21 @@
 package mchorse.bbs_physics.client.forms;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import mchorse.bbs_mod.BBSModClient;
-import mchorse.bbs_mod.client.BBSRendering;
-import mchorse.bbs_mod.client.BBSShaders;
-import mchorse.bbs_mod.forms.FormTranslucentQueue;
-import mchorse.bbs_mod.forms.renderers.FormRenderer;
-import mchorse.bbs_mod.forms.renderers.FormRenderingContext;
-import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
-import mchorse.bbs_mod.forms.renderers.utils.FormColorBlend;
-import mchorse.bbs_mod.graphics.texture.Texture;
-import mchorse.bbs_mod.resources.Link;
-import mchorse.bbs_mod.ui.framework.UIContext;
-import mchorse.bbs_mod.utils.MatrixStackUtils;
-import mchorse.bbs_mod.utils.colors.Color;
-import mchorse.bbs_mod.utils.colors.Colors;
 import mchorse.bbs_physics.cloth.ClothForm;
 import mchorse.bbs_physics.cloth.ClothState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgram;
-import net.minecraft.client.gl.VertexBuffer;
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.render.LightmapTextureManager;
-import net.minecraft.client.render.OverlayTexture;
-import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
-import org.joml.Matrix3f;
-import org.joml.Matrix4f;
 import org.joml.Vector3f;
-import org.joml.Vector4f;
-
-import java.util.function.Supplier;
 
 /**
- * Draws a sheet of cloth: the simulated grid when a scene has one for this form, the flat
- * rectangle the author placed otherwise — the form editor's preview, and every frame the recording
- * has not reached (Р8.1).
+ * Draws a sheet of cloth: the simulated grid when a scene has one for this form, the flat rectangle
+ * the author placed otherwise — the form editor's preview, and every frame the recording has not
+ * reached (Р8.1).
  *
- * <p>The machinery is the picture form's — one texture, the translucent-queue deferral, both faces
- * drawn so the sheet has a back. What is different is that the vertices come from
- * {@link ClothState} in the form's own frame (the recording stores them converted, so nothing is
- * evaluated here) and the normals are worked out per vertex from the draped grid, because a bent
- * sheet lit as if it were flat reads as flat.</p>
+ * <p>The texture, the blending and the translucent-queue deferral are {@link
+ * TexturedMeshFormRenderer}'s. What is here is the sheet: a grid of quads, and normals worked out
+ * per vertex from the drape, because a bent sheet lit as if it were flat reads as flat.</p>
  */
-public class ClothFormRenderer extends FormRenderer<ClothForm>
+public class ClothFormRenderer extends TexturedMeshFormRenderer<ClothForm>
 {
-    private float[] positions = new float[0];
-    private float[] normals = new float[0];
-
     /**
      * Whether this is the palette's little preview rather than the film.
      *
@@ -64,11 +27,7 @@ public class ClothFormRenderer extends FormRenderer<ClothForm>
      */
     private boolean preview;
 
-    /** The corner of the texture the sheet wears, worked out from the crop once per draw. */
-    private float u1;
-    private float v1;
-    private float u2;
-    private float v2;
+    private float[] normals = new float[0];
 
     public ClothFormRenderer(ClothForm form)
     {
@@ -76,192 +35,46 @@ public class ClothFormRenderer extends FormRenderer<ClothForm>
     }
 
     @Override
-    protected void renderInUI(UIContext context, int x1, int y1, int x2, int y2)
+    protected void applyPreviewTransform(MatrixStack stack)
     {
-        MatrixStack stack = context.batcher.getContext().getMatrices();
-
-        stack.push();
-
-        Matrix4f uiMatrix = ModelFormRenderer.getUIMatrix(context, x1, y1, x2, y2);
-
-        this.applyTransforms(uiMatrix, context.getTransition());
-        MatrixStackUtils.multiply(stack, uiMatrix);
-        stack.translate(0F, 1F, 0F);
         stack.scale(1.5F, 1.5F, 1.5F);
 
-        /* The sheet is drawn hanging from its top edge, so the pivot is at the top of it — shift
-         * it up by half its height to sit in the middle of the slot it is previewed in. */
+        /* The sheet is drawn hanging from its top edge, so the pivot is at the top of it — shift it
+         * up by half its height to sit in the middle of the slot it is previewed in. */
         stack.translate(0F, this.form.height.get() / 2F, 0F);
-
-        this.preview = true;
-
-        try
-        {
-            this.renderCloth(
-                VertexFormats.POSITION_COLOR_TEXTURE_OVERLAY_LIGHT_NORMAL,
-                GameRenderer::getRenderTypeEntityTranslucentProgram,
-                stack, OverlayTexture.DEFAULT_UV, LightmapTextureManager.MAX_LIGHT_COORDINATE, Colors.WHITE,
-                0F, false);
-        }
-        finally
-        {
-            this.preview = false;
-        }
-
-        stack.pop();
     }
 
     @Override
-    public void render3D(FormRenderingContext context)
+    protected void beforePreview()
     {
-        boolean shading = this.form.shading.get();
-
-        if (BBSRendering.isIrisShadersEnabled())
-        {
-            shading = true;
-        }
-
-        VertexFormat format = shading ? VertexFormats.POSITION_COLOR_TEXTURE_OVERLAY_LIGHT_NORMAL : VertexFormats.POSITION_TEXTURE_LIGHT_COLOR;
-        Supplier<ShaderProgram> shader = this.getShader(context,
-            shading ? GameRenderer::getRenderTypeEntityTranslucentProgram : GameRenderer::getPositionTexLightmapColorProgram,
-            shading ? BBSShaders::getPickerBillboardProgram : BBSShaders::getPickerBillboardNoShadingProgram
-        );
-
-        this.renderCloth(format, shader, context.stack, context.overlay, context.light, context.color, context.getTransition(), !context.isPicking());
+        this.preview = true;
     }
 
-    private void renderCloth(VertexFormat format, Supplier<ShaderProgram> shader, MatrixStack matrices, int overlay, int light, int overlayColor, float transition, boolean defer)
+    @Override
+    protected void afterPreview()
     {
-        Link link = this.form.texture.get();
+        this.preview = false;
+    }
 
-        if (link == null)
-        {
-            return;
-        }
-
-        int columns = this.form.getColumns();
-        int rows = this.form.getRows();
-
-        this.fillPositions(columns, rows, transition);
-        this.fillNormals(columns, rows);
-
-        Texture texture = BBSModClient.getTextures().getTexture(link);
-
-        /* The crop picks the region of the texture the sheet wears, in pixels off each side —
-         * the picture form's convention, so a texture atlas built for one works here unchanged.
-         * It does not touch the sheet's shape: a sheet is sized in blocks because it is a physical
-         * object, where a picture takes its proportions from its pixels. */
-        Vector4f crop = this.form.crop.get();
-
-        this.u1 = crop.x / texture.width;
-        this.v1 = crop.y / texture.height;
-        this.u2 = 1F - crop.z / texture.width;
-        this.v2 = 1F - crop.w / texture.height;
-
-        BufferBuilder builder = Tessellator.getInstance().getBuffer();
-        Color color = new Color().set(overlayColor, true);
-        Matrix4f matrix = matrices.peek().getPositionMatrix();
-        Matrix3f normal = matrices.peek().getNormalMatrix();
-
-        FormColorBlend.blend(color, this.form.color.get(), this.form.additiveColor.get());
-
-        GameRenderer gameRenderer = MinecraftClient.getInstance().gameRenderer;
-
-        gameRenderer.getLightmapTextureManager().enable();
-        gameRenderer.getOverlayTexture().setupOverlayColor();
-
-        ShaderProgram finalShader = shader.get();
-
-        BBSModClient.getTextures().bindTexture(texture);
-        RenderSystem.setShader(() -> finalShader);
-
-        boolean linear = this.form.linear.get();
-        boolean mipmap = this.form.mipmap.get();
-
-        texture.bind();
-        texture.setFilterMipmap(linear, mipmap);
-        builder.begin(VertexFormat.DrawMode.TRIANGLES, format);
-
-        for (int r = 0; r < rows - 1; r++)
-        {
-            for (int c = 0; c < columns - 1; c++)
-            {
-                int tl = r * columns + c;
-                int tr = tl + 1;
-                int bl = tl + columns;
-                int br = bl + 1;
-
-                /* Front. */
-                this.fill(format, builder, matrix, normal, bl, columns, rows, color, overlay, light, 1F);
-                this.fill(format, builder, matrix, normal, br, columns, rows, color, overlay, light, 1F);
-                this.fill(format, builder, matrix, normal, tl, columns, rows, color, overlay, light, 1F);
-
-                this.fill(format, builder, matrix, normal, br, columns, rows, color, overlay, light, 1F);
-                this.fill(format, builder, matrix, normal, tr, columns, rows, color, overlay, light, 1F);
-                this.fill(format, builder, matrix, normal, tl, columns, rows, color, overlay, light, 1F);
-
-                /* Back — the same cells the other way round, so the sheet exists from behind. */
-                this.fill(format, builder, matrix, normal, tl, columns, rows, color, overlay, light, -1F);
-                this.fill(format, builder, matrix, normal, br, columns, rows, color, overlay, light, -1F);
-                this.fill(format, builder, matrix, normal, bl, columns, rows, color, overlay, light, -1F);
-
-                this.fill(format, builder, matrix, normal, tl, columns, rows, color, overlay, light, -1F);
-                this.fill(format, builder, matrix, normal, tr, columns, rows, color, overlay, light, -1F);
-                this.fill(format, builder, matrix, normal, br, columns, rows, color, overlay, light, -1F);
-            }
-        }
-
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.enableBlend();
-
-        boolean translucent = texture.hasTranslucency() || color.a < 1F || linear || mipmap;
-
-        if (defer && translucent && FormTranslucentQueue.isActive())
-        {
-            /* The same end-of-frame deferral the picture form does, for the same reasons: correct
-             * blending against other translucent forms, no occlusion of what is behind. */
-            VertexBuffer buffer = new VertexBuffer(VertexBuffer.Usage.STATIC);
-
-            buffer.bind();
-            buffer.upload(builder.end());
-            VertexBuffer.unbind();
-
-            Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix());
-            Vector3f origin = modelView.transformPosition(matrix.getTranslation(new Vector3f()));
-
-            FormTranslucentQueue.add(new FormTranslucentQueue.VertexBufferCommand(
-                buffer, () -> finalShader, texture, modelView, null, origin, true,
-                () ->
-                {
-                    texture.bind();
-                    texture.setFilterMipmap(linear, mipmap);
-                },
-                () -> texture.setFilterMipmap(false, false)
-            ));
-        }
-        else
-        {
-            BufferRenderer.drawWithGlobalProgram(builder.end());
-        }
-
-        texture.setFilterMipmap(false, false);
-
-        gameRenderer.getLightmapTextureManager().disable();
-        gameRenderer.getOverlayTexture().teardownOverlayColor();
+    @Override
+    protected int getVertexCount()
+    {
+        return this.form.getColumns() * this.form.getRows();
     }
 
     /**
      * Where every vertex is for this frame, in the form's frame: the simulation's drape when the
      * scene has one, the author's flat rectangle when it does not.
      */
-    private void fillPositions(int columns, int rows, float transition)
+    @Override
+    protected void fillPositions(float transition)
     {
-        int count = columns * rows * 3;
+        int columns = this.form.getColumns();
+        int rows = this.form.getRows();
 
-        if (this.positions.length != count)
+        if (this.normals.length != this.positions.length)
         {
-            this.positions = new float[count];
-            this.normals = new float[count];
+            this.normals = new float[this.positions.length];
         }
 
         ClothState state = this.form.state;
@@ -292,6 +105,8 @@ public class ClothFormRenderer extends FormRenderer<ClothForm>
                 }
             }
         }
+
+        this.fillNormals(columns, rows);
     }
 
     /**
@@ -371,28 +186,52 @@ public class ClothFormRenderer extends FormRenderer<ClothForm>
         }
     }
 
-    private void fill(VertexFormat format, VertexConsumer consumer, Matrix4f matrix, Matrix3f normalMatrix, int i, int columns, int rows, Color color, int overlay, int light, float side)
+    @Override
+    protected void normalAt(int i, float side, Vector3f out)
     {
-        float x = this.positions[i * 3];
-        float y = this.positions[i * 3 + 1];
-        float z = this.positions[i * 3 + 2];
+        out.set(this.normals[i * 3] * side, this.normals[i * 3 + 1] * side, this.normals[i * 3 + 2] * side);
+    }
 
-        float u = this.u1 + (this.u2 - this.u1) * ((i % columns) / (float) (columns - 1));
-        float v = this.v1 + (this.v2 - this.v1) * ((i / columns) / (float) (rows - 1));
+    /** Two triangles per cell, then the same two wound the other way so the sheet has a back. */
+    @Override
+    protected void emit(MeshTarget target)
+    {
+        int columns = this.form.getColumns();
+        int rows = this.form.getRows();
 
-        if (format == VertexFormats.POSITION_TEXTURE_LIGHT_COLOR)
+        for (int r = 0; r < rows - 1; r++)
         {
-            consumer.vertex(matrix, x, y, z).texture(u, v).light(light).color(color.r, color.g, color.b, color.a).next();
+            for (int c = 0; c < columns - 1; c++)
+            {
+                int tl = r * columns + c;
+                int tr = tl + 1;
+                int bl = tl + columns;
+                int br = bl + 1;
 
-            return;
+                /* Front. */
+                this.corner(target, bl, columns, rows, 1F);
+                this.corner(target, br, columns, rows, 1F);
+                this.corner(target, tl, columns, rows, 1F);
+
+                this.corner(target, br, columns, rows, 1F);
+                this.corner(target, tr, columns, rows, 1F);
+                this.corner(target, tl, columns, rows, 1F);
+
+                /* Back — the same cell the other way round. */
+                this.corner(target, tl, columns, rows, -1F);
+                this.corner(target, br, columns, rows, -1F);
+                this.corner(target, bl, columns, rows, -1F);
+
+                this.corner(target, tl, columns, rows, -1F);
+                this.corner(target, tr, columns, rows, -1F);
+                this.corner(target, br, columns, rows, -1F);
+            }
         }
+    }
 
-        consumer.vertex(matrix, x, y, z)
-            .color(color.r, color.g, color.b, color.a)
-            .texture(u, v)
-            .overlay(overlay)
-            .light(light)
-            .normal(normalMatrix, this.normals[i * 3] * side, this.normals[i * 3 + 1] * side, this.normals[i * 3 + 2] * side)
-            .next();
+    /** The texture is laid per vertex here — a grid has no seam to unwind across. */
+    private void corner(MeshTarget target, int i, int columns, int rows, float side)
+    {
+        this.vertex(target, i, (i % columns) / (float) (columns - 1), (i / columns) / (float) (rows - 1), side);
     }
 }

@@ -118,9 +118,9 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.restitution.limit(0D, 1D).increment(0.05D);
         this.restitutionRow = UI.labelRow(PhysicsKeys.RESTITUTION, this.restitution);
 
-        this.bodyAuthority = this.authority();
+        this.bodyAuthority = PhysicsFields.authority(this::setAuthority);
         this.bodyAuthorityRow = UI.labelRow(PhysicsKeys.AUTHORITY, this.bodyAuthority);
-        this.ragdollAuthority = this.authority();
+        this.ragdollAuthority = PhysicsFields.authority(this::setAuthority);
         this.ragdollAuthorityRow = UI.labelRow(PhysicsKeys.AUTHORITY, this.ragdollAuthority);
 
         this.bodySection = new UIModifierSection(PhysicsKeys.BODY_TITLE, "physics.body", () -> this.toggleBody(false));
@@ -130,7 +130,7 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.ragdollSection = new UIModifierSection(PhysicsKeys.RAGDOLL_TITLE, "physics.ragdoll", () -> this.toggleRagdoll(false));
         this.ragdollSection.fields.add(this.ragdollAuthorityRow, this.ragdollBones);
 
-        this.chainAuthority = this.authority();
+        this.chainAuthority = PhysicsFields.authority(this::setAuthority);
         this.chainAuthorityRow = UI.labelRow(PhysicsKeys.AUTHORITY, this.chainAuthority);
         this.chainBones = new UIChainSection(() -> this.options.resize());
         this.chainSection = new UIModifierSection(PhysicsKeys.CHAIN_MODIFIER_TITLE, "physics.chain", () -> this.toggleChain(false));
@@ -139,16 +139,6 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         /* Wrapped rather than a one-line label: the column is narrow, and the sentence that has to
          * be read here is the one a single line cuts in half. */
         this.unmarked = new UIText(PhysicsKeys.PHYSICS_UNMARKED).color(Colors.LIGHTER_GRAY, true).padding(0, 2);
-    }
-
-    private UITrackpad authority()
-    {
-        UITrackpad trackpad = new UITrackpad((v) -> this.setAuthority(v.floatValue()));
-
-        trackpad.limit(0D, 1D).increment(0.1D);
-        trackpad.tooltip(PhysicsKeys.AUTHORITY_TOOLTIP);
-
-        return trackpad;
     }
 
     /* Editing */

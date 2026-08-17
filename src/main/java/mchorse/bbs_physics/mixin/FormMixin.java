@@ -4,7 +4,6 @@ import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.settings.values.core.ValueData;
 import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 import mchorse.bbs_physics.collision.FormCollisions;
-import mchorse.bbs_physics.collision.IFormCollision;
 import mchorse.bbs_physics.forms.IPhysicsForm;
 import mchorse.bbs_physics.forms.PhysicsAuthorityValue;
 import mchorse.bbs_physics.forms.PhysicsBodyState;
@@ -33,7 +32,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * not a wrapper it has to be put inside.</p>
  */
 @Mixin(Form.class)
-public class FormMixin implements IFormCollision, IPhysicsForm
+public class FormMixin implements IPhysicsForm
 {
     @Unique
     private ValueData bbs_physics$collision;

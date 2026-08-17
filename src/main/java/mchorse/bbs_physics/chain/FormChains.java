@@ -3,6 +3,7 @@ package mchorse.bbs_physics.chain;
 import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.settings.values.core.ValueData;
+import mchorse.bbs_physics.forms.IModelPhysicsForm;
 import mchorse.bbs_physics.ragdoll.RagdollState;
 
 /**
@@ -50,12 +51,12 @@ public final class FormChains
 
     public static RagdollState getState(Form form)
     {
-        return form instanceof IChainForm chain ? chain.bbs_physics$getChainState() : null;
+        return form instanceof IModelPhysicsForm chain ? chain.bbs_physics$getChainState() : null;
     }
 
     public static void setState(Form form, RagdollState state)
     {
-        if (form instanceof IChainForm chain)
+        if (form instanceof IModelPhysicsForm chain)
         {
             chain.bbs_physics$setChainState(state);
         }
@@ -63,6 +64,6 @@ public final class FormChains
 
     private static ValueData value(Form form)
     {
-        return form instanceof IChainForm holder ? holder.bbs_physics$getChain() : null;
+        return form instanceof IModelPhysicsForm holder ? holder.bbs_physics$getChain() : null;
     }
 }

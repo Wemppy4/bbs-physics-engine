@@ -2,7 +2,6 @@ package mchorse.bbs_physics.client.collision;
 
 import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.cubic.ModelInstance;
-import mchorse.bbs_mod.forms.forms.BodyPart;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
@@ -13,6 +12,7 @@ import mchorse.bbs_physics.collision.CollisionMode;
 import mchorse.bbs_physics.collision.CollisionSlot;
 import mchorse.bbs_physics.collision.FormCollision;
 import mchorse.bbs_physics.collision.FormCollisions;
+import mchorse.bbs_physics.forms.FormTreeWalk;
 import mchorse.bbs_physics.forms.PhysicsForms;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -55,11 +55,7 @@ public final class CollisionCollector
      */
     public static List<Piece> collectActor(Form root, MatrixCache matrices)
     {
-        List<Piece> pieces = new ArrayList<>();
-
-        walk(root, "", matrices, pieces, true);
-
-        return pieces;
+        return collect(root, "", matrices, true, false);
     }
 
     /**
@@ -72,12 +68,7 @@ public final class CollisionCollector
      */
     public static List<Piece> collectBody(Form body, String path, MatrixCache matrices)
     {
-        List<Piece> pieces = new ArrayList<>();
-
-        collectForm(body, path, matrices, pieces);
-        walkParts(body, path, matrices, pieces, true);
-
-        return pieces;
+        return collect(body, path, matrices, true, true);
     }
 
     /**
@@ -87,45 +78,36 @@ public final class CollisionCollector
      */
     public static List<Piece> collectAll(Form root, MatrixCache matrices)
     {
+        return collect(root, "", matrices, false, false);
+    }
+
+    /**
+     * The one walk all three collections are: gather each form's markup, and decide at every step
+     * whether a nested physics body is a wall or just another form.
+     *
+     * @param stopAtBodies whether a form carrying the rigid body modifier ends the walk there — it
+     *                     looks after its own shapes, and counting them twice would put two
+     *                     colliders in one place, fighting each other
+     * @param enterRoot    whether the form the walk starts at is exempt from that rule, which is
+     *                     what makes a body able to collect <em>itself</em>
+     */
+    private static List<Piece> collect(Form root, String path, MatrixCache matrices, boolean stopAtBodies, boolean enterRoot)
+    {
         List<Piece> pieces = new ArrayList<>();
 
-        walk(root, "", matrices, pieces, false);
-
-        return pieces;
-    }
-
-    private static void walk(Form form, String path, MatrixCache matrices, List<Piece> pieces, boolean stopAtBodies)
-    {
-        if (form == null)
+        FormTreeWalk.walk(root, path, (form, formPath, anchor) ->
         {
-            return;
-        }
-
-        if (stopAtBodies && PhysicsForms.isBody(form))
-        {
-            return;
-        }
-
-        collectForm(form, path, matrices, pieces);
-        walkParts(form, path, matrices, pieces, stopAtBodies);
-    }
-
-    private static void walkParts(Form form, String path, MatrixCache matrices, List<Piece> pieces, boolean stopAtBodies)
-    {
-        int i = 0;
-
-        for (BodyPart part : form.parts.getAllTyped())
-        {
-            Form child = part.getForm();
-
-            if (child != null)
+            if (stopAtBodies && !(enterRoot && form == root) && PhysicsForms.isBody(form))
             {
-                walk(child, StringUtils.combinePaths(path, String.valueOf(i)), matrices, pieces, stopAtBodies);
+                return false;
             }
 
-            /* Outside the null check, mirroring the matrix walk: a partless slot still takes an index. */
-            i += 1;
-        }
+            collectForm(form, formPath, matrices, pieces);
+
+            return true;
+        });
+
+        return pieces;
     }
 
     /** The markup of one form: its own shape, plus its bones when it is a model. */

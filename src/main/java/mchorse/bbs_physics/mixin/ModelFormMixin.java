@@ -4,9 +4,8 @@ import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.settings.values.core.ValueData;
 import mchorse.bbs_physics.chain.FormChains;
-import mchorse.bbs_physics.chain.IChainForm;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
-import mchorse.bbs_physics.ragdoll.IRagdollForm;
+import mchorse.bbs_physics.forms.IModelPhysicsForm;
 import mchorse.bbs_physics.ragdoll.RagdollState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -25,7 +24,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * thing by it and an author should only have to learn it once.</p>
  */
 @Mixin(ModelForm.class)
-public class ModelFormMixin implements IRagdollForm, IChainForm
+public class ModelFormMixin implements IModelPhysicsForm
 {
     @Unique
     private ValueData bbs_physics$ragdoll;

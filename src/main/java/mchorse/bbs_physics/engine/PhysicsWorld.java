@@ -7,7 +7,6 @@ import com.github.stephengold.joltjni.JobSystemSingleThreaded;
 import com.github.stephengold.joltjni.ObjectLayerPairFilterTable;
 import com.github.stephengold.joltjni.ObjectVsBroadPhaseLayerFilterTable;
 import com.github.stephengold.joltjni.PhysicsSystem;
-import com.github.stephengold.joltjni.StateRecorderImpl;
 import com.github.stephengold.joltjni.TempAllocator;
 import com.github.stephengold.joltjni.TempAllocatorImpl;
 
@@ -97,11 +96,6 @@ public class PhysicsWorld implements AutoCloseable
         return this.system.getNumBodies();
     }
 
-    public void setGravity(float x, float y, float z)
-    {
-        this.system.setGravity(x, y, z);
-    }
-
     /** Downwards, which is the only direction an author has ever asked for. */
     public void setGravity(float strength)
     {
@@ -129,36 +123,6 @@ public class PhysicsWorld implements AutoCloseable
         this.system.update(TICK, this.collisionSteps, this.temp, this.jobs);
     }
 
-    /**
-     * The whole world's state as bytes: positions, velocities, sleeping flags, contacts, the lot.
-     * Proven to round-trip exactly through a byte array, which is what lets a checkpoint be kept
-     * for later instead of being restored immediately.
-     */
-    public byte[] saveState()
-    {
-        StateRecorderImpl recorder = new StateRecorderImpl();
-
-        this.system.saveState(recorder);
-
-        return recorder.getData();
-    }
-
-    /**
-     * Puts the world back exactly as {@link #saveState()} found it. The same array can be restored
-     * from more than once — a scrubbed timeline restores the same checkpoint over and over.
-     *
-     * @return whether Jolt accepted the state; false means the world no longer matches the
-     *         snapshot's shape (bodies added or removed since) and the caller has to rebuild
-     */
-    public boolean restoreState(byte[] state)
-    {
-        StateRecorderImpl recorder = new StateRecorderImpl();
-
-        recorder.writeBytes(state);
-
-        return this.system.restoreState(recorder);
-    }
-
     @Override
     public void close()
     {
@@ -176,10 +140,5 @@ public class PhysicsWorld implements AutoCloseable
         this.broadPhaseFilter.close();
         this.broadPhaseLayers.close();
         this.pairFilter.close();
-    }
-
-    public boolean isClosed()
-    {
-        return this.closed;
     }
 }

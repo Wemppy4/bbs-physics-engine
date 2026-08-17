@@ -13,7 +13,6 @@ import mchorse.bbs_mod.data.types.MapType;
  */
 public final class BodyIO
 {
-    private static final String KEY_ENABLED = "enabled";
     private static final String KEY_PASSIVE = "passive";
     private static final String KEY_MASS = "mass";
     private static final String KEY_FRICTION = "friction";
@@ -30,7 +29,7 @@ public final class BodyIO
         }
 
         return new FormBody(
-            map.getBool(KEY_ENABLED),
+            ModifierIO.isEnabled(map),
             map.getBool(KEY_PASSIVE),
             map.getFloat(KEY_MASS, FormBody.DEFAULT_MASS),
             map.getFloat(KEY_FRICTION, FormBody.DEFAULT_FRICTION),
@@ -46,30 +45,11 @@ public final class BodyIO
             return map;
         }
 
-        if (body.enabled())
-        {
-            map.putBool(KEY_ENABLED, true);
-        }
-
-        if (body.passive())
-        {
-            map.putBool(KEY_PASSIVE, true);
-        }
-
-        if (body.mass() != FormBody.DEFAULT_MASS)
-        {
-            map.putFloat(KEY_MASS, body.mass());
-        }
-
-        if (body.friction() != FormBody.DEFAULT_FRICTION)
-        {
-            map.putFloat(KEY_FRICTION, body.friction());
-        }
-
-        if (body.restitution() != FormBody.DEFAULT_RESTITUTION)
-        {
-            map.putFloat(KEY_RESTITUTION, body.restitution());
-        }
+        ModifierIO.putEnabled(map, body.enabled());
+        ModifierIO.putFlag(map, KEY_PASSIVE, body.passive());
+        ModifierIO.putFloat(map, KEY_MASS, body.mass(), FormBody.DEFAULT_MASS);
+        ModifierIO.putFloat(map, KEY_FRICTION, body.friction(), FormBody.DEFAULT_FRICTION);
+        ModifierIO.putFloat(map, KEY_RESTITUTION, body.restitution(), FormBody.DEFAULT_RESTITUTION);
 
         return map;
     }
@@ -77,6 +57,17 @@ public final class BodyIO
     /** Whether stored data says the body is on, without parsing the rest — the per-frame check. */
     public static boolean isEnabled(BaseType data)
     {
-        return data instanceof MapType map && map.getBool(KEY_ENABLED);
+        return ModifierIO.isEnabled(data);
+    }
+
+    /**
+     * Whether stored data says the body is passive, without parsing the rest. Its own reader for the
+     * same reason {@link #isEnabled} has one: the authority handle asks this of every simulated form
+     * on every tick and every drawn frame, and building a record to read one boolean is work done
+     * tens of thousands of times a second for nothing.
+     */
+    public static boolean isPassive(BaseType data)
+    {
+        return data instanceof MapType map && map.getBool(KEY_PASSIVE);
     }
 }

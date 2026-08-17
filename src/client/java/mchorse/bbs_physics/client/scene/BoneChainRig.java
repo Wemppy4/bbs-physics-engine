@@ -4,7 +4,6 @@ import com.github.stephengold.joltjni.Body;
 import com.github.stephengold.joltjni.BodyCreationSettings;
 import com.github.stephengold.joltjni.BodyInterface;
 import com.github.stephengold.joltjni.MassProperties;
-import com.github.stephengold.joltjni.MotorSettings;
 import com.github.stephengold.joltjni.Quat;
 import com.github.stephengold.joltjni.RVec3;
 import com.github.stephengold.joltjni.SphereShape;
@@ -14,7 +13,6 @@ import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EMotionQuality;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
-import com.github.stephengold.joltjni.enumerate.EMotorState;
 import com.github.stephengold.joltjni.enumerate.EOverrideMassProperties;
 import com.github.stephengold.joltjni.readonly.ConstShape;
 import mchorse.bbs_mod.cubic.ModelInstance;
@@ -33,8 +31,11 @@ import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
 import mchorse.bbs_physics.collision.CollisionKind;
+import mchorse.bbs_physics.engine.BodyDrive;
 import mchorse.bbs_physics.engine.PhysicsCache;
+import mchorse.bbs_physics.engine.PhysicsJoints;
 import mchorse.bbs_physics.engine.PhysicsLayers;
+import mchorse.bbs_physics.engine.PhysicsMath;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import mchorse.bbs_physics.forms.PhysicsForms;
 import mchorse.bbs_physics.ragdoll.RagdollState;
@@ -72,7 +73,7 @@ import java.util.Map;
  * segment against the bone it hangs from: those shapes overlap by construction at the anchor, and
  * a kinematic bone cannot give way, so the depenetration would fire the hair off the head.</p>
  */
-public class ActorChain
+public class BoneChainRig implements SceneRig
 {
     /** Shared, never written to — the velocity a placed body is stopped with. */
     private static final Vec3 ZERO = new Vec3(0F, 0F, 0F);
@@ -84,12 +85,6 @@ public class ActorChain
     /** Spin bleeds off faster than travel, the same tuning every rigid body here carries. */
     private static final float ANGULAR_DAMPING = 0.4F;
 
-    /**
-     * How the stiffness knob maps to the joint spring, in Hz. No joint friction anywhere, for the
-     * reason the ChainSmoke stand established: friction stalls a weak spring short of its target,
-     * and a strand of eight joints ends up permanently bent by the sum of those little errors.
-     */
-    private static final float SPRING_TOP_HZ = 12F;
 
     /** The shortest a bone may be measured as, so a leaf with no child still gets a body. */
     private static final float MIN_LENGTH = 0.05F;
@@ -125,10 +120,10 @@ public class ActorChain
     private final Quat scratchRotation = new Quat();
     private final RVec3 currentPosition = new RVec3();
     private final Quat currentRotation = new Quat();
-    private final Quaternionf target = new Quaternionf();
-    private final Quaternionf delta = new Quaternionf();
     private final Vec3 linear = new Vec3();
-    private final Vec3 angular = new Vec3();
+
+    /** The velocity blend that pulls a segment towards its pose — held, because it carries scratch. */
+    private final BodyDrive drive = new BodyDrive();
 
     private boolean kinematic;
     private boolean recorded;
@@ -139,7 +134,7 @@ public class ActorChain
     private float lastDamping = Float.NaN;
     private float lastGravity = Float.NaN;
 
-    private ActorChain(ModelForm form, String formPath)
+    private BoneChainRig(ModelForm form, String formPath)
     {
         this.form = form;
         this.formPath = formPath;
@@ -152,7 +147,7 @@ public class ActorChain
      * @param rig   the actor's kinematic bones, for hanging a strand off a marked-up bone; may be null
      * @param group the actor's collision group, shared with its bones and ragdolls
      */
-    public static ActorChain build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> claimed, ActorRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
+    public static BoneChainRig build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> claimed, BoneRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
     {
         FormChain config = FormChains.get(form);
 
@@ -193,7 +188,7 @@ public class ActorChain
             groups.put(modelGroup.id, modelGroup);
         }
 
-        ActorChain chain = new ActorChain(form, formPath);
+        BoneChainRig chain = new BoneChainRig(form, formPath);
         BodyInterface bodies = physics.getBodies();
         Map<String, Segment> byBone = new HashMap<>();
 
@@ -401,7 +396,7 @@ public class ActorChain
      * thing anyone marks up, so without it the common case — tick the hair, nothing else — would
      * leave every strand hanging from nothing.</p>
      */
-    private Anchor anchorFor(PhysicsWorld physics, ModelGroup parentGroup, String formPath, ActorRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
+    private Anchor anchorFor(PhysicsWorld physics, ModelGroup parentGroup, String formPath, BoneRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
     {
         if (parentGroup == null)
         {
@@ -418,7 +413,7 @@ public class ActorChain
 
         if (rig != null)
         {
-            ActorRig.Part part = rig.find(path);
+            BoneRig.Part part = rig.find(path);
 
             if (part != null)
             {
@@ -480,7 +475,7 @@ public class ActorChain
         /* The cone leans around the strand's own direction at rest — the bone's local down carried
          * into the world, so a strand keeps whatever way the author combed it. */
         Vector3f axis = this.orientation.transform(new Vector3f(0F, -1F, 0F)).normalize();
-        Vector3f plane = perpendicular(axis);
+        Vector3f plane = PhysicsMath.perpendicular(axis);
 
         SwingTwistConstraintSettings settings = new SwingTwistConstraintSettings();
 
@@ -499,34 +494,9 @@ public class ActorChain
 
         physics.getSystem().addConstraint(constraint);
 
-        tune(constraint, config.stiffness(), config.damping());
+        PhysicsJoints.tune(constraint, config.stiffness(), config.damping());
 
         return constraint;
-    }
-
-    /**
-     * Sets one joint's motors to the stiffness and damping knobs. Position mode with a spring is
-     * "return to the shape you were built in" — the hairstyle — and Off is a strand that hangs
-     * wherever physics takes it.
-     */
-    private static void tune(SwingTwistConstraint constraint, float stiffness, float damping)
-    {
-        EMotorState state = stiffness > 0F ? EMotorState.Position : EMotorState.Off;
-
-        constraint.setSwingMotorState(state);
-        constraint.setTwistMotorState(state);
-
-        if (stiffness > 0F)
-        {
-            float frequency = 0.5F + stiffness * (SPRING_TOP_HZ - 0.5F);
-            float ratio = 0.1F + damping * 0.9F;
-
-            for (MotorSettings motor : new MotorSettings[] {constraint.getSwingMotorSettings(), constraint.getTwistMotorSettings()})
-            {
-                motor.getSpringSettings().setFrequency(frequency);
-                motor.getSpringSettings().setDamping(ratio);
-            }
-        }
     }
 
     /**
@@ -534,8 +504,15 @@ public class ActorChain
      * type in step with the handle, and drives them — kinematically at 1, by the velocity blend
      * below it.
      */
-    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset)
+    @Override
+    public void update(RigUpdate update)
     {
+        PhysicsWorld physics = update.physics;
+        FilmScene scene = update.scene;
+        MatrixCache matrices = update.matrices;
+        Matrix4f actorWorld = update.actorWorld;
+        boolean reset = update.reset;
+
         this.captureBase(matrices, actorWorld);
         this.applySettings(physics);
 
@@ -631,6 +608,7 @@ public class ActorChain
      * An impulse clip's push (Э5). A strand the animation owns outright takes nothing, the same
      * rule every other simulated thing follows.
      */
+    @Override
     public void impulse(PhysicsWorld physics, SceneImpulse push)
     {
         if (PhysicsForms.getAuthority(this.form) >= 1F)
@@ -656,7 +634,7 @@ public class ActorChain
                 velocity.getY() + this.translation.y,
                 velocity.getZ() + this.translation.z);
 
-            if (finite(this.linear))
+            if (PhysicsMath.finite(this.linear))
             {
                 bodies.setLinearVelocity(segment.id, this.linear);
                 bodies.activateBody(segment.id);
@@ -688,7 +666,7 @@ public class ActorChain
         {
             for (SwingTwistConstraint joint : this.joints)
             {
-                tune(joint, stiffness, damping);
+                PhysicsJoints.tune(joint, stiffness, damping);
             }
 
             this.lastStiffness = stiffness;
@@ -696,70 +674,22 @@ public class ActorChain
         }
     }
 
-    /**
-     * The velocity blend, with the safe axis-angle maths from the NaN hunt (`9e8337a`): the delta of
-     * two nearly identical rotations can round its w a hair above 1, and JOML's conversion walks a
-     * NaN straight into the solver.
-     */
+    /** The velocity blend every driven body here uses — the reasoning lives in {@link BodyDrive}. */
     private void drive(BodyInterface bodies, Segment segment, float authority)
     {
-        bodies.getPositionAndRotation(segment.id, this.currentPosition, this.currentRotation);
-
-        Vec3 velocity = bodies.getLinearVelocity(segment.id);
-        Vec3 spin = bodies.getAngularVelocity(segment.id);
-
-        this.linear.set(
-            mix(velocity.getX(), (float) (this.scratchPosition.xx() - this.currentPosition.xx()) / PhysicsWorld.TICK, authority),
-            mix(velocity.getY(), (float) (this.scratchPosition.yy() - this.currentPosition.yy()) / PhysicsWorld.TICK, authority),
-            mix(velocity.getZ(), (float) (this.scratchPosition.zz() - this.currentPosition.zz()) / PhysicsWorld.TICK, authority));
-
-        this.target.set(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW()).normalize();
-        this.delta.set(this.currentRotation.getX(), this.currentRotation.getY(), this.currentRotation.getZ(), this.currentRotation.getW()).conjugate();
-        this.target.mul(this.delta, this.delta);
-
-        if (this.delta.w < 0F)
+        if (this.drive.apply(bodies, segment.id, this.scratchPosition, this.scratchRotation, authority))
         {
-            this.delta.set(-this.delta.x, -this.delta.y, -this.delta.z, -this.delta.w);
-        }
-
-        float w = Math.min(this.delta.w, 1F);
-        float sinHalfSquared = 1F - w * w;
-        float speed = 0F;
-        float axisX = 0F;
-        float axisY = 0F;
-        float axisZ = 0F;
-
-        if (sinHalfSquared > 1e-12F)
-        {
-            float invSinHalf = (float) (1D / Math.sqrt(sinHalfSquared));
-
-            speed = 2F * (float) Math.acos(w) / PhysicsWorld.TICK;
-            axisX = this.delta.x * invSinHalf;
-            axisY = this.delta.y * invSinHalf;
-            axisZ = this.delta.z * invSinHalf;
-        }
-
-        this.angular.set(
-            mix(spin.getX(), axisX * speed, authority),
-            mix(spin.getY(), axisY * speed, authority),
-            mix(spin.getZ(), axisZ * speed, authority));
-
-        if (!finite(this.linear) || !finite(this.angular))
-        {
-            if (!this.misfed)
-            {
-                this.misfed = true;
-
-                BBSPhysics.LOGGER.warn(
-                    "The drive for the chain bone '{}' of '{}' came out unusable, so the strand is left to itself. The pose it is pulled towards is broken.",
-                    segment.bone, this.form.getDisplayName());
-            }
-
             return;
         }
 
-        bodies.setLinearAndAngularVelocity(segment.id, this.linear, this.angular);
-        bodies.activateBody(segment.id);
+        if (!this.misfed)
+        {
+            this.misfed = true;
+
+            BBSPhysics.LOGGER.warn(
+                "The drive for the chain bone '{}' of '{}' came out unusable — {} — so the strand is left to itself. The pose it is pulled towards is broken.",
+                segment.bone, this.form.getDisplayName(), this.drive.describe());
+        }
     }
 
     /**
@@ -767,6 +697,7 @@ public class ActorChain
      * group space and writes it into the recording — the ragdoll's conversion, step for step (§10.1),
      * because the renderer substitutes both through the same applier.
      */
+    @Override
     public void record(PhysicsWorld physics, FilmScene scene, PhysicsCache cache, int tick)
     {
         float authority = PhysicsForms.getAuthority(this.form);
@@ -790,9 +721,9 @@ public class ActorChain
         {
             bodies.getPositionAndRotation(segment.id, this.scratchPosition, this.scratchRotation);
 
-            if (!finite(this.scratchPosition.xx()) || !finite(this.scratchPosition.yy()) || !finite(this.scratchPosition.zz())
-                || !finite(this.scratchRotation.getX()) || !finite(this.scratchRotation.getY())
-                || !finite(this.scratchRotation.getZ()) || !finite(this.scratchRotation.getW()))
+            if (!PhysicsMath.finite(this.scratchPosition.xx()) || !PhysicsMath.finite(this.scratchPosition.yy()) || !PhysicsMath.finite(this.scratchPosition.zz())
+                || !PhysicsMath.finite(this.scratchRotation.getX()) || !PhysicsMath.finite(this.scratchRotation.getY())
+                || !PhysicsMath.finite(this.scratchRotation.getZ()) || !PhysicsMath.finite(this.scratchRotation.getW()))
             {
                 if (!this.lost)
                 {
@@ -829,6 +760,7 @@ public class ActorChain
     }
 
     /** Hands the renderer the recorded strands for the frame being drawn. */
+    @Override
     public void readCache(PhysicsCache cache, int tick, boolean teleport)
     {
         boolean jumped = teleport || !this.recorded;
@@ -855,6 +787,7 @@ public class ActorChain
     }
 
     /** Whether the simulation lost a strand bone on the tick it last recorded. */
+    @Override
     public boolean isLost()
     {
         return this.lost;
@@ -878,6 +811,7 @@ public class ActorChain
     }
 
     /** Lets go of the form: the strands go back to being drawn from their keyframes. */
+    @Override
     public void release()
     {
         FormChains.setState(this.form, null);
@@ -896,29 +830,6 @@ public class ActorChain
         }
 
         return kinematic ? PhysicsLayers.BONE : PhysicsLayers.MOVING;
-    }
-
-    /** Any unit vector perpendicular to {@code axis} — the joint's plane axis. */
-    private static Vector3f perpendicular(Vector3f axis)
-    {
-        Vector3f helper = Math.abs(axis.y) < 0.9F ? new Vector3f(0F, 1F, 0F) : new Vector3f(1F, 0F, 0F);
-
-        return helper.cross(axis, new Vector3f()).normalize();
-    }
-
-    private static boolean finite(Vec3 velocity)
-    {
-        return Float.isFinite(velocity.getX()) && Float.isFinite(velocity.getY()) && Float.isFinite(velocity.getZ());
-    }
-
-    private static boolean finite(double value)
-    {
-        return !Double.isNaN(value) && !Double.isInfinite(value);
-    }
-
-    private static float mix(float physics, float animated, float authority)
-    {
-        return physics + (animated - physics) * authority;
     }
 
     /**

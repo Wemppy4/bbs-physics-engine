@@ -39,11 +39,6 @@ public final class EditorPreview
     private EditorPreview()
     {}
 
-    public static void render(Form form, IEntity entity, Area area, UIContext context)
-    {
-        render(form, entity, area, context, null);
-    }
-
     /**
      * @param editor the form editor this viewport belongs to, or null when there is none (the model
      *               editor and the texture preview draw through here too). It decides <em>whose</em>

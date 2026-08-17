@@ -28,6 +28,6 @@ public class UIFormRendererMixin
     {
         UIFormRenderer renderer = (UIFormRenderer) (Object) this;
 
-        EditorPreview.render(renderer.form, renderer.getEntity(), renderer.area, context);
+        EditorPreview.render(renderer.form, renderer.getEntity(), renderer.area, context, null);
     }
 }

@@ -3,11 +3,8 @@ package mchorse.bbs_physics.client.scene;
 import com.github.stephengold.joltjni.Body;
 import com.github.stephengold.joltjni.BodyCreationSettings;
 import com.github.stephengold.joltjni.BodyInterface;
-import com.github.stephengold.joltjni.FixedConstraintSettings;
-import com.github.stephengold.joltjni.HingeConstraintSettings;
 import com.github.stephengold.joltjni.Quat;
 import com.github.stephengold.joltjni.RVec3;
-import com.github.stephengold.joltjni.SwingTwistConstraintSettings;
 import com.github.stephengold.joltjni.TwoBodyConstraint;
 import com.github.stephengold.joltjni.TwoBodyConstraintSettings;
 import com.github.stephengold.joltjni.Vec3;
@@ -23,16 +20,19 @@ import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import mchorse.bbs_mod.utils.MathUtils;
-import mchorse.bbs_mod.utils.StringUtils;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
 import mchorse.bbs_physics.client.ragdoll.RagdollAttachment;
+import mchorse.bbs_physics.client.ragdoll.RagdollJoints;
 import mchorse.bbs_physics.client.ragdoll.RagdollWelds;
+import mchorse.bbs_physics.engine.BodyDrive;
 import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
+import mchorse.bbs_physics.engine.PhysicsMath;
 import mchorse.bbs_physics.engine.PhysicsWorld;
+import mchorse.bbs_physics.forms.PhysicsForms;
 import mchorse.bbs_physics.ragdoll.FormRagdoll;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 import mchorse.bbs_physics.ragdoll.RagdollJoint;
@@ -73,9 +73,9 @@ import java.util.Set;
  * collides normally, which is what keeps an arm from folding through the chest.</p>
  *
  * <p><b>The handle drives exactly like a physics body's.</b> At 1 the parts are kinematic bones —
- * the same thing {@link ActorRig} builds, shoving props and ignoring gravity. Below 1 they turn
+ * the same thing {@link BoneRig} builds, shoving props and ignoring gravity. Below 1 they turn
  * dynamic and are pulled towards the animated pose by the same velocity blend
- * {@link PhysicsBodyRig} was proven with: each tick every part is offered the velocity that would
+ * {@link BodyRig} was proven with: each tick every part is offered the velocity that would
  * carry it to its keyframed place, mixed with what it already has in the handle's proportion. The
  * joints stay out of that bargain and only enforce their limits, so at 0.6 the character walks
  * where it is told while sagging and stumbling into what it hits, and at 0 it is entirely the
@@ -94,18 +94,8 @@ import java.util.Set;
  * group frames ({@code orient}/{@code offset}), which BOBJ models do not have — a BOBJ model would
  * fall invisibly, so it does not get a ragdoll at all and its bones stay kinematic.</p>
  */
-public class ActorRagdoll
+public class RagdollRig implements SceneRig
 {
-    /** Shared, never written to — the velocity a placed body is stopped with. */
-    private static final Vec3 ZERO = new Vec3(0F, 0F, 0F);
-
-    /**
-     * A light resistance in every joint, in newton-metres. Without any, a free ragdoll's limbs
-     * swing like pendulums in a vacuum and the whole body jitters against its limits; this is the
-     * difference between a body and a wind chime. Not exposed as a setting until someone needs it.
-     */
-    private static final float JOINT_FRICTION = 3F;
-
     /** Spin bleeds off faster than travel — the standard ragdoll tuning against limbs that windmill. */
     private static final float ANGULAR_DAMPING = 0.3F;
 
@@ -180,10 +170,10 @@ public class ActorRagdoll
     private final Quat scratchRotation = new Quat();
     private final RVec3 currentPosition = new RVec3();
     private final Quat currentRotation = new Quat();
-    private final Quaternionf target = new Quaternionf();
-    private final Quaternionf delta = new Quaternionf();
     private final Vec3 linear = new Vec3();
-    private final Vec3 angular = new Vec3();
+
+    /** The velocity blend that pulls a part towards its pose — held, because it carries scratch. */
+    private final BodyDrive drive = new BodyDrive();
     private final Matrix4f poseFrame = new Matrix4f();
 
     /* The two frames a bone's fall is measured between, and the weighted blend of them. Fields
@@ -195,7 +185,7 @@ public class ActorRagdoll
     private final Quaternionf simulatedRotation = new Quaternionf();
     private final Quaternionf blendedRotation = new Quaternionf();
 
-    private ActorRagdoll(ModelForm form, String formPath)
+    private RagdollRig(ModelForm form, String formPath)
     {
         this.form = form;
         this.formPath = formPath;
@@ -250,7 +240,7 @@ public class ActorRagdoll
      * @param group     the actor's collision group, shared with its kinematic bones and with any
      *                  other ragdoll hanging off the same actor
      */
-    public static ActorRagdoll build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> pieces, Map<String, String> welds, List<CollisionCollector.Piece> kinematic, ActorRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
+    public static RagdollRig build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> pieces, Map<String, String> welds, List<CollisionCollector.Piece> kinematic, BoneRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
     {
         ModelInstance instance = ModelFormRenderer.getModel(form);
         Model model = instance != null && instance.model instanceof Model cubic ? cubic : null;
@@ -269,7 +259,7 @@ public class ActorRagdoll
 
         FormRagdoll config = FormRagdolls.get(form);
         BodyInterface bodies = physics.getBodies();
-        ActorRagdoll ragdoll = new ActorRagdoll(form, formPath);
+        RagdollRig ragdoll = new RagdollRig(form, formPath);
         Map<String, Part> byBone = new HashMap<>();
 
         ragdoll.groups = groups;
@@ -388,7 +378,7 @@ public class ActorRagdoll
             String parentBone = attachment.get(part.bone);
             Part parent = byBone.get(parentBone);
             CollisionCollector.Piece kinematicParent = parent == null ? kinematicByBone.get(parentBone) : null;
-            ActorRig.Part rigParent = kinematicParent == null || rig == null ? null : rig.find(kinematicParent.path());
+            BoneRig.Part rigParent = kinematicParent == null || rig == null ? null : rig.find(kinematicParent.path());
 
             if (parent == null && rigParent == null)
             {
@@ -397,7 +387,8 @@ public class ActorRagdoll
 
             RagdollJoint joint = config.get(part.bone);
             String parentPath = parent != null ? parent.path : kinematicParent.path();
-            TwoBodyConstraintSettings settings = ragdoll.jointSettings(joint, part, parentBone, parentPath, groups, matrices, actorWorld, scene);
+            TwoBodyConstraintSettings settings = RagdollJoints.build(joint, part.bone, part.path, parentBone, parentPath,
+                formPath, groups, matrices, actorWorld, scene);
 
             if (settings == null)
             {
@@ -462,186 +453,6 @@ public class ActorRagdoll
     }
 
     /**
-     * One joint, set up in world space at the build pose — the bodies are already standing on it,
-     * so Jolt converts to each body's local frame correctly on its own.
-     */
-    private TwoBodyConstraintSettings jointSettings(RagdollJoint joint, Part part, String parentBone, String parentPath, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene)
-    {
-        MatrixCacheEntry entry = matrices.get(part.path);
-
-        if (entry == null || entry.matrix() == null)
-        {
-            return null;
-        }
-
-        this.worldMatrix.set(actorWorld).mul(entry.matrix());
-        this.worldMatrix.getTranslation(this.translation);
-
-        /* The joint sits at the child bone's pivot: the elbow is where the forearm turns. In the
-         * scene's own coordinates, because the bodies live there — "world space" to Jolt is the
-         * space the bodies are in, and a point left in raw world coordinates sits hundreds of
-         * blocks from the bodies it is meant to join. The lever arm of that mistake is the whole
-         * distance to the scene's origin, and the parts scatter as if they were never joined. */
-        RVec3 point = new RVec3(
-            this.translation.x - scene.getOriginX(),
-            this.translation.y - scene.getOriginY(),
-            this.translation.z - scene.getOriginZ());
-
-        switch (joint.kind())
-        {
-            case FREE:
-                return null;
-
-            case FIXED:
-            {
-                FixedConstraintSettings fixed = new FixedConstraintSettings();
-
-                fixed.setAutoDetectPoint(true);
-
-                /* Both bones' own axes as they stand, which is what tells Jolt the pose the weld is
-                 * meant to hold. Left at their defaults — the world's own X and Y for both sides —
-                 * the pair says "these two bones face the same way as the world", and that is a
-                 * pose no bone of a character is ever in: a cubic bone's frame is turned half a
-                 * circle to begin with (§10.1), and the two ends of a weld rarely agree even
-                 * before that. A constraint between two kinematic bodies does nothing, so the
-                 * violation is invisible while the animation is in charge and the whole of it comes
-                 * due on the one tick the parts are released — the weld hauling both bones round to
-                 * the world's axes with however much force that takes. */
-                MatrixCacheEntry parentEntry = matrices.get(parentPath);
-
-                if (parentEntry == null || parentEntry.matrix() == null)
-                {
-                    return null;
-                }
-
-                Quaternionf child = new Quaternionf();
-                Quaternionf above = new Quaternionf();
-
-                this.worldMatrix.getUnnormalizedRotation(child);
-                new Matrix4f(actorWorld).mul(parentEntry.matrix()).getUnnormalizedRotation(above);
-
-                /* One is the parent: the joint is created as create(parent.body, part.body). */
-                fixed.setAxisX1(axis(above, 1F, 0F, 0F));
-                fixed.setAxisY1(axis(above, 0F, 1F, 0F));
-                fixed.setAxisX2(axis(child, 1F, 0F, 0F));
-                fixed.setAxisY2(axis(child, 0F, 1F, 0F));
-
-                return fixed;
-            }
-
-            case HINGE:
-            {
-                HingeConstraintSettings hinge = new HingeConstraintSettings();
-
-                /* The hinge axis is one of the bone's own axes, taken from its world frame as it
-                 * stands — the frame of a cubic bone carries the Ry(π) flip (§10.1), consistently
-                 * for every bone, so the author picks the axis that looks right in the preview and
-                 * it stays right. */
-                Vector3f axis = this.boneAxis(joint.hingeAxis());
-
-                hinge.setPoint1(point);
-                hinge.setPoint2(point);
-                hinge.setHingeAxis1(new Vec3(axis.x, axis.y, axis.z));
-                hinge.setHingeAxis2(new Vec3(axis.x, axis.y, axis.z));
-
-                Vector3f normal = perpendicular(axis);
-
-                hinge.setNormalAxis1(new Vec3(normal.x, normal.y, normal.z));
-                hinge.setNormalAxis2(new Vec3(normal.x, normal.y, normal.z));
-                hinge.setLimitsMin((float) Math.toRadians(joint.hingeMin()));
-                hinge.setLimitsMax((float) Math.toRadians(joint.hingeMax()));
-                hinge.setMaxFrictionTorque(JOINT_FRICTION);
-
-                return hinge;
-            }
-
-            case CONE:
-            default:
-            {
-                SwingTwistConstraintSettings cone = new SwingTwistConstraintSettings();
-
-                /* The cone leans around the bone's rest direction: pivot towards the first child's
-                 * pivot, which is the direction the limb visibly runs — positions only, so the
-                 * frame flip cancels out of it. A leaf bone continues its parent's direction. */
-                Vector3f axis = this.boneDirection(part, parentBone, groups, matrices, actorWorld);
-                Vector3f plane = perpendicular(axis);
-
-                cone.setPosition1(point);
-                cone.setPosition2(point);
-                cone.setTwistAxis1(new Vec3(axis.x, axis.y, axis.z));
-                cone.setTwistAxis2(new Vec3(axis.x, axis.y, axis.z));
-                cone.setPlaneAxis1(new Vec3(plane.x, plane.y, plane.z));
-                cone.setPlaneAxis2(new Vec3(plane.x, plane.y, plane.z));
-                cone.setNormalHalfConeAngle((float) Math.toRadians(joint.swing()));
-                cone.setPlaneHalfConeAngle((float) Math.toRadians(joint.swing()));
-
-                /* The twist range the author gives is min..max; Jolt wants it symmetric around the
-                 * rest twist only in sign convention, so it is passed straight through. */
-                cone.setTwistMinAngle((float) Math.toRadians(joint.twistMin()));
-                cone.setTwistMaxAngle((float) Math.toRadians(joint.twistMax()));
-                cone.setMaxFrictionTorque(JOINT_FRICTION);
-
-                return cone;
-            }
-        }
-    }
-
-    /** One of the bone's local axes (0=X, 1=Y, 2=Z), in world space as the bone stands. */
-    private Vector3f boneAxis(int axis)
-    {
-        this.worldMatrix.getUnnormalizedRotation(this.orientation);
-
-        Vector3f result = new Vector3f(axis == 0 ? 1F : 0F, axis == 1 ? 1F : 0F, axis == 2 ? 1F : 0F);
-
-        return this.orientation.transform(result).normalize();
-    }
-
-    /**
-     * The direction the bone runs, in world space: its pivot towards its first child's pivot, or
-     * onward from its parent when it has no children to point at. Degenerate cases — stacked
-     * pivots — fall back to world up, which at least never crashes a build.
-     */
-    private Vector3f boneDirection(Part part, String parentBone, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld)
-    {
-        Vector3f from = new Vector3f(this.translation);
-        ModelGroup group = groups.get(part.bone);
-
-        if (group != null)
-        {
-            for (ModelGroup child : group.children)
-            {
-                Vector3f to = this.pivotOf(child.id, matrices, actorWorld);
-
-                if (to != null && to.distanceSquared(from) > 1.0e-6F)
-                {
-                    return to.sub(from).normalize();
-                }
-            }
-        }
-
-        Vector3f parentPivot = this.pivotOf(parentBone, matrices, actorWorld);
-
-        if (parentPivot != null && parentPivot.distanceSquared(from) > 1.0e-6F)
-        {
-            return from.sub(parentPivot).normalize();
-        }
-
-        return new Vector3f(0F, 1F, 0F);
-    }
-
-    private Vector3f pivotOf(String bone, MatrixCache matrices, Matrix4f actorWorld)
-    {
-        MatrixCacheEntry entry = matrices.get(StringUtils.combinePaths(this.formPath, bone));
-
-        if (entry == null || entry.matrix() == null)
-        {
-            return null;
-        }
-
-        return new Matrix4f(actorWorld).mul(entry.matrix()).getTranslation(new Vector3f());
-    }
-
-    /**
      * Says once, in numbers, when a part is being flung rather than falling.
      *
      * <p>Which of the two speeds is the absurd one is the whole of the diagnosis, and they mean
@@ -685,41 +496,21 @@ public class ActorRagdoll
         return (float) Math.sqrt(x * x + y * y + z * z);
     }
 
-    /** One of a frame's own axes, in world space — what Jolt is handed to read a rest pose from. */
-    private static Vec3 axis(Quaternionf rotation, float x, float y, float z)
-    {
-        Vector3f result = rotation.transform(new Vector3f(x, y, z)).normalize();
-
-        return new Vec3(result.x, result.y, result.z);
-    }
-
-    /** Any unit vector perpendicular to {@code axis} — crossed with whichever world axis it hugs least. */
-    private static Vector3f perpendicular(Vector3f axis)
-    {
-        Vector3f helper = Math.abs(axis.y) < 0.9F ? new Vector3f(0F, 1F, 0F) : new Vector3f(1F, 0F, 0F);
-
-        return helper.cross(axis, new Vector3f()).normalize();
-    }
-
     /**
-     * Runs before the world steps: reads the handle at the tick being simulated, keeps the parts'
-     * motion type in step with it, and drives them — kinematically at 1, by the velocity blend
-     * below it.
-     *
-     * @param reset whether the scene is starting over at this tick, in which case every part is
-     *              stood at its animated pose and stopped, whatever the handle says
+     * Runs before the world steps: drives every part towards its animated pose by the handle, and
+     * publishes how far each bone has actually been carried from it — see {@link #publish}, and
+     * {@link SceneRig#readsBoneDeltas()} for who reads that.
      */
-    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset)
+    @Override
+    public void update(RigUpdate update)
     {
-        this.update(physics, scene, matrices, actorWorld, reset, null);
-    }
+        PhysicsWorld physics = update.physics;
+        FilmScene scene = update.scene;
+        MatrixCache matrices = update.matrices;
+        Matrix4f actorWorld = update.actorWorld;
+        boolean reset = update.reset;
+        Map<String, Matrix4f> deltas = update.pinned ? update.deltas : null;
 
-    /**
-     * @param deltas where to publish how far each bone has fallen from its animated pose — see
-     *               {@link #publish}. Null when nobody is hanging off this ragdoll
-     */
-    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset, Map<String, Matrix4f> deltas)
-    {
         this.captureBase(matrices, actorWorld);
 
         BodyInterface bodies = physics.getBodies();
@@ -731,7 +522,7 @@ public class ActorRagdoll
             this.untear(bodies);
         }
 
-        float authority = FormRagdolls.getAuthority(this.form);
+        float authority = PhysicsForms.getAuthority(this.form);
         boolean wanted = authority >= 1F;
         boolean put = reset;
 
@@ -792,7 +583,7 @@ public class ActorRagdoll
             if (put && !torn)
             {
                 bodies.setPositionAndRotation(part.id, this.scratchPosition, this.scratchRotation, EActivation.Activate);
-                bodies.setLinearAndAngularVelocity(part.id, ZERO, ZERO);
+                bodies.setLinearAndAngularVelocity(part.id, PhysicsMath.ZERO, PhysicsMath.ZERO);
             }
             else if (this.kinematic && !torn)
             {
@@ -982,6 +773,7 @@ public class ActorRagdoll
      * character at a full handle is the animation's, and the clip's radius is how an author aims
      * around one.
      */
+    @Override
     public void impulse(PhysicsWorld physics, SceneImpulse push)
     {
         BodyInterface bodies = physics.getBodies();
@@ -1033,7 +825,7 @@ public class ActorRagdoll
         double y = this.currentPosition.yy() + scene.getOriginY();
         double z = this.currentPosition.zz() + scene.getOriginZ();
 
-        if (!finite(x) || !finite(y) || !finite(z))
+        if (!PhysicsMath.finite(x) || !PhysicsMath.finite(y) || !PhysicsMath.finite(z))
         {
             /* A part the solver has lost says nothing rather than handing everything pinned to it
              * a frame made of infinities. */
@@ -1072,117 +864,37 @@ public class ActorRagdoll
     }
 
     /**
-     * The velocity blend, verbatim from {@link PhysicsBodyRig}: the part is offered the velocity
-     * that would carry it to its keyframed place over one tick, mixed with what it already has in
-     * the handle's proportion. Mixing velocities rather than writing them is what keeps gravity in
-     * the picture — a weakly animated limb sags instead of hovering.
+     * The velocity blend every driven body here uses — the part is offered the velocity that would
+     * carry it to its keyframed place over one tick, mixed with what it already has in the handle's
+     * proportion. The reasoning, and the NaN it is armoured against, live in {@link BodyDrive}.
      */
     private void drive(BodyInterface bodies, Part part, float authority)
     {
-        bodies.getPositionAndRotation(part.id, this.currentPosition, this.currentRotation);
-
-        Vec3 velocity = bodies.getLinearVelocity(part.id);
-        Vec3 spin = bodies.getAngularVelocity(part.id);
-
-        this.linear.set(
-            mix(velocity.getX(), (float) (this.scratchPosition.xx() - this.currentPosition.xx()) / PhysicsWorld.TICK, authority),
-            mix(velocity.getY(), (float) (this.scratchPosition.yy() - this.currentPosition.yy()) / PhysicsWorld.TICK, authority),
-            mix(velocity.getZ(), (float) (this.scratchPosition.zz() - this.currentPosition.zz()) / PhysicsWorld.TICK, authority));
-
-        this.target.set(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW()).normalize();
-        this.delta.set(this.currentRotation.getX(), this.currentRotation.getY(), this.currentRotation.getZ(), this.currentRotation.getW()).conjugate();
-        this.target.mul(this.delta, this.delta);
-
-        if (this.delta.w < 0F)
+        if (this.drive.apply(bodies, part.id, this.scratchPosition, this.scratchRotation, authority))
         {
-            this.delta.set(-this.delta.x, -this.delta.y, -this.delta.z, -this.delta.w);
-        }
-
-        /* The turn's axis and speed, by hand rather than through JOML's axis-angle conversion,
-         * because of one property of the tick a ragdoll is released on: the parts stood glued to
-         * the animation until this very moment, so the delta is the identity give or take float
-         * dust — and rounding can land that dust a hair ABOVE w = 1. JOML's conversion takes a
-         * square root of (1 - w²), negative there, behind a guard that catches infinity but walks
-         * straight past NaN; the axis comes out NaN, NaN times a zero angle is still NaN, and one
-         * poisoned velocity spreads through the joints to every part in a single solver pass. The
-         * whole ragdoll vanishes on the spot, sane one tick and not-a-number the next, with no
-         * runaway for the diagnostics to see. Clamped, the dust reads as what it is: no turn at
-         * all. Whether a given release explodes depends on the last bits of the pose, which is why
-         * it came and went with keyframe shuffling — and why a body released mid-swing survived
-         * where one released standing still did not. */
-        float w = Math.min(this.delta.w, 1F);
-        float sinHalfSquared = 1F - w * w;
-        float speed = 0F;
-        float axisX = 0F;
-        float axisY = 0F;
-        float axisZ = 0F;
-
-        if (sinHalfSquared > 1e-12F)
-        {
-            float invSinHalf = (float) (1D / Math.sqrt(sinHalfSquared));
-
-            speed = 2F * (float) Math.acos(w) / PhysicsWorld.TICK;
-            axisX = this.delta.x * invSinHalf;
-            axisY = this.delta.y * invSinHalf;
-            axisZ = this.delta.z * invSinHalf;
-        }
-
-        this.angular.set(
-            mix(spin.getX(), axisX * speed, authority),
-            mix(spin.getY(), axisY * speed, authority),
-            mix(spin.getZ(), axisZ * speed, authority));
-
-        /* The last line of defence, because this is handed straight to the solver and one
-         * non-finite component in it is the whole jointed ragdoll gone next step. Whatever
-         * slipped through — a bone scaled to nothing turns the target rotation into NaN, a broken
-         * pose does the same to the position — the part is better left falling free for a tick
-         * than fed poison, and the log gets the numbers while they still mean something. */
-        if (!finite(this.linear) || !finite(this.angular))
-        {
-            if (!this.misfed)
-            {
-                this.misfed = true;
-
-                BBSPhysics.LOGGER.warn(
-                    "The drive for bone '{}' of a ragdoll on '{}' came out unusable — linear ({}, {}, {}), angular ({}, {}, {}), handle {} — so the part falls free instead. The pose it is pulled towards is broken.",
-                    part.bone, this.form.getDisplayName(),
-                    this.linear.getX(), this.linear.getY(), this.linear.getZ(),
-                    this.angular.getX(), this.angular.getY(), this.angular.getZ(), authority);
-            }
-
             return;
         }
 
-        bodies.setLinearAndAngularVelocity(part.id, this.linear, this.angular);
+        /* Whatever slipped through — a bone scaled to nothing turns the target rotation into NaN, a
+         * broken pose does the same to the position — the part is better left falling free for a
+         * tick than fed poison, and the log gets the numbers while they still mean something. */
+        if (!this.misfed)
+        {
+            this.misfed = true;
 
-        /* A sleeping body ignores handed velocities, and a pulled limb that rested for a moment
-         * would never pick its animation back up. */
-        bodies.activateBody(part.id);
+            BBSPhysics.LOGGER.warn(
+                "The drive for bone '{}' of a ragdoll on '{}' came out unusable — {}, handle {} — so the part falls free instead. The pose it is pulled towards is broken.",
+                part.bone, this.form.getDisplayName(), this.drive.describe(), authority);
+        }
     }
 
-    /** Whether a velocity may be handed to the solver at all — see the guard in {@link #drive}. */
-    private static boolean finite(Vec3 velocity)
-    {
-        return Float.isFinite(velocity.getX()) && Float.isFinite(velocity.getY()) && Float.isFinite(velocity.getZ());
-    }
-
-    private static float mix(float physics, float animated, float authority)
-    {
-        return physics + (animated - physics) * authority;
-    }
-
-    /** Whether a coordinate is a place at all — not infinite, not the result of dividing by zero. */
-    private static boolean finite(double value)
-    {
-        return !Double.isNaN(value) && !Double.isInfinite(value);
-    }
 
     /**
      * Runs right after the world stepped: reads where the simulation put every part, expresses it
      * in the model's own group space, and writes that into the recording under {@code tick}.
      *
      * <p>The conversion is done here rather than at draw time for the same reason
-     * {@link PhysicsBodyRig#record} does it: the frame it is expressed against is a function of the
+     * {@link BodyRig#record} does it: the frame it is expressed against is a function of the
      * tick, which has just been posed, so a recorded film draws with no pose evaluation at all.</p>
      *
      * <p>Written every tick, the kinematic ones included — the tick the handle drops below 1 needs
@@ -1190,6 +902,7 @@ public class ActorRagdoll
      * recorded alongside, because whether the simulation owns the pose is part of what was true on
      * that tick, not something to be re-read off a form at draw time.</p>
      */
+    @Override
     public void record(PhysicsWorld physics, FilmScene scene, PhysicsCache cache, int tick)
     {
         if (!this.baseValid)
@@ -1209,14 +922,14 @@ public class ActorRagdoll
         }
 
         BodyInterface bodies = physics.getBodies();
-        float authority = FormRagdolls.getAuthority(this.form);
+        float authority = PhysicsForms.getAuthority(this.form);
 
         for (Part part : this.parts)
         {
             bodies.getPositionAndRotation(part.id, this.scratchPosition, this.scratchRotation);
 
-            if (!finite(this.scratchPosition.xx()) || !finite(this.scratchPosition.yy()) || !finite(this.scratchPosition.zz())
-                || !finite(this.scratchRotation.getX()) || !finite(this.scratchRotation.getY()) || !finite(this.scratchRotation.getZ()) || !finite(this.scratchRotation.getW()))
+            if (!PhysicsMath.finite(this.scratchPosition.xx()) || !PhysicsMath.finite(this.scratchPosition.yy()) || !PhysicsMath.finite(this.scratchPosition.zz())
+                || !PhysicsMath.finite(this.scratchRotation.getX()) || !PhysicsMath.finite(this.scratchRotation.getY()) || !PhysicsMath.finite(this.scratchRotation.getZ()) || !PhysicsMath.finite(this.scratchRotation.getW()))
             {
                 /* The simulation lost this part — an impossible impulse or a poisoned velocity is
                  * the way that happens, sometimes over a few ticks of doubling and sometimes in a
@@ -1285,6 +998,7 @@ public class ActorRagdoll
      * the recording has not reached this frame yet, and Р8.1 says the same thing happens: the
      * character stands on its keyframes until the catch-up gets here.</p>
      */
+    @Override
     public void readCache(PhysicsCache cache, int tick, boolean teleport)
     {
         /* Coming back from unrecorded frames counts as a jump: the pose the bones are drawn out of
@@ -1343,6 +1057,7 @@ public class ActorRagdoll
      * Lets go of the form: the model goes back to being drawn from its keyframes alone. Called
      * when the scene closes — the bodies behind this ragdoll are about to stop existing.
      */
+    @Override
     public void release()
     {
         FormRagdolls.setState(this.form, null);

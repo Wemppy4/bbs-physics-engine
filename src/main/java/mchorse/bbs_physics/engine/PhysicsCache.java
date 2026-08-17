@@ -117,11 +117,6 @@ public class PhysicsCache
         this.sealed = true;
     }
 
-    public int getChannels()
-    {
-        return this.channels;
-    }
-
     /** How many ticks are recorded — ticks {@code 0} to {@code getComputed() - 1}. */
     public int getComputed()
     {

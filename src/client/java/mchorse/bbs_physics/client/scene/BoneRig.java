@@ -5,7 +5,6 @@ import com.github.stephengold.joltjni.BodyCreationSettings;
 import com.github.stephengold.joltjni.BodyInterface;
 import com.github.stephengold.joltjni.Quat;
 import com.github.stephengold.joltjni.RVec3;
-import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
 import com.github.stephengold.joltjni.readonly.ConstShape;
@@ -15,6 +14,7 @@ import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.collision.JoltShapes;
 import mchorse.bbs_physics.engine.PhysicsLayers;
+import mchorse.bbs_physics.engine.PhysicsMath;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -50,10 +50,8 @@ import java.util.List;
  * velocity it was given, so a target one tick away, integrated over twenty, throws the body
  * twentyfold across the scene, raking everything on the way. Hence {@code place}.</p>
  */
-public class ActorRig
+public class BoneRig implements SceneRig
 {
-    /** Shared, never written to — the velocity a placed body is stopped with. */
-    private static final Vec3 ZERO = new Vec3(0F, 0F, 0F);
 
     private final List<Part> parts = new ArrayList<>();
 
@@ -63,7 +61,7 @@ public class ActorRig
     private final RVec3 target = new RVec3();
     private final Quat targetRotation = new Quat();
 
-    private ActorRig()
+    private BoneRig()
     {}
 
     /**
@@ -72,7 +70,7 @@ public class ActorRig
      *
      * <p>The pieces arrive collected rather than being collected here because the scene divides
      * one actor's markup between owners: a ragdoll-enabled model's bones go to its
-     * {@link ActorRagdoll}, and only the rest — other forms' slots, the models' own shapes —
+     * {@link RagdollRig}, and only the rest — other forms' slots, the models' own shapes —
      * become plain kinematic bones.</p>
      *
      * @param matrices the actor's pose, already evaluated for the tick the scene is being built at
@@ -81,14 +79,14 @@ public class ActorRig
      *                 sets of shapes were cut from one skeleton and overlap wherever bones join,
      *                 and a kinematic body cannot give way (see {@link ActorCollisionGroup})
      */
-    public static ActorRig build(PhysicsWorld physics, Form root, MatrixCache matrices, FilmScene scene, List<CollisionCollector.Piece> pieces, ActorCollisionGroup group)
+    public static BoneRig build(PhysicsWorld physics, Form root, MatrixCache matrices, FilmScene scene, List<CollisionCollector.Piece> pieces, ActorCollisionGroup group)
     {
         if (root == null)
         {
             return null;
         }
 
-        ActorRig rig = new ActorRig();
+        BoneRig rig = new BoneRig();
         BodyInterface bodies = physics.getBodies();
 
         for (CollisionCollector.Piece piece : pieces)
@@ -135,31 +133,31 @@ public class ActorRig
         return rig.parts.isEmpty() ? null : rig;
     }
 
-    public boolean isEmpty()
-    {
-        return this.parts.isEmpty();
-    }
-
     /**
      * Points every body at where the animation has its slot this tick. The pose arrives as the
      * shared {@code MatrixCache} the scene evaluated once for this actor; its matrices are
      * form-local, so the actor's world placement is applied on top — the same transform BBS's own
      * bone physics resolves gravity against, so both agree on where the character stands.
      *
-     * @param place whether to set the bodies down where they belong and stop them, instead of
-     *              steering them there over the coming tick. True whenever the world is about to
-     *              run more (or fewer) than the one step a steer is aimed at: the rig's first
-     *              placement, and every scrub — see the class note on what steering across a jump
-     *              does
+     * <p>A reset stands the bodies down where they belong and stops them, instead of steering them
+     * there over the coming tick. That is not an optimisation: a kinematic body keeps the velocity
+     * it was given, so a target one tick away, integrated over twenty, throws the body twentyfold
+     * across the scene, raking everything on the way.</p>
      */
-    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean place)
+    @Override
+    public void update(RigUpdate update)
     {
+        MatrixCache matrices = update.matrices;
+
         if (this.parts.isEmpty() || matrices == null)
         {
             return;
         }
 
-        BodyInterface bodies = physics.getBodies();
+        FilmScene scene = update.scene;
+        Matrix4f actorWorld = update.actorWorld;
+        boolean place = update.reset;
+        BodyInterface bodies = update.physics.getBodies();
 
         for (Part part : this.parts)
         {
@@ -192,7 +190,7 @@ public class ActorRig
                  * over from the last steer — or restored along with the rest of the world from a
                  * checkpoint — it would carry the body away from where it was just put, once per
                  * step, for the whole of the re-simulation. */
-                bodies.setLinearAndAngularVelocity(part.id, ZERO, ZERO);
+                bodies.setLinearAndAngularVelocity(part.id, PhysicsMath.ZERO, PhysicsMath.ZERO);
             }
             else
             {

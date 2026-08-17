@@ -3,6 +3,7 @@ package mchorse.bbs_physics.collision;
 import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.settings.values.core.ValueData;
+import mchorse.bbs_physics.forms.IPhysicsForm;
 
 /**
  * Reading and writing a form's collision markup.
@@ -66,6 +67,6 @@ public final class FormCollisions
 
     private static ValueData value(Form form)
     {
-        return form instanceof IFormCollision holder ? holder.bbs_physics$getCollision() : null;
+        return form instanceof IPhysicsForm holder ? holder.bbs_physics$getCollision() : null;
     }
 }

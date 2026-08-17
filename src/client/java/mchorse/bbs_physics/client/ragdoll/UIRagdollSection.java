@@ -1,36 +1,27 @@
 package mchorse.bbs_physics.client.ragdoll;
 
-import mchorse.bbs_mod.cubic.ModelInstance;
 import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
-import mchorse.bbs_mod.forms.forms.ModelForm;
-import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.l10n.keys.IKey;
-import mchorse.bbs_mod.ui.UIKeys;
-import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.framework.elements.UIElement;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UICirculate;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
-import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
 import mchorse.bbs_mod.ui.framework.elements.utils.UILabel;
-import mchorse.bbs_mod.ui.utils.PickedBone;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
-import mchorse.bbs_mod.ui.utils.bones.UIBoneTreeList;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_mod.ui.utils.presets.UIDataContextMenu;
 import mchorse.bbs_mod.utils.colors.Colors;
+import mchorse.bbs_physics.client.collision.PhysicsPresets;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
-import mchorse.bbs_physics.collision.CollisionMode;
-import mchorse.bbs_physics.collision.FormCollisions;
+import mchorse.bbs_physics.client.forms.UIBoneSection;
 import mchorse.bbs_physics.ragdoll.FormRagdoll;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 import mchorse.bbs_physics.ragdoll.RagdollIO;
 import mchorse.bbs_physics.ragdoll.RagdollJoint;
 import mchorse.bbs_physics.ragdoll.RagdollJointKind;
 
-import java.util.List;
 import java.util.function.UnaryOperator;
 
 /**
@@ -50,15 +41,8 @@ import java.util.function.UnaryOperator;
  * hinge has an axis and two limits; a weld has neither. Showing all of them and greying out two
  * thirds was most of what made this panel unreadable.</p>
  */
-public class UIRagdollSection extends UIElement
+public class UIRagdollSection extends UIBoneSection
 {
-    /** How far from the list's right edge the tick sits — clear of the scrollbar. */
-    private static final int TICK_RIGHT = 20;
-    private static final int TICK_SIZE = 7;
-
-    public UIBoneTreeList bones;
-    public UISearchList<String> bonesSearch;
-
     public UILabel boneTitle;
 
     public UICirculate kind;
@@ -80,67 +64,14 @@ public class UIRagdollSection extends UIElement
     private final UIElement attachRow;
     public UIButton resetBone;
 
-    /**
-     * Told when the rows change, so the column outside can lay itself out again. This block grows
-     * and shrinks with the selected joint — a cone and a hinge do not have the same rows — and the
-     * scroll view above it has no way of noticing on its own.
-     */
-    private final Runnable relayout;
-
-    private Form form;
     private FormRagdoll ragdoll = FormRagdoll.EMPTY;
-    private String bone = "";
-    private ModelInstance model;
     private String presetGroup = "";
-    private boolean syncing;
 
     public UIRagdollSection(Runnable relayout)
     {
-        this.relayout = relayout;
+        super(relayout);
 
-        this.column(UIConstants.MARGIN).vertical().stretch();
-
-        this.bones = new UIBoneTreeList((l) ->
-        {
-            if (this.model != null && !l.isEmpty())
-            {
-                this.bone = l.get(0);
-
-                PickedBone.set(this.bone);
-            }
-
-            this.updateLabels();
-        })
-        {
-            @Override
-            public void renderListElement(UIContext context, String element, int i, int x, int y, boolean hover, boolean selected)
-            {
-                super.renderListElement(context, element, i, x, y, hover, selected);
-
-                UIRagdollSection.this.renderTick(context, element, y);
-            }
-
-            @Override
-            public boolean subMouseClicked(UIContext context)
-            {
-                if (context.mouseButton == 0 && this.area.isInside(context) && context.mouseX >= this.area.ex() - TICK_RIGHT - TICK_SIZE && context.mouseX <= this.area.ex() - TICK_RIGHT + TICK_SIZE)
-                {
-                    int index = this.getIndexAtCursor(context);
-
-                    if (index >= 0 && index < this.getList().size() && UIRagdollSection.this.toggleBone(this.getList().get(index)))
-                    {
-                        return true;
-                    }
-                }
-
-                return super.subMouseClicked(context);
-            }
-        };
-        this.bones.background();
-        this.bonesSearch = new UISearchList<>(this.bones);
-        this.bonesSearch.label(UIKeys.GENERAL_SEARCH);
-        this.bonesSearch.h(20 + UIConstants.LIST_ITEM_HEIGHT * 8);
-        this.bones.context(() -> new UIDataContextMenu(RagdollPresetManager.INSTANCE, this.presetGroup, this::toPresetData, this::applyPresetData).tooltips("_CopyRagdoll",
+        this.bones.context(() -> new UIDataContextMenu(PhysicsPresets.RAGDOLL, this.presetGroup, this::toPresetData, this::applyPresetData).tooltips("_CopyRagdoll",
             PhysicsKeys.RAGDOLL_CONTEXT_COPY,
             PhysicsKeys.RAGDOLL_CONTEXT_PASTE,
             PhysicsKeys.RAGDOLL_CONTEXT_RESET,
@@ -204,6 +135,11 @@ public class UIRagdollSection extends UIElement
         });
     }
 
+    /**
+     * A joint limit in degrees. Its own factory rather than the shared knob, because these are
+     * angles: they step in fives and read as whole degrees, where the shared one steps in
+     * hundredths for the 0..1 knobs everything else is made of.
+     */
     private UITrackpad degrees(double min, double max, JointEdit edit)
     {
         UITrackpad pad = new UITrackpad((v) ->
@@ -238,12 +174,11 @@ public class UIRagdollSection extends UIElement
 
     /**
      * Takes a bone into the ragdoll or leaves it out. Only a marked-up bone can be claimed — an
-     * unmarked one has no shape, so there is no body either way, and a tick on it would be a
-     * promise the markup cannot keep.
-     *
-     * @return whether the click was on a bone that has a tick to give
+     * unmarked one has no shape, so there is no body either way, and a tick on it would be a promise
+     * the markup cannot keep.
      */
-    private boolean toggleBone(String bone)
+    @Override
+    protected boolean toggleBone(String bone)
     {
         if (this.form == null || this.model == null || !this.isMarked(bone))
         {
@@ -256,9 +191,16 @@ public class UIRagdollSection extends UIElement
         return true;
     }
 
-    private boolean isMarked(String bone)
+    @Override
+    protected boolean isTicked(String bone)
     {
-        return this.form != null && FormCollisions.get(this.form).get(bone).mode() != CollisionMode.NONE;
+        return this.ragdoll.isPart(bone);
+    }
+
+    @Override
+    protected boolean showsMarkup()
+    {
+        return true;
     }
 
     private void setRagdoll(FormRagdoll ragdoll)
@@ -272,9 +214,9 @@ public class UIRagdollSection extends UIElement
     }
 
     /**
-     * The attachment picker: automatic, or any bone that is itself a ragdoll part. A joint to a
-     * body that does not exist is not a thing that can be wanted, so bones without markup — and
-     * bones the author left out of the ragdoll — are not offered.
+     * The attachment picker: automatic, or any bone that is itself a ragdoll part. A joint to a body
+     * that does not exist is not a thing that can be wanted, so bones without markup — and bones the
+     * author left out of the ragdoll — are not offered.
      */
     private void openAttachMenu()
     {
@@ -326,47 +268,23 @@ public class UIRagdollSection extends UIElement
 
     public void setForm(Form form)
     {
-        this.form = form;
         this.ragdoll = FormRagdolls.get(form);
-        this.model = form instanceof ModelForm modelForm ? ModelFormRenderer.getModel(modelForm) : null;
+        this.presetGroup = "";
 
-        if (this.model != null && this.model.model != null)
+        super.setForm(form, true);
+
+        if (this.model != null)
         {
             this.presetGroup = this.model.getPoseGroup();
-
-            this.bones.fillBones(this.model.model, this.model.getDisabledBones());
-            this.bones.filter(this.bonesSearch.search.getText());
-
-            if (!this.pickBoneInList(PickedBone.get()) && !this.bones.getList().isEmpty())
-            {
-                this.bone = this.bones.getList().get(0);
-                this.bones.setCurrentScroll(this.bone);
-            }
-        }
-        else
-        {
-            this.model = null;
-            this.presetGroup = "";
-            this.bone = "";
         }
 
         this.updateLabels();
     }
 
-    public boolean pickBoneInList(String bone)
+    @Override
+    protected void onBonePicked()
     {
-        if (this.model == null || bone == null || bone.isEmpty() || !this.bones.getList().contains(bone))
-        {
-            return false;
-        }
-
-        this.bone = bone;
-
-        PickedBone.set(bone);
-        this.bones.setCurrentScroll(bone);
         this.updateLabels();
-
-        return true;
     }
 
     private void updateLabels()
@@ -411,7 +329,7 @@ public class UIRagdollSection extends UIElement
 
         if (!editable)
         {
-            this.relayout.run();
+            this.relayout();
 
             return;
         }
@@ -433,52 +351,7 @@ public class UIRagdollSection extends UIElement
         }
 
         this.add(this.resetBone);
-        this.relayout.run();
-    }
-
-    /**
-     * The tick, and the dot that says whether there is anything to tick.
-     *
-     * <p>Cyan for a bone measured from its own cubes, orange for one the author shaped by hand —
-     * the same colours the collision tab draws, because it is the same fact. An unmarked bone gets
-     * neither, which is what makes "this bone cannot fall, it has no shape" visible at a glance
-     * across the whole rig.</p>
-     */
-    private void renderTick(UIContext context, String element, int y)
-    {
-        if (this.model == null || this.form == null)
-        {
-            return;
-        }
-
-        CollisionMode mode = FormCollisions.get(this.form).get(element).mode();
-
-        if (mode == CollisionMode.NONE)
-        {
-            return;
-        }
-
-        int mid = y + UIConstants.LIST_ITEM_HEIGHT / 2;
-        int dot = this.bones.area.ex() - 8;
-
-        int color = switch (mode)
-        {
-            case AUTO -> Colors.CYAN;
-            case FACE -> Colors.GREEN;
-            default -> Colors.ORANGE;
-        };
-
-        context.batcher.box(dot, mid - 2, dot + 4, mid + 2, Colors.A100 | color);
-
-        int x = this.bones.area.ex() - TICK_RIGHT - TICK_SIZE / 2;
-        int top = mid - TICK_SIZE / 2;
-
-        context.batcher.box(x, top, x + TICK_SIZE, top + TICK_SIZE, Colors.A50);
-
-        if (this.ragdoll.isPart(element))
-        {
-            context.batcher.box(x + 1, top + 1, x + TICK_SIZE - 1, top + TICK_SIZE - 1, Colors.A100 | Colors.WHITE);
-        }
+        this.relayout();
     }
 
     /** One edit of a joint by a single number. */

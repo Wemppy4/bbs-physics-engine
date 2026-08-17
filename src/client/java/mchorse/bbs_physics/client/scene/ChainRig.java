@@ -6,7 +6,6 @@ import com.github.stephengold.joltjni.BodyInterface;
 import com.github.stephengold.joltjni.CollisionGroup;
 import com.github.stephengold.joltjni.GroupFilterTable;
 import com.github.stephengold.joltjni.MassProperties;
-import com.github.stephengold.joltjni.MotorSettings;
 import com.github.stephengold.joltjni.PointConstraint;
 import com.github.stephengold.joltjni.PointConstraintSettings;
 import com.github.stephengold.joltjni.Quat;
@@ -14,13 +13,11 @@ import com.github.stephengold.joltjni.RVec3;
 import com.github.stephengold.joltjni.SphereShape;
 import com.github.stephengold.joltjni.SwingTwistConstraint;
 import com.github.stephengold.joltjni.SwingTwistConstraintSettings;
-import com.github.stephengold.joltjni.TwoBodyConstraint;
 import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EConstraintSpace;
 import com.github.stephengold.joltjni.enumerate.EMotionQuality;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
-import com.github.stephengold.joltjni.enumerate.EMotorState;
 import com.github.stephengold.joltjni.enumerate.EOverrideMassProperties;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
@@ -30,15 +27,17 @@ import mchorse.bbs_physics.chain.ChainState;
 import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
 import mchorse.bbs_physics.collision.CollisionKind;
+import mchorse.bbs_physics.engine.BodyDrive;
 import mchorse.bbs_physics.engine.PhysicsCache;
+import mchorse.bbs_physics.engine.PhysicsJoints;
 import mchorse.bbs_physics.engine.PhysicsLayers;
+import mchorse.bbs_physics.engine.PhysicsMath;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import mchorse.bbs_physics.forms.PhysicsForms;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -74,10 +73,8 @@ import java.util.Map;
  * and stand on the authored straight line; below 1 they are dynamic and pulled toward it by the
  * velocity blend every rigid body here uses; at 0 the strand is entirely the world's.</p>
  */
-public class ChainRig
+public class ChainRig implements SceneRig
 {
-    /** Shared, never written to — the velocity a placed body is stopped with. */
-    private static final Vec3 ZERO = new Vec3(0F, 0F, 0F);
 
     /** How far a joint lets neighbours lean — wide on purpose: a chain's shape is the spring's job. */
     private static final float CONE_DEGREES = 85F;
@@ -95,8 +92,6 @@ public class ChainRig
      * stiff strand twelve degrees sideways for good. Settling is the damping knob's job here (the
      * bodies' own damping, and the motor spring's), not friction's.</p>
      */
-    private static final float SPRING_TOP_HZ = 12F;
-
     /** What the bottom end is doing this tick — resolved by the scene, acted on here. */
     public static final int ATTACH_NONE = 0;
     public static final int ATTACH_PIN = 1;
@@ -145,16 +140,16 @@ public class ChainRig
     private final Quaternionf formRotation = new Quaternionf();
     private final Vector3f point = new Vector3f();
     private final Vector3f tip = new Vector3f();
-    private final Quaternionf targetRotation = new Quaternionf();
     private final Quaternionf currentQuat = new Quaternionf();
-    private final Quaternionf delta = new Quaternionf();
 
     private final RVec3 scratchPosition = new RVec3();
     private final Quat scratchRotation = new Quat();
     private final RVec3 currentPosition = new RVec3();
     private final Quat currentRotation = new Quat();
     private final Vec3 linear = new Vec3();
-    private final Vec3 angular = new Vec3();
+
+    /** The velocity blend that pulls a segment towards its pose — held, because it carries scratch. */
+    private final BodyDrive drive = new BodyDrive();
 
     /** Where the strand last was in scene coordinates — what the readout judges against the window. */
     private final Vector3f recordedCenter = new Vector3f();
@@ -296,7 +291,7 @@ public class ChainRig
 
         down.normalize();
 
-        Vector3f plane = perpendicular(down);
+        Vector3f plane = PhysicsMath.perpendicular(down).negate();
         float stiffness = form.stiffness.get();
         float damping = form.damping.get();
 
@@ -406,30 +401,9 @@ public class ChainRig
         /* The spring toward the built shape. Both bodies were created in the same orientation, so
          * the rest relative rotation is the identity — the default target — and the motor in
          * Position mode is precisely "return to straight". */
-        tune(constraint, stiffness, damping);
+        PhysicsJoints.tune(constraint, stiffness, damping);
 
         return constraint;
-    }
-
-    /** Sets one joint's motors to the stiffness and damping knobs — at build, and live when they move. */
-    private static void tune(SwingTwistConstraint constraint, float stiffness, float damping)
-    {
-        EMotorState state = stiffness > 0F ? EMotorState.Position : EMotorState.Off;
-
-        constraint.setSwingMotorState(state);
-        constraint.setTwistMotorState(state);
-
-        if (stiffness > 0F)
-        {
-            float frequency = 0.5F + stiffness * (SPRING_TOP_HZ - 0.5F);
-            float ratio = 0.1F + damping * 0.9F;
-
-            for (MotorSettings motor : new MotorSettings[] {constraint.getSwingMotorSettings(), constraint.getTwistMotorSettings()})
-            {
-                motor.getSpringSettings().setFrequency(frequency);
-                motor.getSpringSettings().setDamping(ratio);
-            }
-        }
     }
 
     /**
@@ -467,8 +441,20 @@ public class ChainRig
      * @param reset whether the scene itself is starting over at this tick, in which case the whole
      *              strand is stood on its straight line and stopped — the film's opening pose
      */
-    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset, Map<String, Matrix4f> deltas, Attach attach)
+    @Override
+    public void update(RigUpdate update)
     {
+        PhysicsWorld physics = update.physics;
+        FilmScene scene = update.scene;
+        MatrixCache matrices = update.matrices;
+        Matrix4f actorWorld = update.actorWorld;
+        boolean reset = update.reset;
+        Map<String, Matrix4f> deltas = update.deltas;
+
+        /* Where the bottom end is told to be this tick, resolved from the anchor track — the scene
+         * owns that resolution because an anchor can name any actor of the film, not just this one. */
+        Attach attach = scene.resolveAttach(this.form);
+
         MatrixCacheEntry entry = matrices == null ? null : matrices.get(this.path);
 
         if (entry != null && entry.matrix() != null)
@@ -513,7 +499,7 @@ public class ChainRig
                 if (reset)
                 {
                     bodies.setPositionAndRotation(this.rootId, this.scratchPosition, this.scratchRotation, EActivation.Activate);
-                    bodies.setLinearAndAngularVelocity(this.rootId, ZERO, ZERO);
+                    bodies.setLinearAndAngularVelocity(this.rootId, PhysicsMath.ZERO, PhysicsMath.ZERO);
                 }
                 else
                 {
@@ -555,7 +541,7 @@ public class ChainRig
                 if (reset)
                 {
                     bodies.setPositionAndRotation(this.bodies[i], this.scratchPosition, this.scratchRotation, EActivation.Activate);
-                    bodies.setLinearAndAngularVelocity(this.bodies[i], ZERO, ZERO);
+                    bodies.setLinearAndAngularVelocity(this.bodies[i], PhysicsMath.ZERO, PhysicsMath.ZERO);
                 }
                 else
                 {
@@ -591,74 +577,24 @@ public class ChainRig
         return false;
     }
 
-    /**
-     * The velocity blend every rigid body here uses, with the safe axis-angle math from the NaN
-     * hunt (`9e8337a`): the delta of two nearly identical rotations can round its w a hair above 1,
-     * and JOML's conversion walks a NaN straight into the solver.
-     */
+    /** The velocity blend every driven body here uses — the reasoning lives in {@link BodyDrive}. */
     private void drive(BodyInterface bodies, int i, float authority)
     {
         int id = this.bodies[i];
 
-        bodies.getPositionAndRotation(id, this.currentPosition, this.currentRotation);
-
-        Vec3 velocity = bodies.getLinearVelocity(id);
-        Vec3 spin = bodies.getAngularVelocity(id);
-
-        this.linear.set(
-            mix(velocity.getX(), (float) (this.scratchPosition.xx() - this.currentPosition.xx()) / PhysicsWorld.TICK, authority),
-            mix(velocity.getY(), (float) (this.scratchPosition.yy() - this.currentPosition.yy()) / PhysicsWorld.TICK, authority),
-            mix(velocity.getZ(), (float) (this.scratchPosition.zz() - this.currentPosition.zz()) / PhysicsWorld.TICK, authority));
-
-        this.targetRotation.set(this.formRotation).normalize();
-        this.delta.set(this.currentRotation.getX(), this.currentRotation.getY(), this.currentRotation.getZ(), this.currentRotation.getW()).conjugate();
-        this.targetRotation.mul(this.delta, this.delta);
-
-        if (this.delta.w < 0F)
+        if (this.drive.apply(bodies, id, this.scratchPosition, this.formRotation, authority))
         {
-            this.delta.set(-this.delta.x, -this.delta.y, -this.delta.z, -this.delta.w);
-        }
-
-        float w = Math.min(this.delta.w, 1F);
-        float sinHalfSquared = 1F - w * w;
-        float speed = 0F;
-        float axisX = 0F;
-        float axisY = 0F;
-        float axisZ = 0F;
-
-        if (sinHalfSquared > 1e-12F)
-        {
-            float invSinHalf = (float) (1D / Math.sqrt(sinHalfSquared));
-
-            speed = 2F * (float) Math.acos(w) / PhysicsWorld.TICK;
-            axisX = this.delta.x * invSinHalf;
-            axisY = this.delta.y * invSinHalf;
-            axisZ = this.delta.z * invSinHalf;
-        }
-
-        this.angular.set(
-            mix(spin.getX(), axisX * speed, authority),
-            mix(spin.getY(), axisY * speed, authority),
-            mix(spin.getZ(), axisZ * speed, authority));
-
-        if (!finite(this.linear) || !finite(this.angular))
-        {
-            if (!this.misfed)
-            {
-                this.misfed = true;
-
-                BBSPhysics.LOGGER.warn(
-                    "The drive for segment {} of the chain '{}' came out unusable — linear ({}, {}, {}), angular ({}, {}, {}) — so the segment falls free instead.",
-                    i, this.form.getDisplayName(),
-                    this.linear.getX(), this.linear.getY(), this.linear.getZ(),
-                    this.angular.getX(), this.angular.getY(), this.angular.getZ());
-            }
-
             return;
         }
 
-        bodies.setLinearAndAngularVelocity(id, this.linear, this.angular);
-        bodies.activateBody(id);
+        if (!this.misfed)
+        {
+            this.misfed = true;
+
+            BBSPhysics.LOGGER.warn(
+                "The drive for segment {} of the chain '{}' came out unusable — {} — so the segment falls free instead.",
+                i, this.form.getDisplayName(), this.drive.describe());
+        }
     }
 
     /**
@@ -736,7 +672,7 @@ public class ChainRig
                  * strand's own tip, so the first tick pulls by nothing at all — and switch the
                  * constraint on. Its anchors are local and fixed: tip end onto pin centre. */
                 bodies.setPositionAndRotation(this.pinId, this.scratchPosition, Quat.sIdentity(), EActivation.Activate);
-                bodies.setLinearAndAngularVelocity(this.pinId, ZERO, ZERO);
+                bodies.setLinearAndAngularVelocity(this.pinId, PhysicsMath.ZERO, PhysicsMath.ZERO);
 
                 this.pinJoint.setEnabled(true);
             }
@@ -789,6 +725,7 @@ public class ChainRig
      * An impulse clip's push (Э5), segment by segment. Held strands take nothing — the segments
      * are kinematic then, and physics has no business kicking keyframes.
      */
+    @Override
     public void impulse(PhysicsWorld physics, SceneImpulse push)
     {
         if (PhysicsForms.getAuthority(this.form) >= 1F)
@@ -812,7 +749,7 @@ public class ChainRig
 
             this.linear.set(velocity.getX() + this.point.x, velocity.getY() + this.point.y, velocity.getZ() + this.point.z);
 
-            if (finite(this.linear))
+            if (PhysicsMath.finite(this.linear))
             {
                 bodies.setLinearVelocity(id, this.linear);
                 bodies.activateBody(id);
@@ -863,12 +800,12 @@ public class ChainRig
         {
             for (SwingTwistConstraint joint : this.joints)
             {
-                tune(joint, stiffness, damping);
+                PhysicsJoints.tune(joint, stiffness, damping);
             }
 
             if (this.rootJoint != null)
             {
-                tune(this.rootJoint, stiffness, damping);
+                PhysicsJoints.tune(this.rootJoint, stiffness, damping);
             }
 
             this.lastStiffness = stiffness;
@@ -881,6 +818,7 @@ public class ChainRig
      * frame, and writes the strand into the recording under {@code tick} — the same bargain as
      * everywhere (§6): playback evaluates no poses.
      */
+    @Override
     public void record(PhysicsWorld physics, FilmScene scene, PhysicsCache cache, int tick)
     {
         BodyInterface bodies = physics.getBodies();
@@ -954,14 +892,22 @@ public class ChainRig
         this.lost = !sound;
     }
 
+    @Override
+    public boolean readsBoneDeltas()
+    {
+        return true;
+    }
+
     /** Whether the simulation lost this strand on the tick it last recorded. */
+    @Override
     public boolean isLost()
     {
         return this.lost;
     }
 
     /** The strand's centre on the last recorded tick, in scene coordinates; false until one exists. */
-    public boolean getRecordedCenter(Vector3f out)
+    @Override
+    public boolean getScenePosition(Vector3f out)
     {
         if (this.centered)
         {
@@ -975,6 +921,7 @@ public class ChainRig
      * Hands the form the recorded strand for the frame being drawn, or the news that there is none
      * — in which case the renderer draws the straight strand (Р8.1).
      */
+    @Override
     public void readCache(PhysicsCache cache, int tick, boolean teleport)
     {
         ChainState state = this.form.state;
@@ -1001,16 +948,11 @@ public class ChainRig
         state.push(teleport);
     }
 
-    /** The chain form this rig simulates — what the scene resolves the anchor track off. */
-    public ChainForm getForm()
-    {
-        return this.form;
-    }
-
     /**
      * Lets go of the form, so it draws its straight strand again. Called when the scene is closed:
      * the bodies behind this rig are about to stop existing.
      */
+    @Override
     public void release()
     {
         this.form.state = null;
@@ -1030,29 +972,4 @@ public class ChainRig
         return rotation.normalize();
     }
 
-    /** Any unit vector perpendicular to {@code axis} — the joint's plane axis. */
-    private static Vector3f perpendicular(Vector3f axis)
-    {
-        Vector3f other = Math.abs(axis.y) < 0.9F ? new Vector3f(0F, 1F, 0F) : new Vector3f(1F, 0F, 0F);
-        Vector3f plane = new Vector3f();
-
-        axis.cross(other, plane);
-
-        if (plane.lengthSquared() < 1e-12F)
-        {
-            return new Vector3f(1F, 0F, 0F);
-        }
-
-        return plane.normalize();
-    }
-
-    private static boolean finite(Vec3 velocity)
-    {
-        return Float.isFinite(velocity.getX()) && Float.isFinite(velocity.getY()) && Float.isFinite(velocity.getZ());
-    }
-
-    private static float mix(float physics, float animated, float authority)
-    {
-        return physics + (animated - physics) * authority;
-    }
 }

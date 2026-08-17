@@ -3,7 +3,7 @@ package mchorse.bbs_physics.ragdoll;
 import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.settings.values.core.ValueData;
-import mchorse.bbs_physics.forms.PhysicsForms;
+import mchorse.bbs_physics.forms.IModelPhysicsForm;
 
 /**
  * Reading and writing a model form's ragdoll setup — the same arrangement as
@@ -48,25 +48,14 @@ public final class FormRagdolls
         return value != null && RagdollIO.isEnabled(value.get());
     }
 
-    /**
-     * The animation authority of {@code form} right now, clamped to 0..1.
-     *
-     * <p>Kept as a name here because the ragdoll code reads it everywhere, but the handle itself
-     * belongs to the form rather than to the ragdoll — one handle for both modifiers (§4).</p>
-     */
-    public static float getAuthority(Form form)
-    {
-        return PhysicsForms.getAuthority(form);
-    }
-
     public static RagdollState getState(Form form)
     {
-        return form instanceof IRagdollForm ragdoll ? ragdoll.bbs_physics$getRagdollState() : null;
+        return form instanceof IModelPhysicsForm ragdoll ? ragdoll.bbs_physics$getRagdollState() : null;
     }
 
     public static void setState(Form form, RagdollState state)
     {
-        if (form instanceof IRagdollForm ragdoll)
+        if (form instanceof IModelPhysicsForm ragdoll)
         {
             ragdoll.bbs_physics$setRagdollState(state);
         }
@@ -74,6 +63,6 @@ public final class FormRagdolls
 
     private static ValueData value(Form form)
     {
-        return form instanceof IRagdollForm holder ? holder.bbs_physics$getRagdoll() : null;
+        return form instanceof IModelPhysicsForm holder ? holder.bbs_physics$getRagdoll() : null;
     }
 }

@@ -20,9 +20,11 @@ import mchorse.bbs_physics.chain.ChainForm;
 import mchorse.bbs_physics.client.forms.BalloonFormRenderer;
 import mchorse.bbs_physics.client.forms.ChainFormRenderer;
 import mchorse.bbs_physics.client.forms.ClothFormRenderer;
-import mchorse.bbs_physics.client.forms.UIBalloonForm;
-import mchorse.bbs_physics.client.forms.UIChainForm;
-import mchorse.bbs_physics.client.forms.UIClothForm;
+import mchorse.bbs_physics.client.forms.PhysicsKeys;
+import mchorse.bbs_physics.client.forms.UIBalloonFormPanel;
+import mchorse.bbs_physics.client.forms.UIChainFormPanel;
+import mchorse.bbs_physics.client.forms.UIClothFormPanel;
+import mchorse.bbs_physics.client.forms.UISoftForm;
 import mchorse.bbs_physics.cloth.ClothForm;
 
 import java.util.Collections;
@@ -52,11 +54,12 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
          * rather than from the Fabric entry point for the same timing reason the form type itself
          * is — see BBSPhysicsAddon. */
         FormUtilsClient.register(ClothForm.class, ClothFormRenderer::new);
-        UIFormEditor.register(ClothForm.class, UIClothForm::new);
         FormUtilsClient.register(BalloonForm.class, BalloonFormRenderer::new);
-        UIFormEditor.register(BalloonForm.class, UIBalloonForm::new);
         FormUtilsClient.register(ChainForm.class, ChainFormRenderer::new);
-        UIFormEditor.register(ChainForm.class, UIChainForm::new);
+
+        UIFormEditor.register(ClothForm.class, () -> new UISoftForm<>(UIClothFormPanel::new, PhysicsKeys.CLOTH_TITLE, Icons.MATERIAL));
+        UIFormEditor.register(BalloonForm.class, () -> new UISoftForm<>(UIBalloonFormPanel::new, PhysicsKeys.BALLOON_TITLE, Icons.SPHERE));
+        UIFormEditor.register(ChainForm.class, () -> new UISoftForm<>(UIChainFormPanel::new, PhysicsKeys.CHAIN_TITLE, Icons.CURVES));
 
         /* The Э5 action clips' panels — the same static registry BBS's own clip panels sit in. */
         UIClip.register(ImpulseActionClip.class, UIImpulseActionClip::new);

@@ -15,9 +15,10 @@ import java.util.function.IntConsumer;
  * to arrive anywhere. The world only ever moves forwards, one tick at a time, exactly like the film
  * it belongs to.</p>
  *
- * <p>{@link PhysicsWorld#saveState()} still exists and still round-trips exactly — it is cheap and
- * it will be wanted the day a scene needs to be resumed rather than replayed. It is simply no
- * longer on the path a drawn frame takes.</p>
+ * <p>Jolt's own {@code saveState} round-trips a whole world exactly — that was measured, and the
+ * stand that measured it is still in {@code stands/} — but nothing here calls it any more, so the
+ * wrapper went with the checkpoints. The day a scene needs to be <em>resumed</em> rather than
+ * replayed, it is four lines to bring back.</p>
  */
 public class PhysicsTimeline
 {

@@ -7,7 +7,6 @@ import com.github.stephengold.joltjni.MassProperties;
 import com.github.stephengold.joltjni.MotionProperties;
 import com.github.stephengold.joltjni.Quat;
 import com.github.stephengold.joltjni.RVec3;
-import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EAllowedDofs;
 import com.github.stephengold.joltjni.enumerate.EMotionQuality;
@@ -21,8 +20,10 @@ import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
+import mchorse.bbs_physics.engine.BodyDrive;
 import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
+import mchorse.bbs_physics.engine.PhysicsMath;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import mchorse.bbs_physics.forms.FormBody;
 import mchorse.bbs_physics.forms.PhysicsBodyState;
@@ -33,7 +34,6 @@ import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Ties one form carrying the rigid body modifier to its body in the simulation, in both
@@ -81,11 +81,8 @@ import java.util.Map;
  * velocity a body inherits on release is the velocity the keyframes actually gave it — arriving at
  * that frame by scrubbing and arriving by playing are the same arrival now (§6).</p>
  */
-public class PhysicsBodyRig
+public class BodyRig implements SceneRig
 {
-    /** Shared, never written to — the velocity a placed body is stopped with. */
-    private static final Vec3 ZERO = new Vec3(0F, 0F, 0F);
-
     private final Form form;
     private final String path;
     private final int bodyId;
@@ -118,14 +115,8 @@ public class PhysicsBodyRig
     private final RVec3 scratchPosition = new RVec3();
     private final Quat scratchRotation = new Quat();
 
-    /* Where the body actually is, against the target above — the difference is what a pulled body
-     * is given as velocity. Held as fields because this runs per body per tick. */
-    private final RVec3 currentPosition = new RVec3();
-    private final Quat currentRotation = new Quat();
-    private final Quaternionf target = new Quaternionf();
-    private final Quaternionf delta = new Quaternionf();
-    private final Vec3 linear = new Vec3();
-    private final Vec3 angular = new Vec3();
+    /** The velocity blend that pulls this body towards its pose — held, because it carries scratch. */
+    private final BodyDrive drive = new BodyDrive();
 
     private final SceneBody debug;
 
@@ -141,7 +132,7 @@ public class PhysicsBodyRig
     private float lastFriction;
     private float lastRestitution;
 
-    private PhysicsBodyRig(Form form, String path, int bodyId, int channel, List<CollisionCollector.Piece> pieces, boolean kinematic, SceneBody debug, FormBody settings, String anchor)
+    private BodyRig(Form form, String path, int bodyId, int channel, List<CollisionCollector.Piece> pieces, boolean kinematic, SceneBody debug, FormBody settings, String anchor)
     {
         this.anchor = anchor;
         this.form = form;
@@ -158,7 +149,7 @@ public class PhysicsBodyRig
     }
 
     /** Builds the body for a form carrying the rigid body modifier, found at {@code path}. */
-    public static PhysicsBodyRig build(PhysicsWorld physics, Form form, String path, MatrixCache matrices, FilmScene scene, String anchor)
+    public static BodyRig build(PhysicsWorld physics, Form form, String path, MatrixCache matrices, FilmScene scene, String anchor)
     {
         FormBody body = PhysicsForms.getBody(form);
 
@@ -217,7 +208,7 @@ public class PhysicsBodyRig
 
         PhysicsForms.setState(form, new PhysicsBodyState());
 
-        PhysicsBodyRig rig = new PhysicsBodyRig(form, path, id, scene.addChannel(), ghost ? List.of() : pieces, kinematic, debug, body, anchor);
+        BodyRig rig = new BodyRig(form, path, id, scene.addChannel(), ghost ? List.of() : pieces, kinematic, debug, body, anchor);
 
         compose(rig.pieces, path, matrices, rig.inverse, rig.builtFrom);
 
@@ -282,13 +273,18 @@ public class PhysicsBodyRig
      * the renderer, which is copied out here for {@link #read} to carry the simulation's answer
      * back through.</p>
      *
-     * @param reset whether the scene itself is starting over at this tick, in which case
-     *              <em>every</em> body, simulated ones included, is stood at its animated pose and
-     *              stopped. This is the only moment a released body's keyframes are read: from
-     *              there on its placement is the simulation's answer, not the author's
+     * <p>A reset — the scene starting over — stands <em>every</em> body at its animated pose and
+     * stops it, the simulated ones included. That is the only moment a released body's keyframes are
+     * read: from there on its placement is the simulation's answer, not the author's.</p>
      */
-    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset, Map<String, Matrix4f> deltas)
+    @Override
+    public void update(RigUpdate update)
     {
+        PhysicsWorld physics = update.physics;
+        FilmScene scene = update.scene;
+        MatrixCache matrices = update.matrices;
+        Matrix4f actorWorld = update.actorWorld;
+        boolean reset = update.reset;
         PhysicsBodyState state = PhysicsForms.getState(this.form);
 
         /* The bone this body hangs on may be falling, and the pose walk cannot say so — it runs
@@ -297,7 +293,7 @@ public class PhysicsBodyRig
          * drive's target (the crate follows the fallen arm) and the frame the answer is carried
          * back through (the renderer's own stack is the fallen one, so a return frame built on the
          * animated arm would count the fall twice). One matrix, both uses, no double counting. */
-        Matrix4f delta = this.anchor == null || deltas == null ? null : deltas.get(this.anchor);
+        Matrix4f delta = this.anchor == null ? null : update.deltas.get(this.anchor);
 
         if (delta == null)
         {
@@ -378,7 +374,7 @@ public class PhysicsBodyRig
         if (put)
         {
             bodies.setPositionAndRotation(this.bodyId, this.scratchPosition, this.scratchRotation, EActivation.Activate);
-            bodies.setLinearAndAngularVelocity(this.bodyId, ZERO, ZERO);
+            bodies.setLinearAndAngularVelocity(this.bodyId, PhysicsMath.ZERO, PhysicsMath.ZERO);
         }
         else if (this.kinematic)
         {
@@ -391,110 +387,24 @@ public class PhysicsBodyRig
     }
 
     /**
-     * Pulls a body the animation only partly owns towards the pose its keyframes describe.
-     *
-     * <p>The pull is a velocity, not a teleport: the body is given the speed that would carry it to
-     * the pose over the coming tick, mixed with the speed it already has in the authority's
-     * proportion. That single choice is what makes the handle behave. At 1 the mix is the pose
-     * exactly, so the body arrives — the same result the kinematic path gets by decree. At 0.5 half
-     * of last tick's fall survives into this one, so the body sags and trails, and an impact that
-     * changed its velocity is half kept rather than wiped. At 0 nothing is written at all and the
-     * body keeps whatever it was flying at, which is the throw.</p>
-     *
-     * <p>Mixing velocities rather than positions is the whole trick. Writing the position would put
-     * the body wherever the animation says regardless of the wall in between, and writing the
-     * velocity outright — the pose's speed scaled by the authority, without the mix — would erase
-     * gravity every tick and leave a weakly animated object hanging in the air instead of sagging.
-     * </p>
+     * Pulls a body the animation only partly owns towards the pose its keyframes describe — the
+     * shared velocity blend, whose reasoning lives in {@link BodyDrive}.
      */
     private void drive(BodyInterface bodies, float authority)
     {
-        bodies.getPositionAndRotation(this.bodyId, this.currentPosition, this.currentRotation);
-
-        Vec3 velocity = bodies.getLinearVelocity(this.bodyId);
-        Vec3 spin = bodies.getAngularVelocity(this.bodyId);
-
-        this.linear.set(
-            mix(velocity.getX(), (float) (this.scratchPosition.xx() - this.currentPosition.xx()) / PhysicsWorld.TICK, authority),
-            mix(velocity.getY(), (float) (this.scratchPosition.yy() - this.currentPosition.yy()) / PhysicsWorld.TICK, authority),
-            mix(velocity.getZ(), (float) (this.scratchPosition.zz() - this.currentPosition.zz()) / PhysicsWorld.TICK, authority));
-
-        /* The turn that takes the body from where it is facing to where the pose faces, as an axis
-         * it spins around and how far — which is what an angular velocity is. Normalized because
-         * the pose's rotation is read off a matrix that may carry scale. */
-        this.target.set(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW()).normalize();
-        this.delta.set(this.currentRotation.getX(), this.currentRotation.getY(), this.currentRotation.getZ(), this.currentRotation.getW()).conjugate();
-        this.target.mul(this.delta, this.delta);
-
-        /* Two quaternions describe every turn, one going the short way round and one the long way.
-         * Taking the wrong one spins a body that is a degree off almost all the way around. */
-        if (this.delta.w < 0F)
+        if (this.drive.apply(bodies, this.bodyId, this.scratchPosition, this.scratchRotation, authority))
         {
-            this.delta.set(-this.delta.x, -this.delta.y, -this.delta.z, -this.delta.w);
-        }
-
-        /* The axis and speed by hand, with w clamped to 1 — never through JOML's axis-angle
-         * conversion. A body standing exactly on its target (the tick the hand lets a held thing
-         * go always has it there) makes a delta of identity plus float dust, rounding can land
-         * that dust above w = 1, and JOML answers it with a NaN axis that poisons the velocity.
-         * {@link ActorRagdoll#drive} tells the whole story; this is its verbatim twin. */
-        float w = Math.min(this.delta.w, 1F);
-        float sinHalfSquared = 1F - w * w;
-        float speed = 0F;
-        float axisX = 0F;
-        float axisY = 0F;
-        float axisZ = 0F;
-
-        if (sinHalfSquared > 1e-12F)
-        {
-            float invSinHalf = (float) (1D / Math.sqrt(sinHalfSquared));
-
-            speed = 2F * (float) Math.acos(w) / PhysicsWorld.TICK;
-            axisX = this.delta.x * invSinHalf;
-            axisY = this.delta.y * invSinHalf;
-            axisZ = this.delta.z * invSinHalf;
-        }
-
-        this.angular.set(
-            mix(spin.getX(), axisX * speed, authority),
-            mix(spin.getY(), axisY * speed, authority),
-            mix(spin.getZ(), axisZ * speed, authority));
-
-        /* The last line of defence before the solver: one non-finite component would take the
-         * body — and anything constrained to it — out of the world next step. Falling free for a
-         * tick is the harmless version of every way this can go wrong. */
-        if (!finite(this.linear) || !finite(this.angular))
-        {
-            if (!this.misfed)
-            {
-                this.misfed = true;
-
-                BBSPhysics.LOGGER.warn(
-                    "The drive for the physics body '{}' at '{}' came out unusable — linear ({}, {}, {}), angular ({}, {}, {}), handle {} — so the body falls free instead. The pose it is pulled towards is broken.",
-                    this.form.getDisplayName(), this.path,
-                    this.linear.getX(), this.linear.getY(), this.linear.getZ(),
-                    this.angular.getX(), this.angular.getY(), this.angular.getZ(), authority);
-            }
-
             return;
         }
 
-        bodies.setLinearAndAngularVelocity(this.bodyId, this.linear, this.angular);
+        if (!this.misfed)
+        {
+            this.misfed = true;
 
-        /* A body Jolt has put to sleep ignores the velocity it is handed, and a pulled body that
-         * settled on the floor for a moment would never take the animation back up again. */
-        bodies.activateBody(this.bodyId);
-    }
-
-    /** Whether a velocity may be handed to the solver at all — see the guard in {@link #drive}. */
-    private static boolean finite(Vec3 velocity)
-    {
-        return Float.isFinite(velocity.getX()) && Float.isFinite(velocity.getY()) && Float.isFinite(velocity.getZ());
-    }
-
-    private static float mix(float physics, float animated, float authority)
-    {
-        return physics + (animated - physics) * authority;
+            BBSPhysics.LOGGER.warn(
+                "The drive for the physics body '{}' at '{}' came out unusable — {}, handle {} — so the body falls free instead. The pose it is pulled towards is broken.",
+                this.form.getDisplayName(), this.path, this.drive.describe(), authority);
+        }
     }
 
     /**
@@ -630,6 +540,7 @@ public class PhysicsBodyRig
      * interpolated from, and while the body is kinematic what is recorded is exactly what was being
      * drawn anyway.</p>
      */
+    @Override
     public void record(PhysicsWorld physics, FilmScene scene, PhysicsCache cache, int tick)
     {
         physics.getBodies().getPositionAndRotation(this.bodyId, this.scratchPosition, this.scratchRotation);
@@ -658,6 +569,7 @@ public class PhysicsBodyRig
      * <p>No recording for this tick means plain animation (Р8.1): the form is drawn from its
      * keyframes, as though it had no physics, until the background catch-up reaches it.</p>
      */
+    @Override
     public void readCache(PhysicsCache cache, int tick, boolean teleport)
     {
         PhysicsBodyState state = PhysicsForms.getState(this.form);
@@ -681,9 +593,21 @@ public class PhysicsBodyRig
      * An impulse clip's push (Э5). The push itself refuses anything not dynamic, so a body the
      * animation holds takes nothing — kicking the keyframes would move nothing and lie about it.
      */
+    @Override
     public void impulse(PhysicsWorld physics, SceneImpulse push)
     {
         push.apply(physics.getBodies(), this.bodyId);
+    }
+
+    /**
+     * A crate strapped to a falling arm has to be driven towards where the arm actually is — the Р13
+     * delta, which cloth got first and this rig got with Э5. Without it the body is pulled towards
+     * the arm's <em>animated</em> place while the renderer draws the arm fallen.
+     */
+    @Override
+    public boolean readsBoneDeltas()
+    {
+        return true;
     }
 
     /**
@@ -691,15 +615,19 @@ public class PhysicsBodyRig
      * falls through the world. Deliberate (§5.1) and reported rather than hidden — it is one of the
      * few states that looks exactly like the engine being broken.
      */
+    @Override
     public boolean isGhost()
     {
         return this.pieces.isEmpty();
     }
 
     /** Where the body stands, in the scene's own coordinates — for the status readout. */
-    public Vector3f getScenePosition(Vector3f out)
+    @Override
+    public boolean getScenePosition(Vector3f out)
     {
-        return this.debug.getPosition(1F, out);
+        this.debug.getPosition(1F, out);
+
+        return true;
     }
 
     /** The path this body's form lives at in the actor's tree — "" for the root form. */
@@ -718,6 +646,7 @@ public class PhysicsBodyRig
      * Lets go of the form, so it goes back to being drawn from its keyframes. Called when the
      * scene is closed: the body behind this rig is about to stop existing.
      */
+    @Override
     public void release()
     {
         PhysicsForms.setState(this.form, null);

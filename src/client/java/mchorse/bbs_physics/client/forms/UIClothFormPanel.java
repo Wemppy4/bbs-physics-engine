@@ -1,20 +1,12 @@
 package mchorse.bbs_physics.client.forms;
 
-import mchorse.bbs_mod.ui.UIKeys;
 import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
 import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
-import mchorse.bbs_mod.ui.forms.editors.utils.UICropOverlayPanel;
-import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UICirculate;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
-import mchorse.bbs_mod.ui.framework.elements.input.UIColor;
-import mchorse.bbs_mod.ui.framework.elements.input.UITexturePicker;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
-import mchorse.bbs_mod.ui.framework.elements.overlay.UIOverlay;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
-import mchorse.bbs_mod.utils.Direction;
-import mchorse.bbs_mod.utils.colors.Color;
 import mchorse.bbs_physics.cloth.ClothEdge;
 import mchorse.bbs_physics.cloth.ClothForm;
 import mchorse.bbs_physics.forms.PhysicsForms;
@@ -30,12 +22,8 @@ import mchorse.bbs_physics.forms.PhysicsForms;
  */
 public class UIClothFormPanel extends UIFormPanel<ClothForm>
 {
-    public UIButton pick;
-    public UIColor color;
-    public UIToggle linear;
-    public UIToggle mipmap;
-    public UIToggle shading;
-    public UIButton openCrop;
+    /** What the skin looks like — the picture form's own six controls, shared (§ PhysicsFields). */
+    public final PhysicsFields.Texture skin = new PhysicsFields.Texture(() -> this.form, this::getContext);
 
     public UITrackpad width;
     public UITrackpad height;
@@ -48,24 +36,12 @@ public class UIClothFormPanel extends UIFormPanel<ClothForm>
     public UITrackpad stiffness;
     public UITrackpad damping;
     public UITrackpad friction;
-    public UITrackpad authority;
+    public final UITrackpad authority = PhysicsFields.authority((value) -> PhysicsForms.setAuthority(this.form, value));
 
     public UIClothFormPanel(UIForm editor)
     {
         super(editor);
 
-        this.pick = new UIButton(UIKeys.FORMS_EDITORS_BILLBOARD_PICK_TEXTURE, (b) ->
-        {
-            UITexturePicker.open(this.getContext(), this.form.texture.get(), (l) -> this.form.texture.set(l));
-        });
-        this.color = new UIColor((value) -> this.form.color.set(Color.rgba(value))).direction(Direction.LEFT).withAlpha();
-        this.linear = new UIToggle(UIKeys.TEXTURES_LINEAR, false, (b) -> this.form.linear.set(b.getValue()));
-        this.mipmap = new UIToggle(UIKeys.TEXTURES_MIPMAP, false, (b) -> this.form.mipmap.set(b.getValue()));
-        this.shading = new UIToggle(UIKeys.FORMS_EDITORS_BILLBOARD_SHADING, false, (b) -> this.form.shading.set(b.getValue()));
-        this.openCrop = new UIButton(UIKeys.FORMS_EDITORS_BILLBOARD_EDIT_CROP, (b) ->
-        {
-            UIOverlay.addOverlay(this.getContext(), new UICropOverlayPanel(this.form.texture.get(), this.form.crop.get()), 0.5F, 0.5F);
-        });
 
         this.width = new UITrackpad((value) -> this.form.width.set(value.floatValue()));
         this.width.limit(0.1D, 16D).tooltip(PhysicsKeys.CLOTH_WIDTH);
@@ -96,10 +72,8 @@ public class UIClothFormPanel extends UIFormPanel<ClothForm>
         this.friction = new UITrackpad((value) -> this.form.friction.set(value.floatValue()));
         this.friction.limit(0D, 1D).tooltip(PhysicsKeys.FRICTION);
 
-        this.authority = new UITrackpad((value) -> PhysicsForms.setAuthority(this.form, value.floatValue()));
-        this.authority.limit(0D, 1D).tooltip(PhysicsKeys.AUTHORITY_TOOLTIP);
 
-        this.options.add(this.pick, this.color, this.linear, this.mipmap, this.shading, this.openCrop);
+        this.skin.addTo(this.options);
         this.options.add(UI.label(PhysicsKeys.CLOTH_SHEET).marginTop(UIConstants.SECTION_GAP));
         this.options.add(UI.row(this.width, this.height), UI.row(this.segmentsX, this.segmentsY), this.edge, this.selfCollision);
         this.options.add(UI.label(PhysicsKeys.CLOTH_FABRIC).marginTop(UIConstants.SECTION_GAP));
@@ -112,10 +86,7 @@ public class UIClothFormPanel extends UIFormPanel<ClothForm>
     {
         super.startEdit(form);
 
-        this.color.setColor(form.color.get().getARGBColor());
-        this.linear.setValue(form.linear.get());
-        this.mipmap.setValue(form.mipmap.get());
-        this.shading.setValue(form.shading.get());
+        this.skin.sync(form);
 
         this.width.setValue(form.width.get());
         this.height.setValue(form.height.get());

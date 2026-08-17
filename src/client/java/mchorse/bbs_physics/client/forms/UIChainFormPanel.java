@@ -32,7 +32,7 @@ public class UIChainFormPanel extends UIFormPanel<ChainForm>
     public UITrackpad gravity;
 
     public UIToggle heldStart;
-    public UITrackpad authority;
+    public final UITrackpad authority = PhysicsFields.authority((value) -> PhysicsForms.setAuthority(this.form, value));
 
     public UIChainFormPanel(UIForm editor)
     {
@@ -69,8 +69,6 @@ public class UIChainFormPanel extends UIFormPanel<ChainForm>
         this.heldStart = new UIToggle(PhysicsKeys.CHAIN_HELD_START, false, (b) -> this.form.heldStart.set(b.getValue()));
         this.heldStart.tooltip(PhysicsKeys.CHAIN_HELD_START_TOOLTIP);
 
-        this.authority = new UITrackpad((value) -> PhysicsForms.setAuthority(this.form, value.floatValue()));
-        this.authority.limit(0D, 1D).tooltip(PhysicsKeys.AUTHORITY_TOOLTIP);
 
         this.options.add(UI.label(PhysicsKeys.CHAIN_LINK_LABEL), this.link);
         this.options.add(UI.label(PhysicsKeys.CHAIN_STRAND).marginTop(UIConstants.SECTION_GAP));

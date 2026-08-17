@@ -1,12 +1,11 @@
 package mchorse.bbs_physics.ragdoll;
 
 import mchorse.bbs_mod.data.types.BaseType;
-import mchorse.bbs_mod.data.types.ListType;
 import mchorse.bbs_mod.data.types.MapType;
+import mchorse.bbs_physics.forms.ModifierIO;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -20,7 +19,6 @@ import java.util.Set;
  */
 public final class RagdollIO
 {
-    private static final String KEY_ENABLED = "enabled";
     private static final String KEY_EXCLUDED = "excluded";
     private static final String KEY_JOINTS = "joints";
 
@@ -58,24 +56,9 @@ public final class RagdollIO
             }
         }
 
-        Set<String> excluded = new LinkedHashSet<>();
+        Set<String> excluded = ModifierIO.readNames(map, KEY_EXCLUDED);
 
-        if (map.has(KEY_EXCLUDED, BaseType.TYPE_LIST))
-        {
-            ListType list = map.getList(KEY_EXCLUDED);
-
-            for (int i = 0; i < list.size(); i++)
-            {
-                String bone = list.getString(i);
-
-                if (!bone.isEmpty())
-                {
-                    excluded.add(bone);
-                }
-            }
-        }
-
-        return new FormRagdoll(map.getBool(KEY_ENABLED), excluded, joints);
+        return new FormRagdoll(ModifierIO.isEnabled(map), excluded, joints);
     }
 
     public static MapType toData(FormRagdoll ragdoll)
@@ -87,22 +70,8 @@ public final class RagdollIO
             return map;
         }
 
-        if (ragdoll.enabled())
-        {
-            map.putBool(KEY_ENABLED, true);
-        }
-
-        if (!ragdoll.excluded().isEmpty())
-        {
-            ListType excluded = new ListType();
-
-            for (String bone : ragdoll.excluded())
-            {
-                excluded.addString(bone);
-            }
-
-            map.put(KEY_EXCLUDED, excluded);
-        }
+        ModifierIO.putEnabled(map, ragdoll.enabled());
+        ModifierIO.putNames(map, KEY_EXCLUDED, ragdoll.excluded());
 
         MapType joints = new MapType();
 
@@ -125,7 +94,7 @@ public final class RagdollIO
     /** Whether stored data says the ragdoll is on, without parsing the rest — the cheap check. */
     public static boolean isEnabled(BaseType data)
     {
-        return data instanceof MapType map && map.getBool(KEY_ENABLED);
+        return ModifierIO.isEnabled(data);
     }
 
     private static RagdollJoint jointFromData(MapType map)

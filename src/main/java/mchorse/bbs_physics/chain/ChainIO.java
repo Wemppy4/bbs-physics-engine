@@ -1,10 +1,9 @@
 package mchorse.bbs_physics.chain;
 
 import mchorse.bbs_mod.data.types.BaseType;
-import mchorse.bbs_mod.data.types.ListType;
 import mchorse.bbs_mod.data.types.MapType;
+import mchorse.bbs_physics.forms.ModifierIO;
 
-import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
@@ -16,7 +15,6 @@ import java.util.Set;
  */
 public final class ChainIO
 {
-    private static final String KEY_ENABLED = "enabled";
     private static final String KEY_BONES = "bones";
     private static final String KEY_STIFFNESS = "stiffness";
     private static final String KEY_DAMPING = "damping";
@@ -34,25 +32,10 @@ public final class ChainIO
             return FormChain.EMPTY;
         }
 
-        Set<String> bones = new LinkedHashSet<>();
-
-        if (map.has(KEY_BONES, BaseType.TYPE_LIST))
-        {
-            ListType list = map.getList(KEY_BONES);
-
-            for (int i = 0; i < list.size(); i++)
-            {
-                String bone = list.getString(i);
-
-                if (!bone.isEmpty())
-                {
-                    bones.add(bone);
-                }
-            }
-        }
+        Set<String> bones = ModifierIO.readNames(map, KEY_BONES);
 
         return new FormChain(
-            map.getBool(KEY_ENABLED),
+            ModifierIO.isEnabled(map),
             bones,
             map.getFloat(KEY_STIFFNESS, FormChain.DEFAULT_STIFFNESS),
             map.getFloat(KEY_DAMPING, FormChain.DEFAULT_DAMPING),
@@ -70,32 +53,13 @@ public final class ChainIO
             return map;
         }
 
-        if (chain.enabled())
-        {
-            map.putBool(KEY_ENABLED, true);
-        }
-
-        if (!chain.bones().isEmpty())
-        {
-            ListType bones = new ListType();
-
-            for (String bone : chain.bones())
-            {
-                bones.addString(bone);
-            }
-
-            map.put(KEY_BONES, bones);
-        }
-
-        putIfChanged(map, KEY_STIFFNESS, chain.stiffness(), FormChain.DEFAULT_STIFFNESS);
-        putIfChanged(map, KEY_DAMPING, chain.damping(), FormChain.DEFAULT_DAMPING);
-        putIfChanged(map, KEY_GRAVITY, chain.gravity(), FormChain.DEFAULT_GRAVITY);
-        putIfChanged(map, KEY_MASS, chain.mass(), FormChain.DEFAULT_MASS);
-
-        if (chain.selfCollision())
-        {
-            map.putBool(KEY_SELF_COLLISION, true);
-        }
+        ModifierIO.putEnabled(map, chain.enabled());
+        ModifierIO.putNames(map, KEY_BONES, chain.bones());
+        ModifierIO.putFloat(map, KEY_STIFFNESS, chain.stiffness(), FormChain.DEFAULT_STIFFNESS);
+        ModifierIO.putFloat(map, KEY_DAMPING, chain.damping(), FormChain.DEFAULT_DAMPING);
+        ModifierIO.putFloat(map, KEY_GRAVITY, chain.gravity(), FormChain.DEFAULT_GRAVITY);
+        ModifierIO.putFloat(map, KEY_MASS, chain.mass(), FormChain.DEFAULT_MASS);
+        ModifierIO.putFlag(map, KEY_SELF_COLLISION, chain.selfCollision());
 
         return map;
     }
@@ -103,14 +67,6 @@ public final class ChainIO
     /** Whether stored data says the modifier is on, without parsing the rest — the per-frame check. */
     public static boolean isEnabled(BaseType data)
     {
-        return data instanceof MapType map && map.getBool(KEY_ENABLED);
-    }
-
-    private static void putIfChanged(MapType map, String key, float value, float fallback)
-    {
-        if (value != fallback)
-        {
-            map.putFloat(key, value);
-        }
+        return ModifierIO.isEnabled(data);
     }
 }

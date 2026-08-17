@@ -1,6 +1,7 @@
 package mchorse.bbs_physics.balloon;
 
 import mchorse.bbs_mod.forms.forms.Form;
+import mchorse.bbs_physics.forms.ITexturedForm;
 import mchorse.bbs_mod.settings.values.core.ValueColor;
 import mchorse.bbs_mod.settings.values.core.ValueLink;
 import mchorse.bbs_mod.settings.values.misc.ValueVector4f;
@@ -29,7 +30,7 @@ import org.joml.Vector4f;
  * the handle to 0 mid-flight is the same "let go" every body has — the ball keeps the velocity the
  * animation gave it.</p>
  */
-public class BalloonForm extends Form
+public class BalloonForm extends Form implements ITexturedForm
 {
     /* What the ball looks like. */
     public final ValueLink texture = new ValueLink("texture", null);
@@ -189,6 +190,42 @@ public class BalloonForm extends Form
             (float) (Math.sin(theta) * Math.cos(phi)) * radius,
             (float) Math.cos(theta) * radius,
             (float) (Math.sin(theta) * Math.sin(phi)) * radius);
+    }
+
+    @Override
+    public ValueLink getTexture()
+    {
+        return this.texture;
+    }
+
+    @Override
+    public ValueColor getColor()
+    {
+        return this.color;
+    }
+
+    @Override
+    public ValueBoolean getLinear()
+    {
+        return this.linear;
+    }
+
+    @Override
+    public ValueBoolean getMipmap()
+    {
+        return this.mipmap;
+    }
+
+    @Override
+    public ValueBoolean getShading()
+    {
+        return this.shading;
+    }
+
+    @Override
+    public ValueVector4f getCrop()
+    {
+        return this.crop;
     }
 
     @Override

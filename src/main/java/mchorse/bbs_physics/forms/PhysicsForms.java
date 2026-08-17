@@ -1,7 +1,6 @@
 package mchorse.bbs_physics.forms;
 
 import mchorse.bbs_mod.data.types.MapType;
-import mchorse.bbs_mod.forms.forms.BodyPart;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.settings.values.core.ValueData;
 import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
@@ -78,22 +77,18 @@ public final class PhysicsForms
      */
     public static boolean isSimulatedTree(Form form)
     {
-        if (isSimulated(form))
+        boolean[] found = new boolean[1];
+
+        FormTreeWalk.walk(form, (child, path, anchor) ->
         {
-            return true;
-        }
+            found[0] |= isSimulated(child);
 
-        for (BodyPart part : form.parts.getAllTyped())
-        {
-            Form child = part.getForm();
+            /* No early exit worth arranging: this is asked once per actor when a scene is built,
+             * and a form tree is a handful of nodes. */
+            return !found[0];
+        });
 
-            if (child != null && isSimulatedTree(child))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return found[0];
     }
 
     /**
@@ -111,7 +106,13 @@ public final class PhysicsForms
             return 1F;
         }
 
-        if (getBody(form).passive())
+        /* Asked straight of the stored data rather than through {@link #getBody}, which would parse
+         * the whole modifier into a record to read one flag. This is the most-called question in the
+         * addon — every rig asks it every tick, every renderer asks it every frame — so the record
+         * it used to build was the addon's largest single source of per-frame garbage. */
+        ValueData body = physics.bbs_physics$getBody();
+
+        if (body != null && BodyIO.isPassive(body.get()))
         {
             return 1F;
         }

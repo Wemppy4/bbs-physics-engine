@@ -4,10 +4,8 @@ import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_physics.client.collision.UICollisionFormPanel;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
-import mchorse.bbs_physics.client.forms.UIBalloonForm;
-import mchorse.bbs_physics.client.forms.UIChainForm;
-import mchorse.bbs_physics.client.forms.UIClothForm;
 import mchorse.bbs_physics.client.forms.UIPhysicsFormPanel;
+import mchorse.bbs_physics.client.forms.UISoftForm;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -41,11 +39,11 @@ public class UIFormMixin
     {
         UIForm editor = (UIForm) (Object) this;
 
-        if (editor instanceof UIClothForm || editor instanceof UIBalloonForm || editor instanceof UIChainForm)
+        if (editor instanceof UISoftForm)
         {
             /* The soft forms are their own kind of physics: they have no collision markup to
              * describe and no modifier to add or remove, so both shared tabs would be rows of
-             * things that do not apply. Everything cloth-, balloon- or chain-shaped lives in its
+             * things that do not apply. Everything cloth-, balloon- or rope-shaped lives in its
              * own tab instead. */
             return;
         }

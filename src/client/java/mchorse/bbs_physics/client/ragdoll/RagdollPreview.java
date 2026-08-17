@@ -55,11 +55,6 @@ public final class RagdollPreview
     private RagdollPreview()
     {}
 
-    public static void render(Form form, IEntity entity, MatrixStack stack, float transition)
-    {
-        render(form, entity, stack, transition, null);
-    }
-
     /**
      * @param selection the path of the body part the editor has selected, whose joints are the ones
      *                  worth drawing; null means the root is selected and the root model's joints

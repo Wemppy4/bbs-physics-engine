@@ -1,6 +1,7 @@
 package mchorse.bbs_physics.cloth;
 
 import mchorse.bbs_mod.forms.forms.Form;
+import mchorse.bbs_physics.forms.ITexturedForm;
 import mchorse.bbs_mod.settings.values.core.ValueColor;
 import mchorse.bbs_mod.settings.values.core.ValueLink;
 import mchorse.bbs_mod.settings.values.core.ValueString;
@@ -27,7 +28,7 @@ import org.joml.Vector4f;
  * flat rectangle the author placed, at 0 it is entirely the simulation's, and in between the loose
  * vertices are pulled towards flat by that much.</p>
  */
-public class ClothForm extends Form
+public class ClothForm extends Form implements ITexturedForm
 {
     /* What the sheet looks like. */
     public final ValueLink texture = new ValueLink("texture", null);
@@ -133,6 +134,42 @@ public class ClothForm extends Form
     public float flatY(int r)
     {
         return -r * (this.height.get() / (this.getRows() - 1));
+    }
+
+    @Override
+    public ValueLink getTexture()
+    {
+        return this.texture;
+    }
+
+    @Override
+    public ValueColor getColor()
+    {
+        return this.color;
+    }
+
+    @Override
+    public ValueBoolean getLinear()
+    {
+        return this.linear;
+    }
+
+    @Override
+    public ValueBoolean getMipmap()
+    {
+        return this.mipmap;
+    }
+
+    @Override
+    public ValueBoolean getShading()
+    {
+        return this.shading;
+    }
+
+    @Override
+    public ValueVector4f getCrop()
+    {
+        return this.crop;
     }
 
     @Override
