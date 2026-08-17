@@ -57,6 +57,16 @@ public final class CollisionShapes
     private static final float MIN_CAPSULE_RADIUS = 0.04F;
     private static final float MAX_CAPSULE_RADIUS = 0.12F;
 
+    /**
+     * How much of a layer's own thickness a shell plate keeps, and the floor under it in blocks.
+     *
+     * <p>A share rather than a fixed number because a braid and a fringe are not equally thick; a
+     * floor under the share because a plate thinner than what a body travels in one tick is a plate
+     * things pass straight through.</p>
+     */
+    private static final float SHELL_THICKNESS = 0.35F;
+    private static final float SHELL_MIN_THICKNESS = 0.06F;
+
     private static final float EPS = 1.0e-6F;
 
     /**
@@ -86,6 +96,11 @@ public final class CollisionShapes
         if (slot.mode() == CollisionMode.AUTO)
         {
             return measure(model, bone, scale);
+        }
+
+        if (slot.mode() == CollisionMode.SHELL)
+        {
+            return shell(model, bone, scale);
         }
 
         /* Cubic bones sit half a turn away from model space; BOBJ ones do not — see the class note. */
@@ -123,6 +138,174 @@ public final class CollisionShapes
         }
 
         return Collections.emptyList();
+    }
+
+    /**
+     * A bone measured as a <em>shell</em>: the same cubes, flattened along their thinnest axis and
+     * pushed until they clear the bone they hang on.
+     *
+     * <p>Only cubic models have the problem this solves, and only they have the geometry to solve
+     * it with, so a BOBJ bone falls back to the plain measurement.</p>
+     */
+    public static List<SubShape> shell(IModel model, String bone, Vector3f scale)
+    {
+        if (!(model instanceof Model cubic))
+        {
+            return measure(model, bone, scale);
+        }
+
+        ModelGroup group = cubic.getGroup(bone);
+
+        if (group == null || group.cubes.isEmpty())
+        {
+            return Collections.emptyList();
+        }
+
+        /* What to clear: the nearest ancestor that actually draws something. A bone hanging off an
+         * empty wrapper — which standard rigs are full of — has to look further up, or there is
+         * nothing to be outside of. */
+        float[] owner = ownerBounds(group);
+        List<SubShape> shapes = new ArrayList<>(group.cubes.size());
+        Vector3f pivot = group.initial.translate;
+
+        for (ModelCube cube : group.cubes)
+        {
+            shapes.add(shellOfCube(cube, pivot, scale, owner));
+        }
+
+        return shapes;
+    }
+
+    /**
+     * The box, in model space and in blocks, of the first ancestor of {@code group} that has cubes
+     * of its own — or null when none of them do, in which case there is nothing to be pushed out
+     * of and the shell is merely flattened.
+     */
+    private static float[] ownerBounds(ModelGroup group)
+    {
+        for (ModelGroup owner = group.parent; owner != null; owner = owner.parent)
+        {
+            if (owner.cubes.isEmpty())
+            {
+                continue;
+            }
+
+            float[] bounds = null;
+
+            for (ModelCube cube : owner.cubes)
+            {
+                float grow = cube.inflate;
+
+                float ax = (cube.origin.x - grow) / PIXELS;
+                float ay = (cube.origin.y - grow) / PIXELS;
+                float az = (cube.origin.z - grow) / PIXELS;
+                float bx = (cube.origin.x + cube.size.x + grow) / PIXELS;
+                float by = (cube.origin.y + cube.size.y + grow) / PIXELS;
+                float bz = (cube.origin.z + cube.size.z + grow) / PIXELS;
+
+                if (bounds == null)
+                {
+                    bounds = new float[] {Math.min(ax, bx), Math.min(ay, by), Math.min(az, bz), Math.max(ax, bx), Math.max(ay, by), Math.max(az, bz)};
+                }
+                else
+                {
+                    bounds[0] = Math.min(bounds[0], Math.min(ax, bx));
+                    bounds[1] = Math.min(bounds[1], Math.min(ay, by));
+                    bounds[2] = Math.min(bounds[2], Math.min(az, bz));
+                    bounds[3] = Math.max(bounds[3], Math.max(ax, bx));
+                    bounds[4] = Math.max(bounds[4], Math.max(ay, by));
+                    bounds[5] = Math.max(bounds[5], Math.max(az, bz));
+                }
+            }
+
+            return bounds;
+        }
+
+        return null;
+    }
+
+    /**
+     * One cube as a shell plate.
+     *
+     * <p>Two decisions, both from the geometry rather than from a setting. <b>Which way is out</b>
+     * is the cube's own thinnest axis — a hair layer is 8×8×2, and 2 is the direction it was made
+     * flat in — and the side is whichever one the cube already leans towards, or the shorter way
+     * out when it sits dead centre. <b>How far</b> is until the plate's inner face rests on the
+     * owner's surface: not a fixed number, because a skull and a coat are different thicknesses,
+     * and not a fraction either, because what matters is where the other shape ends.</p>
+     *
+     * <p>The plate keeps a share of the original thickness rather than a fixed one: a braid and a
+     * fringe are not equally thick, and a plate thinner than the tick's travel is a plate things
+     * pass through.</p>
+     */
+    private static SubShape shellOfCube(ModelCube cube, Vector3f bonePivot, Vector3f scale, float[] owner)
+    {
+        float grow = cube.inflate;
+
+        float ax = (cube.origin.x - grow) / PIXELS;
+        float ay = (cube.origin.y - grow) / PIXELS;
+        float az = (cube.origin.z - grow) / PIXELS;
+        float bx = (cube.origin.x + cube.size.x + grow) / PIXELS;
+        float by = (cube.origin.y + cube.size.y + grow) / PIXELS;
+        float bz = (cube.origin.z + cube.size.z + grow) / PIXELS;
+
+        float[] min = {Math.min(ax, bx), Math.min(ay, by), Math.min(az, bz)};
+        float[] max = {Math.max(ax, bx), Math.max(ay, by), Math.max(az, bz)};
+        float[] size = {max[0] - min[0], max[1] - min[1], max[2] - min[2]};
+        float[] center = {(min[0] + max[0]) * 0.5F, (min[1] + max[1]) * 0.5F, (min[2] + max[2]) * 0.5F};
+
+        /* The flat axis: the one the layer was made thin in. */
+        int axis = size[0] <= size[1] && size[0] <= size[2] ? 0 : (size[1] <= size[2] ? 1 : 2);
+
+        float thickness = Math.max(size[axis] * SHELL_THICKNESS, SHELL_MIN_THICKNESS);
+
+        if (owner != null)
+        {
+            float ownerMin = owner[axis];
+            float ownerMax = owner[axis + 3];
+
+            /* Which side to come out on: the way the cube already leans, and failing that the
+             * shorter trip. A tie either way is a coin toss the geometry cannot answer, and both
+             * answers are equally correct for a layer sitting dead centre. */
+            float ownerCenter = (ownerMin + ownerMax) * 0.5F;
+            boolean positive = center[axis] > ownerCenter
+                || (center[axis] == ownerCenter && Math.abs(ownerMax - center[axis]) <= Math.abs(center[axis] - ownerMin));
+
+            center[axis] = positive ? ownerMax + thickness * 0.5F : ownerMin - thickness * 0.5F;
+        }
+
+        size[axis] = thickness;
+
+        Vector3f half = new Vector3f(
+            Math.max(size[0] * 0.5F * scale.x, MIN_HALF),
+            Math.max(size[1] * 0.5F * scale.y, MIN_HALF),
+            Math.max(size[2] * 0.5F * scale.z, MIN_HALF));
+
+        Vector3f offset = new Vector3f(center[0], center[1], center[2]);
+        Quaternionf rotation = new Quaternionf();
+
+        /* The cube's own rotation, about its own pivot — the same step the plain measurement does,
+         * so a tilted layer comes out tilted. */
+        if (cube.rotate.x != 0F || cube.rotate.y != 0F || cube.rotate.z != 0F)
+        {
+            rotation
+                .rotateZ(MathUtils.toRad(cube.rotate.z))
+                .rotateY(MathUtils.toRad(cube.rotate.y))
+                .rotateX(MathUtils.toRad(cube.rotate.x));
+
+            Vector3f cubePivot = new Vector3f(cube.pivot).div(PIXELS);
+
+            offset.sub(cubePivot);
+            rotation.transform(offset);
+            offset.add(cubePivot);
+        }
+
+        offset.sub(bonePivot.x / PIXELS, bonePivot.y / PIXELS, bonePivot.z / PIXELS);
+        offset.mul(scale);
+
+        flipY180(offset, rotation);
+
+        return new SubShape(CollisionKind.BOX, half, offset, rotation);
     }
 
     private static List<SubShape> measureCubic(Model model, String bone, Vector3f scale)

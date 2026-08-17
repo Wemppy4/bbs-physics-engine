@@ -16,6 +16,21 @@ public enum CollisionMode
     /** Measured from the geometry the slot is drawn from — a bone's own cubes. */
     AUTO("auto"),
 
+    /**
+     * Measured the same way, then flattened and pushed clear of the bone it hangs on.
+     *
+     * <p>For the case a cubic rig makes unavoidable: a second layer — hair, a jacket, a brim — is
+     * drawn as a thin cube <em>inside</em> the cube it sits on, because that is how the texture is
+     * made to appear over it. Two solids in the same place is the one thing a physics engine may
+     * not have: it must push them apart, it cannot, and the strand is thrown out of the head. So
+     * this mode keeps the shape the geometry describes but stands it on the outside of the owner
+     * instead of in it — the hair lies on the skull rather than through it.</p>
+     *
+     * <p>Live, like {@link #AUTO}: nothing is written down, so a cube that changes size or moves
+     * takes its collision with it.</p>
+     */
+    SHELL("shell"),
+
     /** The primitives the author placed by hand. */
     SHAPES("shapes");
 

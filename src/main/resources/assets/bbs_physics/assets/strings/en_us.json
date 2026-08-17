@@ -150,7 +150,8 @@
     "bbs_physics.forms.collision.preview": "Show markup",
 
     "bbs_physics.forms.collision.mode": "Collides as",
-    "bbs_physics.forms.collision.mode_tooltip": "By default a bone collides with nothing. \"Auto from cubes\" measures its own geometry. \"Shapes by hand\" switches itself on once you add a shape in the section below.",
+    "bbs_physics.forms.collision.mode_tooltip": "By default a bone collides with nothing. \"Auto from cubes\" measures its own geometry. \"Shell on the outside\" is for a second layer — hair, a jacket, a hat brim: its cube is drawn INSIDE the cube it sits on, and two solids in one place is the one thing an engine must pull apart, so the strand gets thrown out of the head. The shell takes the same geometry, flattens it into a plate and stands it on the parent bone's surface instead of in it. \"Shapes by hand\" switches itself on once you add a shape in the section below. Every mode but the manual one is live: change the model and the collision follows.",
+    "bbs_physics.forms.collision.mode_shell": "Shell on the outside",
     "bbs_physics.forms.collision.mode_none": "Nothing",
     "bbs_physics.forms.collision.mode_auto": "Auto from cubes",
     "bbs_physics.forms.collision.mode_shapes": "Shapes by hand",

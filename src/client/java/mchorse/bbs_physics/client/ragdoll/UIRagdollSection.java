@@ -461,7 +461,14 @@ public class UIRagdollSection extends UIElement
         int mid = y + UIConstants.LIST_ITEM_HEIGHT / 2;
         int dot = this.bones.area.ex() - 8;
 
-        context.batcher.box(dot, mid - 2, dot + 4, mid + 2, Colors.A100 | (mode == CollisionMode.AUTO ? Colors.CYAN : Colors.ORANGE));
+        int color = switch (mode)
+        {
+            case AUTO -> Colors.CYAN;
+            case SHELL -> Colors.GREEN;
+            default -> Colors.ORANGE;
+        };
+
+        context.batcher.box(dot, mid - 2, dot + 4, mid + 2, Colors.A100 | color);
 
         int x = this.bones.area.ex() - TICK_RIGHT - TICK_SIZE / 2;
         int top = mid - TICK_SIZE / 2;

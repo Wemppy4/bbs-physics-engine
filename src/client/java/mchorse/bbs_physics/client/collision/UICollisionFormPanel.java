@@ -173,6 +173,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         });
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_NONE);
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_AUTO);
+        this.mode.addLabel(PhysicsKeys.COLLISION_MODE_SHELL);
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_SHAPES);
         this.mode.tooltip(PhysicsKeys.COLLISION_MODE_TOOLTIP);
         this.modeRow = UI.labelRow(PhysicsKeys.COLLISION_MODE, this.mode);
@@ -668,6 +669,10 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         /* Automatic measuring reads a bone's own cubes, and a form that is not a model has
          * none — the option would be a button that quietly does nothing. */
         this.mode.allow(CollisionMode.AUTO.ordinal(), this.model != null);
+
+        /* A shell is measured from cubes and pushed clear of the cubes above it, so it needs a
+         * cubic model — a BOBJ bone has neither, and would silently fall back to a plain measure. */
+        this.mode.allow(CollisionMode.SHELL.ordinal(), this.model != null && this.model.model instanceof Model);
         this.mode.allow(CollisionMode.SHAPES.ordinal(), hasShapes);
 
         this.syncing = true;
@@ -766,7 +771,12 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
         int x = this.bones.area.ex() - 9;
         int mid = y + UIConstants.LIST_ITEM_HEIGHT / 2 - 2;
-        int color = mode == CollisionMode.AUTO ? Colors.CYAN : Colors.ORANGE;
+        int color = switch (mode)
+        {
+            case AUTO -> Colors.CYAN;
+            case SHELL -> Colors.GREEN;
+            default -> Colors.ORANGE;
+        };
 
         context.batcher.box(x, mid, x + 4, mid + 4, Colors.A100 | color);
     }

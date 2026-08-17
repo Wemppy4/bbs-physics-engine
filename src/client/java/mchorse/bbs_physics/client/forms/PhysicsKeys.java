@@ -131,6 +131,7 @@ public class PhysicsKeys
     public static final IKey COLLISION_MODE_TOOLTIP = L10n.lang("bbs_physics.forms.collision.mode_tooltip");
     public static final IKey COLLISION_MODE_NONE = L10n.lang("bbs_physics.forms.collision.mode_none");
     public static final IKey COLLISION_MODE_AUTO = L10n.lang("bbs_physics.forms.collision.mode_auto");
+    public static final IKey COLLISION_MODE_SHELL = L10n.lang("bbs_physics.forms.collision.mode_shell");
     public static final IKey COLLISION_MODE_SHAPES = L10n.lang("bbs_physics.forms.collision.mode_shapes");
 
     public static final IKey COLLISION_SHAPES = L10n.lang("bbs_physics.forms.collision.shapes");
