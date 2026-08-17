@@ -143,6 +143,20 @@ public class PhysicsKeys
         };
     }
 
+    public static final IKey CLIP_POINT = L10n.lang("bbs_physics.clips.point");
+    public static final IKey CLIP_POINT_FROM_LOOK = L10n.lang("bbs_physics.clips.point_from_look");
+    public static final IKey CLIP_RADIAL = L10n.lang("bbs_physics.clips.radial");
+    public static final IKey CLIP_RADIAL_TOOLTIP = L10n.lang("bbs_physics.clips.radial_tooltip");
+    public static final IKey CLIP_STRENGTH = L10n.lang("bbs_physics.clips.strength");
+    public static final IKey CLIP_STRENGTH_TOOLTIP = L10n.lang("bbs_physics.clips.strength_tooltip");
+    public static final IKey CLIP_RADIUS = L10n.lang("bbs_physics.clips.radius");
+    public static final IKey CLIP_RADIUS_TOOLTIP = L10n.lang("bbs_physics.clips.radius_tooltip");
+    public static final IKey CLIP_DIRECTION = L10n.lang("bbs_physics.clips.direction");
+    public static final IKey CLIP_BONE = L10n.lang("bbs_physics.clips.bone");
+    public static final IKey CLIP_BONE_TOOLTIP = L10n.lang("bbs_physics.clips.bone_tooltip");
+    public static final IKey CLIP_KICK = L10n.lang("bbs_physics.clips.kick");
+    public static final IKey CLIP_KICK_TOOLTIP = L10n.lang("bbs_physics.clips.kick_tooltip");
+
     public static final IKey RAGDOLL_TITLE = L10n.lang("bbs_physics.forms.ragdoll.title");
     public static final IKey RAGDOLL_KIND = L10n.lang("bbs_physics.forms.ragdoll.kind");
     public static final IKey RAGDOLL_KIND_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.kind_tooltip");

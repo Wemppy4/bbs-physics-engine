@@ -6,11 +6,16 @@ import mchorse.bbs_mod.events.register.RegisterClientSettingsEvent;
 import mchorse.bbs_mod.events.register.RegisterL10nEvent;
 import mchorse.bbs_mod.forms.FormUtilsClient;
 import mchorse.bbs_mod.resources.Link;
+import mchorse.bbs_mod.ui.film.clips.UIClip;
 import mchorse.bbs_mod.ui.forms.editors.UIFormEditor;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
+import mchorse.bbs_physics.actions.ImpulseActionClip;
+import mchorse.bbs_physics.actions.TearActionClip;
 import mchorse.bbs_physics.balloon.BalloonForm;
+import mchorse.bbs_physics.client.clips.UIImpulseActionClip;
+import mchorse.bbs_physics.client.clips.UITearActionClip;
 import mchorse.bbs_physics.client.forms.BalloonFormRenderer;
 import mchorse.bbs_physics.client.forms.ClothFormRenderer;
 import mchorse.bbs_physics.client.forms.UIBalloonForm;
@@ -47,5 +52,9 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
         UIFormEditor.register(ClothForm.class, UIClothForm::new);
         FormUtilsClient.register(BalloonForm.class, BalloonFormRenderer::new);
         UIFormEditor.register(BalloonForm.class, UIBalloonForm::new);
+
+        /* The Э5 action clips' panels — the same static registry BBS's own clip panels sit in. */
+        UIClip.register(ImpulseActionClip.class, UIImpulseActionClip::new);
+        UIClip.register(TearActionClip.class, UITearActionClip::new);
     }
 }

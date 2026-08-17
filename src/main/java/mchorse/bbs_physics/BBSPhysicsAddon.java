@@ -1,11 +1,15 @@
 package mchorse.bbs_physics;
 
 import mchorse.bbs_mod.BBSMod;
+import mchorse.bbs_mod.camera.clips.ClipFactoryData;
 import mchorse.bbs_mod.events.BBSAddonMod;
 import mchorse.bbs_mod.events.Subscribe;
 import mchorse.bbs_mod.events.register.RegisterSettingsEvent;
 import mchorse.bbs_mod.events.register.RegisterSourcePacksEvent;
 import mchorse.bbs_mod.resources.Link;
+import mchorse.bbs_mod.ui.utils.icons.Icons;
+import mchorse.bbs_physics.actions.ImpulseActionClip;
+import mchorse.bbs_physics.actions.TearActionClip;
 import mchorse.bbs_physics.balloon.BalloonForm;
 import mchorse.bbs_physics.cloth.ClothForm;
 import net.fabricmc.loader.api.FabricLoader;
@@ -56,6 +60,14 @@ public class BBSPhysicsAddon implements BBSAddonMod
     {
         BBSMod.getForms().register(new Link(BBSPhysics.MOD_ID, "cloth"), ClothForm.class, null);
         BBSMod.getForms().register(new Link(BBSPhysics.MOD_ID, "balloon"), BalloonForm.class, null);
+
+        /* The Э5 action clips — "a push at a point" and "this bone comes off" — live on the same
+         * action timeline as BBS's own clips and are registered the same way. Both sides again:
+         * a film carries its clips across the network, and a server handed one has to be able to
+         * read it (it just never acts on these — the physics scene is the one consumer). */
+        BBSMod.getFactoryActionClips()
+            .register(new Link(BBSPhysics.MOD_ID, "impulse"), ImpulseActionClip.class, new ClipFactoryData(Icons.SHARD, 0xff9500))
+            .register(new Link(BBSPhysics.MOD_ID, "tear"), TearActionClip.class, new ClipFactoryData(Icons.CUT, 0xff4444));
     }
 
     private static String version(String modId)

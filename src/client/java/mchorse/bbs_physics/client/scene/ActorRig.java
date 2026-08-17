@@ -1,5 +1,6 @@
 package mchorse.bbs_physics.client.scene;
 
+import com.github.stephengold.joltjni.Body;
 import com.github.stephengold.joltjni.BodyCreationSettings;
 import com.github.stephengold.joltjni.BodyInterface;
 import com.github.stephengold.joltjni.Quat;
@@ -110,12 +111,20 @@ public class ActorRig
 
             BodyCreationSettings settings = new BodyCreationSettings(shape, new RVec3(0D, 0D, 0D), Quat.sIdentity(), EMotionType.Kinematic, PhysicsLayers.BONE);
 
+            int sub = group.claimBone();
+
             settings.setFriction(0.6F);
-            settings.setCollisionGroup(group.of(group.claimBone()));
+            settings.setCollisionGroup(group.of(sub));
 
-            int id = bodies.createAndAddBody(settings, EActivation.Activate);
+            /* Created and added in two steps rather than createAndAddBody, because the Body
+             * reference has a consumer now: a ragdoll jointed to a kinematic bone — "the head
+             * falls, the torso walks on" — hands this very body to the constraint. */
+            Body body = bodies.createBody(settings);
+            int id = body.getId();
 
-            rig.parts.add(new Part(piece.path(), id));
+            bodies.addBody(id, EActivation.Activate);
+
+            rig.parts.add(new Part(piece.path(), id, body, sub));
 
             SceneBody debug = new SceneBody(id, 0.3F, 0.7F, 1F);
 
@@ -194,7 +203,27 @@ public class ActorRig
         }
     }
 
-    /** One marked-up slot as a body: the matrix-cache path it follows, and the body following it. */
-    private record Part(String path, int id)
+    /**
+     * The kinematic body standing at {@code path}, or null when the slot got none — for a ragdoll
+     * that needs to hang a falling part off a bone the animation kept.
+     */
+    public Part find(String path)
+    {
+        for (Part part : this.parts)
+        {
+            if (part.path.equals(path))
+            {
+                return part;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * One marked-up slot as a body: the matrix-cache path it follows, the body following it, and
+     * its subgroup in the actor's collision group.
+     */
+    public record Part(String path, int id, Body body, int sub)
     {}
 }

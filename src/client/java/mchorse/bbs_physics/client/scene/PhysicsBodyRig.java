@@ -33,6 +33,7 @@ import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Ties one form carrying the rigid body modifier to its body in the simulation, in both
@@ -89,6 +90,14 @@ public class PhysicsBodyRig
     private final String path;
     private final int bodyId;
 
+    /**
+     * The bone this body hangs on, named the way the pose walk names bones, or null when it hangs
+     * on no bone. Only used to ask whether that bone is being ragdolled — the Р13 delta, which
+     * cloth got first and this rig gets now (Э5): without it a crate strapped to a falling arm is
+     * driven towards the arm's <em>animated</em> place while the renderer draws the arm fallen.
+     */
+    private final String anchor;
+
     /** This body's slot in the film's recording — see {@link PhysicsCache}. */
     private final int channel;
 
@@ -132,8 +141,9 @@ public class PhysicsBodyRig
     private float lastFriction;
     private float lastRestitution;
 
-    private PhysicsBodyRig(Form form, String path, int bodyId, int channel, List<CollisionCollector.Piece> pieces, boolean kinematic, SceneBody debug, FormBody settings)
+    private PhysicsBodyRig(Form form, String path, int bodyId, int channel, List<CollisionCollector.Piece> pieces, boolean kinematic, SceneBody debug, FormBody settings, String anchor)
     {
+        this.anchor = anchor;
         this.form = form;
         this.path = path;
         this.bodyId = bodyId;
@@ -148,7 +158,7 @@ public class PhysicsBodyRig
     }
 
     /** Builds the body for a form carrying the rigid body modifier, found at {@code path}. */
-    public static PhysicsBodyRig build(PhysicsWorld physics, Form form, String path, MatrixCache matrices, FilmScene scene)
+    public static PhysicsBodyRig build(PhysicsWorld physics, Form form, String path, MatrixCache matrices, FilmScene scene, String anchor)
     {
         FormBody body = PhysicsForms.getBody(form);
 
@@ -207,7 +217,7 @@ public class PhysicsBodyRig
 
         PhysicsForms.setState(form, new PhysicsBodyState());
 
-        PhysicsBodyRig rig = new PhysicsBodyRig(form, path, id, scene.addChannel(), ghost ? List.of() : pieces, kinematic, debug, body);
+        PhysicsBodyRig rig = new PhysicsBodyRig(form, path, id, scene.addChannel(), ghost ? List.of() : pieces, kinematic, debug, body, anchor);
 
         compose(rig.pieces, path, matrices, rig.inverse, rig.builtFrom);
 
@@ -277,11 +287,26 @@ public class PhysicsBodyRig
      *              stopped. This is the only moment a released body's keyframes are read: from
      *              there on its placement is the simulation's answer, not the author's
      */
-    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset)
+    public void update(PhysicsWorld physics, FilmScene scene, MatrixCache matrices, Matrix4f actorWorld, boolean reset, Map<String, Matrix4f> deltas)
     {
         PhysicsBodyState state = PhysicsForms.getState(this.form);
 
-        this.actorWorld.set(actorWorld);
+        /* The bone this body hangs on may be falling, and the pose walk cannot say so — it runs
+         * with the ragdoll's substitution off. The published delta is multiplied onto the frame
+         * everything here is composed on, which fixes both halves of the Р13 problem at once: the
+         * drive's target (the crate follows the fallen arm) and the frame the answer is carried
+         * back through (the renderer's own stack is the fallen one, so a return frame built on the
+         * animated arm would count the fall twice). One matrix, both uses, no double counting. */
+        Matrix4f delta = this.anchor == null || deltas == null ? null : deltas.get(this.anchor);
+
+        if (delta == null)
+        {
+            this.actorWorld.set(actorWorld);
+        }
+        else
+        {
+            this.actorWorld.set(delta).mul(actorWorld);
+        }
 
         if (state != null)
         {
@@ -336,7 +361,7 @@ public class PhysicsBodyRig
             return;
         }
 
-        this.bodyWorld.set(actorWorld).mul(entry.matrix());
+        this.bodyWorld.set(this.actorWorld).mul(entry.matrix());
         this.bodyWorld.getTranslation(this.position);
 
         /* Unnormalized, deliberately: the chain may carry scale, and JOML's normalized variant
@@ -650,6 +675,15 @@ public class PhysicsBodyRig
         {
             state.setUnsimulated();
         }
+    }
+
+    /**
+     * An impulse clip's push (Э5). The push itself refuses anything not dynamic, so a body the
+     * animation holds takes nothing — kicking the keyframes would move nothing and lie about it.
+     */
+    public void impulse(PhysicsWorld physics, SceneImpulse push)
+    {
+        push.apply(physics.getBodies(), this.bodyId);
     }
 
     /**

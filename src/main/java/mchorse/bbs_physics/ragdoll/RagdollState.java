@@ -81,28 +81,53 @@ public class RagdollState
     }
 
     /**
-     * Records where a bone's pivot frame is this tick.
+     * Records where a bone's pivot frame is this tick, and the authority it was simulated under —
+     * the bone's own, which since Э5 is not always the form's: a torn-off bone records 0 while the
+     * body around it records the handle.
      *
      * @param teleport whether this position must not be interpolated from the previous one — a
      *                 seek or a restart, where "previous" is a place the bone never travelled from
      */
-    public void set(String bone, Vector3f position, Quaternionf rotation, boolean teleport)
+    public void set(String bone, Vector3f position, Quaternionf rotation, float authority, boolean teleport)
     {
         BoneState state = this.bones.computeIfAbsent(bone, (k) -> new BoneState());
+        float value = MathUtils.clamp(authority, 0F, 1F);
 
         if (teleport)
         {
             state.prevPosition.set(position);
             state.prevRotation.set(rotation);
+            state.prevAuthority = value;
         }
         else
         {
             state.prevPosition.set(state.position);
             state.prevRotation.set(state.rotation);
+            state.prevAuthority = state.authority;
         }
 
         state.position.set(position);
         state.rotation.set(rotation);
+        state.authority = value;
+    }
+
+    /**
+     * This bone's own share of the drawn pose — {@link #getWeight(float)} answered per bone, which
+     * is what lets a torn head be drawn wholly from the simulation while the body around it walks
+     * its keyframes at a full handle. Bones the recording never spoke about weigh nothing.
+     */
+    public float getWeight(String bone, float transition)
+    {
+        BoneState state = this.bones.get(bone);
+
+        if (state == null)
+        {
+            return 0F;
+        }
+
+        float value = state.prevAuthority + (state.authority - state.prevAuthority) * transition;
+
+        return MathUtils.clamp(1F - value, 0F, 1F);
     }
 
     public boolean has(String bone)
@@ -153,5 +178,10 @@ public class RagdollState
         private final Quaternionf prevRotation = new Quaternionf();
         private final Vector3f position = new Vector3f();
         private final Quaternionf rotation = new Quaternionf();
+
+        /* The bone's own authority on the two ticks the drawn frame falls between — the form-wide
+         * handle everywhere, except on a torn bone, where it is 0 from the tear on. */
+        private float prevAuthority = 1F;
+        private float authority = 1F;
     }
 }

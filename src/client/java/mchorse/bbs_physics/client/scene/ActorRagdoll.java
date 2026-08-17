@@ -43,8 +43,10 @@ import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * One model's ragdoll: its marked-up bones as rigid bodies held together by joints, and the single
@@ -129,6 +131,17 @@ public class ActorRagdoll
      */
     private final List<TwoBodyConstraint> joints = new ArrayList<>();
 
+    /** The same joints by the bone hanging off each — what a tear looks its constraint up in. */
+    private final Map<String, TwoBodyConstraint> jointByBone = new HashMap<>();
+
+    /**
+     * Bones a tear clip has ripped off (Э5): the joint holding each is switched off and the part is
+     * dynamic whatever the handle says — a torn head cannot be walked by keyframes it no longer
+     * follows. Grows during recording, emptied when the scene starts over, which is the only way
+     * back on: the recording is linear, so "before the tear" only ever exists as a re-recording.
+     */
+    private final Set<String> torn = new HashSet<>();
+
     /** Whether the parts are currently kinematic — the cached side of the motion type switch. */
     private boolean kinematic = true;
 
@@ -180,18 +193,11 @@ public class ActorRagdoll
     }
 
     /**
-     * Builds a ragdoll for one ragdoll-enabled model form, or returns null when there is nothing
-     * to build — no marked bones, or a model type the pose cannot be handed back to.
-     *
-     * @param pieces   the marked-up bone slots belonging to this form, already collected — the
-     *                 falling parts and the bones welded into them, together
-     * @param welds    welded bone → the part it belongs to, as {@link RagdollWelds} resolved it. A
-     *                 welded bone gets no body: its shapes join its owner's compound
-     * @param matrices the actor's pose at scene build — the placement the bodies start from
-     * @param group    the actor's collision group, shared with its kinematic bones and with any
-     *                 other ragdoll hanging off the same actor
+     * Whether a ragdoll can be built for this form at all — asked <em>before</em> its bone pieces
+     * are claimed away from the kinematic rig, because a claim can no longer be undone once that
+     * rig is built.
      */
-    public static ActorRagdoll build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> pieces, Map<String, String> welds, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
+    public static boolean supports(ModelForm form)
     {
         ModelInstance instance = ModelFormRenderer.getModel(form);
 
@@ -206,19 +212,41 @@ public class ActorRagdoll
              * itself once the model lands (see {@code FilmScene.needsRebuild}). */
             BBSPhysics.LOGGER.info("A ragdoll is enabled on '{}', whose model has not finished loading; the scene will be built again when it has.", form.getDisplayName());
 
-            return null;
+            return false;
         }
 
-        Model model = instance.model instanceof Model cubic ? cubic : null;
-
-        if (model == null)
+        if (!(instance.model instanceof Model))
         {
             BBSPhysics.LOGGER.warn("A ragdoll is enabled on '{}', but only cubic models can hand the simulated pose back to the renderer yet; its bones stay kinematic.", form.getDisplayName());
 
-            return null;
+            return false;
         }
 
-        if (pieces.isEmpty())
+        return true;
+    }
+
+    /**
+     * Builds a ragdoll for one ragdoll-enabled model form ({@link #supports} already said yes), or
+     * returns null when none of its claimed pieces could become a body.
+     *
+     * @param pieces    the marked-up bone slots belonging to this form, already claimed — the
+     *                  falling parts and the bones welded into them, together
+     * @param welds     welded bone → the part it belongs to, as {@link RagdollWelds} resolved it. A
+     *                  welded bone gets no body: its shapes join its owner's compound
+     * @param kinematic the bone slots of this form the animation kept — already built into
+     *                  {@code rig} — which a part with no falling parent can be jointed to
+     * @param rig       the actor's kinematic bones, for looking those bodies up; may be null when
+     *                  the actor has none
+     * @param matrices  the actor's pose at scene build — the placement the bodies start from
+     * @param group     the actor's collision group, shared with its kinematic bones and with any
+     *                  other ragdoll hanging off the same actor
+     */
+    public static ActorRagdoll build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> pieces, Map<String, String> welds, List<CollisionCollector.Piece> kinematic, ActorRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
+    {
+        ModelInstance instance = ModelFormRenderer.getModel(form);
+        Model model = instance != null && instance.model instanceof Model cubic ? cubic : null;
+
+        if (model == null || pieces.isEmpty())
         {
             return null;
         }
@@ -328,34 +356,54 @@ public class ActorRagdoll
         }
 
         /* Who hangs off whom — the three-step answer, shared with the viewport preview so that the
-         * lines an author sees are the joints that will actually be built (§7.6). */
-        Map<String, String> attachment = RagdollAttachment.resolve(config, partPieces, model, matrices, actorWorld);
+         * lines an author sees are the joints that will actually be built (§7.6). The bones the
+         * animation kept are in the candidate list too: a part whose tree parent is not falling —
+         * "the ragdoll is only on the head" — attaches to that kinematic bone and dangles from the
+         * walking body instead of dropping free. */
+        List<CollisionCollector.Piece> candidates = new ArrayList<>(partPieces);
+
+        candidates.addAll(kinematic);
+
+        Map<String, String> attachment = RagdollAttachment.resolve(config, candidates, model, matrices, actorWorld);
+        Map<String, CollisionCollector.Piece> kinematicByBone = new HashMap<>();
+
+        for (CollisionCollector.Piece piece : kinematic)
+        {
+            kinematicByBone.put(piece.label(), piece);
+        }
 
         for (Part part : ragdoll.parts)
         {
-            Part parent = byBone.get(attachment.get(part.bone));
+            String parentBone = attachment.get(part.bone);
+            Part parent = byBone.get(parentBone);
+            CollisionCollector.Piece kinematicParent = parent == null ? kinematicByBone.get(parentBone) : null;
+            ActorRig.Part rigParent = kinematicParent == null || rig == null ? null : rig.find(kinematicParent.path());
 
-            if (parent == null)
+            if (parent == null && rigParent == null)
             {
                 continue;
             }
 
             RagdollJoint joint = config.get(part.bone);
-            TwoBodyConstraintSettings settings = ragdoll.jointSettings(joint, part, parent, groups, matrices, actorWorld, scene);
+            String parentPath = parent != null ? parent.path : kinematicParent.path();
+            TwoBodyConstraintSettings settings = ragdoll.jointSettings(joint, part, parentBone, parentPath, groups, matrices, actorWorld, scene);
 
             if (settings == null)
             {
                 continue;
             }
 
-            TwoBodyConstraint constraint = settings.create(parent.body, part.body);
+            TwoBodyConstraint constraint = settings.create(parent != null ? parent.body : rigParent.body(), part.body);
 
             physics.getSystem().addConstraint(constraint);
             ragdoll.joints.add(constraint);
+            ragdoll.jointByBone.put(part.bone, constraint);
 
             /* Neighbours share a joint; their shapes meet at it by design and always will. Letting
-             * them also collide would have every joint permanently fighting its own limits. */
-            group.excuse(part.sub, parent.sub);
+             * them also collide would have every joint permanently fighting its own limits. A
+             * kinematic parent needs the excuse more than anyone: it cannot give way, so the
+             * overlap at the joint would otherwise shove the hanging part out every step. */
+            group.excuse(part.sub, parent != null ? parent.sub : rigParent.sub());
         }
 
         FormRagdolls.setState(form, ragdoll.state);
@@ -407,7 +455,7 @@ public class ActorRagdoll
      * One joint, set up in world space at the build pose — the bodies are already standing on it,
      * so Jolt converts to each body's local frame correctly on its own.
      */
-    private TwoBodyConstraintSettings jointSettings(RagdollJoint joint, Part part, Part parent, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene)
+    private TwoBodyConstraintSettings jointSettings(RagdollJoint joint, Part part, String parentBone, String parentPath, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene)
     {
         MatrixCacheEntry entry = matrices.get(part.path);
 
@@ -449,7 +497,7 @@ public class ActorRagdoll
                  * violation is invisible while the animation is in charge and the whole of it comes
                  * due on the one tick the parts are released — the weld hauling both bones round to
                  * the world's axes with however much force that takes. */
-                MatrixCacheEntry parentEntry = matrices.get(parent.path);
+                MatrixCacheEntry parentEntry = matrices.get(parentPath);
 
                 if (parentEntry == null || parentEntry.matrix() == null)
                 {
@@ -505,7 +553,7 @@ public class ActorRagdoll
                 /* The cone leans around the bone's rest direction: pivot towards the first child's
                  * pivot, which is the direction the limb visibly runs — positions only, so the
                  * frame flip cancels out of it. A leaf bone continues its parent's direction. */
-                Vector3f axis = this.boneDirection(part, parent, groups, matrices, actorWorld);
+                Vector3f axis = this.boneDirection(part, parentBone, groups, matrices, actorWorld);
                 Vector3f plane = perpendicular(axis);
 
                 cone.setPosition1(point);
@@ -543,7 +591,7 @@ public class ActorRagdoll
      * onward from its parent when it has no children to point at. Degenerate cases — stacked
      * pivots — fall back to world up, which at least never crashes a build.
      */
-    private Vector3f boneDirection(Part part, Part parent, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld)
+    private Vector3f boneDirection(Part part, String parentBone, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld)
     {
         Vector3f from = new Vector3f(this.translation);
         ModelGroup group = groups.get(part.bone);
@@ -561,7 +609,7 @@ public class ActorRagdoll
             }
         }
 
-        Vector3f parentPivot = this.pivotOf(parent.bone, matrices, actorWorld);
+        Vector3f parentPivot = this.pivotOf(parentBone, matrices, actorWorld);
 
         if (parentPivot != null && parentPivot.distanceSquared(from) > 1.0e-6F)
         {
@@ -665,6 +713,14 @@ public class ActorRagdoll
         this.captureBase(matrices, actorWorld);
 
         BodyInterface bodies = physics.getBodies();
+
+        /* Before anything else on a restart: the torn bones go back on, so the placement below
+         * stands a whole character on its keyframes rather than one missing its head. */
+        if (reset)
+        {
+            this.untear(bodies);
+        }
+
         float authority = FormRagdolls.getAuthority(this.form);
         boolean wanted = authority >= 1F;
         boolean put = reset;
@@ -673,6 +729,13 @@ public class ActorRagdoll
         {
             for (Part part : this.parts)
             {
+                /* A torn part answers to nobody: the animation taking the rest of the body back
+                 * must not weld the head back onto the neck. */
+                if (this.torn.contains(part.bone))
+                {
+                    continue;
+                }
+
                 /* Jolt keeps the velocity across the change, which is what lets a released body
                  * inherit the animation's momentum — the character crumples out of its run rather
                  * than out of thin air. */
@@ -701,6 +764,11 @@ public class ActorRagdoll
                 continue;
             }
 
+            /* A torn bone's authority is 0 whatever the form's handle says — the fall owns it from
+             * the tear to the end of the recording. */
+            boolean torn = this.torn.contains(part.bone);
+            float effective = torn ? 0F : authority;
+
             this.worldMatrix.set(actorWorld).mul(entry.matrix());
             this.worldMatrix.getTranslation(this.translation);
             this.worldMatrix.getUnnormalizedRotation(this.orientation);
@@ -711,21 +779,134 @@ public class ActorRagdoll
                 this.translation.z - scene.getOriginZ());
             this.scratchRotation.set(this.orientation.x, this.orientation.y, this.orientation.z, this.orientation.w);
 
-            if (put)
+            if (put && !torn)
             {
                 bodies.setPositionAndRotation(part.id, this.scratchPosition, this.scratchRotation, EActivation.Activate);
                 bodies.setLinearAndAngularVelocity(part.id, ZERO, ZERO);
             }
-            else if (this.kinematic)
+            else if (this.kinematic && !torn)
             {
                 bodies.moveKinematic(part.id, this.scratchPosition, this.scratchRotation, PhysicsWorld.TICK);
             }
-            else if (authority > 0F)
+            else if (effective > 0F)
             {
-                this.drive(bodies, part, authority);
+                this.drive(bodies, part, effective);
             }
 
-            this.publish(bodies, scene, part, deltas, authority);
+            this.publish(bodies, scene, part, deltas, effective, torn);
+        }
+    }
+
+    /**
+     * Rips {@code bone} off this ragdoll (Э5): its joint is switched off, the part goes dynamic
+     * whatever the handle says, and the given send-off is added to whatever velocity it carried —
+     * the head of a running character flies out of the run, plus the kick.
+     *
+     * <p>Runs inside the recording, on the tick the tear clip fires, which is what makes it
+     * deterministic: a re-recording replays the same clip on the same tick. The joint object stays
+     * owned and in the world — {@code setEnabled(false)} is the whole of the break — so the scene's
+     * set of bodies and constraints never changes shape and nothing about the recording moves.</p>
+     *
+     * <p>The part stays excused from colliding with its former parent. Their shapes overlap at the
+     * joint on the tick of the tear, and letting them collide right then would fire the head off
+     * the depenetration instead of the author's kick.</p>
+     *
+     * @return whether this ragdoll has that bone as a part at all
+     */
+    public boolean tear(PhysicsWorld physics, String bone, float kickX, float kickY, float kickZ)
+    {
+        Part found = null;
+
+        for (Part part : this.parts)
+        {
+            if (part.bone.equals(bone))
+            {
+                found = part;
+
+                break;
+            }
+        }
+
+        if (found == null)
+        {
+            return false;
+        }
+
+        BodyInterface bodies = physics.getBodies();
+
+        if (this.torn.add(bone))
+        {
+            TwoBodyConstraint joint = this.jointByBone.get(bone);
+
+            if (joint != null)
+            {
+                joint.setEnabled(false);
+            }
+
+            bodies.setMotionType(found.id, EMotionType.Dynamic, EActivation.Activate);
+            bodies.setObjectLayer(found.id, PhysicsLayers.MOVING);
+        }
+
+        if ((kickX != 0F || kickY != 0F || kickZ != 0F) && Float.isFinite(kickX) && Float.isFinite(kickY) && Float.isFinite(kickZ))
+        {
+            Vec3 velocity = bodies.getLinearVelocity(found.id);
+
+            this.linear.set(velocity.getX() + kickX, velocity.getY() + kickY, velocity.getZ() + kickZ);
+            bodies.setLinearVelocity(found.id, this.linear);
+        }
+
+        bodies.activateBody(found.id);
+
+        return true;
+    }
+
+    /** Puts every torn bone back on — the scene is starting over, so the tears have not happened yet. */
+    private void untear(BodyInterface bodies)
+    {
+        if (this.torn.isEmpty())
+        {
+            return;
+        }
+
+        for (Part part : this.parts)
+        {
+            if (!this.torn.contains(part.bone))
+            {
+                continue;
+            }
+
+            TwoBodyConstraint joint = this.jointByBone.get(part.bone);
+
+            if (joint != null)
+            {
+                joint.setEnabled(true);
+            }
+
+            bodies.setMotionType(part.id, this.kinematic ? EMotionType.Kinematic : EMotionType.Dynamic, EActivation.Activate);
+            bodies.setObjectLayer(part.id, this.kinematic ? PhysicsLayers.BONE : PhysicsLayers.MOVING);
+        }
+
+        this.torn.clear();
+    }
+
+    /**
+     * An impulse clip's push (Э5), offered to every part: each dynamic one inside the radius takes
+     * the velocity change {@code push} computes for its position. Kinematic parts ignore it — a
+     * character at a full handle is the animation's, and the clip's radius is how an author aims
+     * around one.
+     */
+    public void impulse(PhysicsWorld physics, SceneImpulse push)
+    {
+        BodyInterface bodies = physics.getBodies();
+
+        for (Part part : this.parts)
+        {
+            if (this.kinematic && !this.torn.contains(part.bone))
+            {
+                continue;
+            }
+
+            push.apply(bodies, part.id);
         }
     }
 
@@ -749,9 +930,12 @@ public class ActorRagdoll
      * <p>The delta describes the <em>previous</em> step, which is the only pose that exists before
      * this one is solved. A tick of lag at 20 Hz, and the same lag the cloth proxies carry.</p>
      */
-    private void publish(BodyInterface bodies, FilmScene scene, Part part, Map<String, Matrix4f> deltas, float authority)
+    private void publish(BodyInterface bodies, FilmScene scene, Part part, Map<String, Matrix4f> deltas, float authority, boolean torn)
     {
-        if (deltas == null || this.kinematic)
+        /* A torn bone publishes even while the rest of the body is kinematic: hair pinned to a
+         * head that has left the neck follows the head, not the animation of a body it is no
+         * longer on. */
+        if (deltas == null || (this.kinematic && !torn))
         {
             return;
         }
@@ -976,6 +1160,11 @@ public class ActorRagdoll
 
             this.reportRunaway(bodies, part, tick, authority);
 
+            /* The recording remembers a tear as the bone's own authority: 0 from the tick it came
+             * off, whatever the form's handle was doing — which is also how the drawn frame knows
+             * to draw the torn head from the simulation while the body walks its keyframes. */
+            float effective = this.torn.contains(part.bone) ? 0F : authority;
+
             this.orientation.set(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW());
             this.poseFrame.translationRotate(
                 (float) (this.scratchPosition.xx() + scene.getOriginX()),
@@ -994,7 +1183,7 @@ public class ActorRagdoll
             this.poseFrame.getTranslation(this.translation);
             this.poseFrame.getUnnormalizedRotation(this.orientation);
 
-            cache.write(tick, part.channel, this.translation, this.orientation, authority);
+            cache.write(tick, part.channel, this.translation, this.orientation, effective);
         }
     }
 
@@ -1021,17 +1210,18 @@ public class ActorRagdoll
         {
             if (cache.read(tick, part.channel, this.translation, this.orientation))
             {
-                this.state.set(part.bone, this.translation, this.orientation, jumped);
+                /* The authority is the bone's own now, not the form's: a torn head recorded 0 on
+                 * every tick after the tear while the walking body recorded 1, and the renderer
+                 * weighs each bone's substitution by its own number. Read only from a channel that
+                 * actually answered — a silent one holds the marker, and reading that as a handle
+                 * would release a ragdoll nobody released. */
+                float partAuthority = cache.readAuthority(tick, part.channel);
 
-                if (!recorded)
-                {
-                    /* From a channel that actually answered, not from the first part outright. The
-                     * handle belongs to the form, so every part of one ragdoll wrote the same
-                     * number — but a part with nothing to say wrote the silence marker in its
-                     * place, and reading that as a handle would release a ragdoll nobody released. */
-                    authority = cache.readAuthority(tick, part.channel);
-                }
+                this.state.set(part.bone, this.translation, this.orientation, partAuthority, jumped);
 
+                /* The form-wide answer is the loosest bone's, which is what gates whether the
+                 * substitution walk runs at all: one torn head is reason enough. */
+                authority = recorded ? Math.min(authority, partAuthority) : partAuthority;
                 recorded = true;
             }
         }

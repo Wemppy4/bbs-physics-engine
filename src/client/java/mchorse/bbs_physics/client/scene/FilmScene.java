@@ -8,6 +8,8 @@ import com.github.stephengold.joltjni.RVec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
 import io.netty.util.collection.IntObjectMap;
+import mchorse.bbs_mod.actions.types.ActionClip;
+import mchorse.bbs_mod.camera.data.Point;
 import mchorse.bbs_mod.film.BaseFilmController;
 import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_mod.film.replays.Replay;
@@ -21,8 +23,11 @@ import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.utils.CollectionUtils;
 import mchorse.bbs_mod.utils.Pair;
 import mchorse.bbs_mod.utils.StringUtils;
+import mchorse.bbs_mod.utils.clips.Clip;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
+import mchorse.bbs_physics.actions.ImpulseActionClip;
+import mchorse.bbs_physics.actions.TearActionClip;
 import mchorse.bbs_physics.balloon.BalloonForm;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.cloth.ClothForm;
@@ -243,6 +248,14 @@ public class FilmScene implements AutoCloseable
 
     private final List<CastMember> cast = new ArrayList<>();
 
+    /**
+     * One ragdoll's claim on an actor's markup, held between the moment its pieces are taken and
+     * the moment it is built — the gap in which the kinematic bones are created, so that a falling
+     * part can be jointed to a bone the animation kept.
+     */
+    private record ClaimedRagdoll(ModelForm form, String formPath, FormRagdoll config, Map<String, String> welds, List<CollisionCollector.Piece> claimed)
+    {}
+
     public FilmScene(BaseFilmController controller)
     {
         this.world = new PhysicsWorld();
@@ -280,8 +293,11 @@ public class FilmScene implements AutoCloseable
         this.cache.seal();
 
         /* The world as assembled is tick 0 of the film — the opening frame, whatever the cursor
-         * happened to be on — and that is the recording's first entry. */
+         * happened to be on — and that is the recording's first entry. A physics clip sitting on
+         * frame 0 fires here: the stepping loop only ever poses tick 1 onwards, so without this
+         * the film's very first frame would be the one frame a push cannot land on. */
         this.timeline.start();
+        this.applyClips(0);
         this.record(0);
     }
 
@@ -433,8 +449,21 @@ public class FilmScene implements AutoCloseable
 
             group += 1;
 
+            /* Claims first, builds after the kinematic bones exist — in that order deliberately.
+             * A bone the author left out of the ragdoll is a kinematic body, and a falling part is
+             * now jointed to it ("the ragdoll is only on the head": the head hangs off the walking
+             * torso instead of dropping free), so the bodies it hangs off have to be there before
+             * any joint is made. Whether a model can carry a ragdoll at all is checked before its
+             * pieces are claimed, because a claim can no longer be undone once the rig is built. */
+            List<ClaimedRagdoll> claims = new ArrayList<>(0);
+
             for (Pair<ModelForm, String> found : discoverRagdolls(root, "", new ArrayList<>(0)))
             {
+                if (!ActorRagdoll.supports(found.a))
+                {
+                    continue;
+                }
+
                 FormRagdoll config = FormRagdolls.get(found.a);
 
                 /* Before the claim, because a welded bone is claimed too — it has no body of its
@@ -443,7 +472,30 @@ public class FilmScene implements AutoCloseable
                 Map<String, String> welds = RagdollWelds.resolve(config, pieces, found.b, found.a);
                 List<CollisionCollector.Piece> claimed = claimBonePieces(pieces, found.b, config, welds);
 
-                ActorRagdoll ragdoll = ActorRagdoll.build(this.world, found.a, found.b, claimed, welds, matrices, actorWorld, this, actorGroup);
+                if (!claimed.isEmpty())
+                {
+                    claims.add(new ClaimedRagdoll(found.a, found.b, config, welds, claimed));
+                }
+            }
+
+            ActorRig bones = ActorRig.build(this.world, root, matrices, this, pieces, actorGroup);
+
+            for (ClaimedRagdoll claim : claims)
+            {
+                /* The bones of this form the animation kept — what a part with no falling parent
+                 * can be attached to. Gathered from what is left after every claim, so a bone
+                 * claimed by another ragdoll of the same actor is never offered. */
+                List<CollisionCollector.Piece> kinematic = new ArrayList<>(0);
+
+                for (CollisionCollector.Piece piece : pieces)
+                {
+                    if (RagdollWelds.isBonePiece(piece, claim.formPath))
+                    {
+                        kinematic.add(piece);
+                    }
+                }
+
+                ActorRagdoll ragdoll = ActorRagdoll.build(this.world, claim.form, claim.formPath, claim.claimed, claim.welds, kinematic, bones, matrices, actorWorld, this, actorGroup);
 
                 if (ragdoll != null)
                 {
@@ -451,18 +503,18 @@ public class FilmScene implements AutoCloseable
                 }
                 else
                 {
-                    /* Nothing was built — a model type the pose cannot be handed back to, or no
-                     * marked bones. The claim is undone so the bones at least stay kinematic. */
-                    pieces.addAll(claimed);
+                    /* Every claimed piece failed to become a body — a pose broken enough that no
+                     * frame or shape came out of it. The bones are simply absent until the cast is
+                     * next rebuilt; said out loud because absent collision is otherwise invisible. */
+                    BBSPhysics.LOGGER.warn("No ragdoll part of '{}' could be built; its bones have no bodies until the scene is rebuilt.", claim.form.getDisplayName());
                 }
             }
 
-            ActorRig bones = ActorRig.build(this.world, root, matrices, this, pieces, actorGroup);
             List<PhysicsBodyRig> bodyRigs = new ArrayList<>(0);
             List<ClothRig> cloths = new ArrayList<>(0);
             List<BalloonRig> balloons = new ArrayList<>(0);
 
-            this.discoverBodies(root, "", matrices, bodyRigs);
+            this.discoverBodies(root, "", matrices, bodyRigs, null);
 
             /* Each sheet takes an id of its own from the same counter, so its stand-ins are excused
              * from it alone — see ClothProxy. */
@@ -607,11 +659,11 @@ public class FilmScene implements AutoCloseable
      * own, is two bodies. What the outer one <em>collides</em> as stops at the inner one, which is
      * the collector's business, not this walk's.</p>
      */
-    private void discoverBodies(Form form, String path, MatrixCache matrices, List<PhysicsBodyRig> out)
+    private void discoverBodies(Form form, String path, MatrixCache matrices, List<PhysicsBodyRig> out, String anchor)
     {
         if (PhysicsForms.isBody(form))
         {
-            out.add(PhysicsBodyRig.build(this.world, form, path, matrices, this));
+            out.add(PhysicsBodyRig.build(this.world, form, path, matrices, this, anchor));
         }
 
         int i = 0;
@@ -622,7 +674,13 @@ public class FilmScene implements AutoCloseable
 
             if (child != null)
             {
-                this.discoverBodies(child, StringUtils.combinePaths(path, String.valueOf(i)), matrices, out);
+                /* The same anchor rule as cloth: descending out of a model means everything below
+                 * hangs on one of its bones, and that bone is what a ragdoll moves. */
+                String childAnchor = form instanceof ModelForm
+                    ? StringUtils.combinePaths(path, part.bone.get())
+                    : anchor;
+
+                this.discoverBodies(child, StringUtils.combinePaths(path, String.valueOf(i)), matrices, out, childAnchor);
             }
 
             /* Outside the null check, mirroring the walk: a partless slot still takes an index. */
@@ -1136,6 +1194,155 @@ public class FilmScene implements AutoCloseable
         {
             this.updateRigs(rigs, tick, false);
         }
+
+        /* After the drives, deliberately: a drive writes a body's velocity outright, so a push
+         * applied before it would be erased in the same tick it was given. Applied after, the push
+         * lands on top and the next tick's drive mixes it away by the handle's proportion — which
+         * is the muscles resisting the blast, and exactly what partial authority means. */
+        this.applyClips(tick);
+    }
+
+    /**
+     * Fires the physics action clips that sit on {@code tick} — the Э5 pushes and tears. Runs
+     * inside the recording, once per simulated tick, which is what keeps them deterministic: a
+     * re-recording replays the same clip on the same tick and the film comes out the same.
+     */
+    private void applyClips(int tick)
+    {
+        for (CastMember member : this.cast)
+        {
+            if (member.replay == null)
+            {
+                continue;
+            }
+
+            int local = member.replay.getTick(tick);
+
+            for (Clip clip : member.replay.actions.getClips(local))
+            {
+                if (!fires(clip, local))
+                {
+                    continue;
+                }
+
+                if (clip instanceof ImpulseActionClip impulse)
+                {
+                    this.applyImpulse(impulse);
+                }
+                else if (clip instanceof TearActionClip tear)
+                {
+                    this.applyTear(member, tear);
+                }
+            }
+        }
+    }
+
+    /**
+     * Whether an action clip goes off on this tick — the same rule {@code ActionClip} applies for
+     * the server and client passes, repeated here because physics reads the clip directly: at its
+     * first tick once, or every {@code frequency} ticks of its length when one is set.
+     */
+    private static boolean fires(Clip clip, int tick)
+    {
+        if (!(clip instanceof ActionClip action) || !clip.enabled.get())
+        {
+            return false;
+        }
+
+        int relative = tick - clip.tick.get();
+        int frequency = action.frequency.get();
+
+        return frequency == 0 ? relative == 0 : relative % frequency == 0;
+    }
+
+    /**
+     * One firing of an impulse clip: the push is worked out once and offered to everything
+     * simulated in the scene — every actor's bodies, not only the clip's own. An explosion has no
+     * respect for whose timeline it was authored on.
+     */
+    private void applyImpulse(ImpulseActionClip clip)
+    {
+        Point point = clip.point.get();
+        Point direction = clip.direction.get();
+
+        SceneImpulse push = SceneImpulse.of(
+            (float) (point.x - this.originX),
+            (float) (point.y - this.originY),
+            (float) (point.z - this.originZ),
+            clip.radius.get(),
+            clip.strength.get(),
+            clip.radial.get() ? null : new Vector3f((float) direction.x, (float) direction.y, (float) direction.z));
+
+        if (push == null)
+        {
+            return;
+        }
+
+        for (EntityRigs rigs : this.rigs)
+        {
+            for (PhysicsBodyRig rig : rigs.bodyRigs)
+            {
+                rig.impulse(this.world, push);
+            }
+
+            for (ActorRagdoll ragdoll : rigs.ragdolls)
+            {
+                ragdoll.impulse(this.world, push);
+            }
+
+            for (ClothRig cloth : rigs.cloths)
+            {
+                cloth.impulse(this.world, push);
+            }
+
+            for (BalloonRig balloon : rigs.balloons)
+            {
+                balloon.impulse(this.world, push);
+            }
+        }
+    }
+
+    /**
+     * One firing of a tear clip: the named bone of this clip's own actor comes off, with the kick
+     * the author gave it. The actor's ragdolls are asked in order; the first that owns the bone
+     * answers.
+     */
+    private void applyTear(CastMember member, TearActionClip clip)
+    {
+        String bone = clip.bone.get().trim();
+
+        if (bone.isEmpty())
+        {
+            return;
+        }
+
+        Point direction = clip.direction.get();
+        Vector3f kick = new Vector3f((float) direction.x, (float) direction.y, (float) direction.z);
+
+        if (kick.lengthSquared() > 1.0e-12F && kick.isFinite())
+        {
+            kick.normalize().mul(clip.strength.get());
+        }
+        else
+        {
+            kick.zero();
+        }
+
+        for (EntityRigs rigs : this.rigs)
+        {
+            if (rigs.entity != member.entity)
+            {
+                continue;
+            }
+
+            for (ActorRagdoll ragdoll : rigs.ragdolls)
+            {
+                if (ragdoll.tear(this.world, bone, kick.x, kick.y, kick.z))
+                {
+                    return;
+                }
+            }
+        }
     }
 
     /**
@@ -1220,6 +1427,10 @@ public class FilmScene implements AutoCloseable
         this.timeline.start();
         this.cache.clear();
         this.full = false;
+
+        /* Same as at assembly: frame 0 is never posed by the stepping loop, so a clip sitting on
+         * it fires here or not at all. */
+        this.applyClips(0);
         this.record(0);
     }
 
@@ -1254,12 +1465,14 @@ public class FilmScene implements AutoCloseable
             for (ActorRagdoll ragdoll : rigs.ragdolls)
             {
                 ragdoll.update(this.world, this, matrices, actorWorld, reset,
-                    rigs.cloths.isEmpty() && rigs.balloons.isEmpty() ? null : rigs.boneDeltas);
+                    rigs.cloths.isEmpty() && rigs.balloons.isEmpty() && rigs.bodyRigs.isEmpty() ? null : rigs.boneDeltas);
             }
 
+            /* After the ragdolls, like everything pinned to them: a crate on a falling arm is
+             * driven from this tick's fall rather than the one before it. */
             for (PhysicsBodyRig rig : rigs.bodyRigs)
             {
-                rig.update(this.world, this, matrices, actorWorld, reset);
+                rig.update(this.world, this, matrices, actorWorld, reset, rigs.boneDeltas);
             }
 
             /* After the ragdolls, so a sheet pinned to a falling bone is placed from this tick's

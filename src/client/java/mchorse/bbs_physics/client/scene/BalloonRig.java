@@ -318,6 +318,43 @@ public class BalloonRig
         physics.getBodies().activateBody(this.bodyId);
     }
 
+    /**
+     * An impulse clip's push (Э5), taken vertex by vertex like cloth: each vertex inside the reach
+     * adds the velocity change for where it sits. A ball has no held vertices, so a blast near one
+     * simply kicks the near side harder than the far one, which is what makes it bounce away.
+     */
+    public void impulse(PhysicsWorld physics, SceneImpulse push)
+    {
+        boolean pushed = false;
+
+        for (SoftBodyVertex vertex : this.vertices)
+        {
+            Vec3 position = vertex.getPosition();
+
+            /* Vertex-local is scene-space here — the body never moves, same as cloth. */
+            if (!push.velocityAt(position.getX(), position.getY(), position.getZ(), this.point))
+            {
+                continue;
+            }
+
+            Vec3 velocity = vertex.getVelocity();
+
+            this.scratch.set(
+                velocity.getX() + this.point.x,
+                velocity.getY() + this.point.y,
+                velocity.getZ() + this.point.z);
+            vertex.setVelocity(this.scratch);
+
+            pushed = true;
+        }
+
+        if (pushed)
+        {
+            /* A ball Jolt has put to sleep ignores everything it was just told. */
+            physics.getBodies().activateBody(this.bodyId);
+        }
+    }
+
     /** Pushes the settings that can change on a live body; pressure cannot — see the class comment. */
     private void applySettings(PhysicsWorld physics)
     {

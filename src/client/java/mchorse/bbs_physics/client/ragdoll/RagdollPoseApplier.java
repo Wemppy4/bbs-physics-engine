@@ -86,16 +86,19 @@ public final class RagdollPoseApplier
             return;
         }
 
-        float weight = state.getWeight(transition);
-
-        if (weight <= 0F)
+        /* Since Э5 the weight is a per-bone question — a torn head is wholly the simulation's
+         * while the body around it walks a full handle — so the walk asks it bone by bone. The
+         * form-wide weight is the loosest bone's (the state aggregates by minimum authority), so
+         * a zero here really does mean no bone anywhere has any weight and the walk is not worth
+         * running. */
+        if (state.getWeight(transition) <= 0F)
         {
             return;
         }
 
         chainStretch = true;
 
-        Walker walker = new Walker(state, transition, weight);
+        Walker walker = new Walker(state, transition);
 
         for (ModelGroup group : cubic.topGroups)
         {
@@ -109,8 +112,8 @@ public final class RagdollPoseApplier
         private final RagdollState state;
         private final float transition;
 
-        /** The simulation's share of the drawn pose — see {@link #substitute}. */
-        private final float weight;
+        /** The simulation's share of the drawn pose for the bone being walked — see {@link #substitute}. */
+        private float weight;
 
         private final Vector3f position = new Vector3f();
         private final Quaternionf rotation = new Quaternionf();
@@ -119,18 +122,25 @@ public final class RagdollPoseApplier
         private final Quaternionf parentRotation = new Quaternionf();
         private final Quaternionf simulated = new Quaternionf();
 
-        private Walker(RagdollState state, float transition, float weight)
+        private Walker(RagdollState state, float transition)
         {
             this.state = state;
             this.transition = transition;
-            this.weight = weight;
         }
 
         private void walk(ModelGroup group, Matrix4f parent)
         {
             if (this.state.get(group.id, this.transition, this.position, this.rotation))
             {
-                this.substitute(group, parent);
+                /* Each bone's own share: the form's handle everywhere, except on a torn bone,
+                 * whose recorded authority is 0 from the tear on — drawn wholly fallen while its
+                 * neighbours walk their keyframes untouched. */
+                this.weight = this.state.getWeight(group.id, this.transition);
+
+                if (this.weight > 0F)
+                {
+                    this.substitute(group, parent);
+                }
             }
 
             Matrix4f matrix = new Matrix4f(parent);

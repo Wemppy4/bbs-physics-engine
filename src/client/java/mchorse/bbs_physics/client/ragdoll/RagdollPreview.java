@@ -92,17 +92,29 @@ public final class RagdollPreview
 
             Map<String, String> welds = RagdollWelds.resolve(config, bones, "", model);
             List<CollisionCollector.Piece> pieces = new ArrayList<>(bones.size());
+            List<CollisionCollector.Piece> candidates = new ArrayList<>(bones.size());
 
             for (CollisionCollector.Piece piece : bones)
             {
-                if (config.isPart(piece.label()) && !welds.containsKey(piece.label()))
+                if (welds.containsKey(piece.label()))
+                {
+                    continue;
+                }
+
+                /* Every unwelded marked bone is a candidate to hang off — the bones the animation
+                 * keeps included, exactly as the scene resolves it: a part whose tree parent is
+                 * not falling attaches to that kinematic bone and dangles from the walking body.
+                 * Only the falling parts get joints drawn, but the line may end on a kept bone. */
+                candidates.add(piece);
+
+                if (config.isPart(piece.label()))
                 {
                     pieces.add(piece);
                 }
             }
 
             Matrix4f identity = new Matrix4f();
-            Map<String, String> attachment = RagdollAttachment.resolve(config, pieces, model, matrices, identity);
+            Map<String, String> attachment = RagdollAttachment.resolve(config, candidates, model, matrices, identity);
 
             RenderSystem.disableDepthTest();
 
@@ -110,7 +122,7 @@ public final class RagdollPreview
             {
                 for (CollisionCollector.Piece piece : pieces)
                 {
-                    draw(stack, piece, pieces, attachment, config, matrices, identity);
+                    draw(stack, piece, candidates, attachment, config, matrices, identity);
                 }
 
                 /* And the welds, in their own colour and towards the body the bone has become part

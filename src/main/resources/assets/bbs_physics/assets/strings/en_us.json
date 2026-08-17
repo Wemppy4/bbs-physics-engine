@@ -43,6 +43,23 @@
     "bbs_physics.hud.outside": "Past the scene's blocks: %s — there is no ground under them",
     "bbs_physics.hud.lost": "Lost by the solver: %s — pushed by an impossible force; the overlay cannot draw them",
 
+    "bbs.ui.camera.clips.bbs_physics:impulse": "Impulse",
+    "bbs.ui.camera.clips.bbs_physics:tear": "Tear a bone off",
+
+    "bbs_physics.clips.point": "Point (world coordinates)",
+    "bbs_physics.clips.point_from_look": "Take the point from the crosshair",
+    "bbs_physics.clips.radial": "Explosion — away from the point",
+    "bbs_physics.clips.radial_tooltip": "On — everything in the radius flies away from the point, like a blast. Off — everything in the radius is shoved the same way, along the Direction vector.",
+    "bbs_physics.clips.strength": "Strength (blocks/s)",
+    "bbs_physics.clips.strength_tooltip": "The speed things get at the point itself, in blocks per second, fading to nothing at the edge of the radius. Only what physics owns is pushed: a body with its handle at 1 belongs to the animation, and no blast outranks it.",
+    "bbs_physics.clips.radius": "Radius (blocks)",
+    "bbs_physics.clips.radius_tooltip": "How far the push reaches. The strength fades with distance and is zero at the edge.",
+    "bbs_physics.clips.direction": "Direction",
+    "bbs_physics.clips.bone": "Bone",
+    "bbs_physics.clips.bone_tooltip": "Which bone comes off — a ragdoll part of this actor. Right-click for the list. From this clip's frame the bone belongs to physics for the rest of the film, whatever the animation-strength handle does; the body keeps walking its keyframes.",
+    "bbs_physics.clips.kick": "Kick (blocks/s)",
+    "bbs_physics.clips.kick_tooltip": "The speed the torn bone is thrown with, on top of whatever it already had. Zero — it just drops off.",
+
     "bbs_physics.forms.physics.title": "Physics",
     "bbs_physics.forms.physics.add": "Add a modifier",
     "bbs_physics.forms.physics.add_body": "Rigid body",

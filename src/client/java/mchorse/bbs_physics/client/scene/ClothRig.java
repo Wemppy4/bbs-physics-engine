@@ -404,6 +404,50 @@ public class ClothRig
     }
 
     /**
+     * An impulse clip's push (Э5), taken vertex by vertex: each loose vertex inside the reach adds
+     * the velocity change for where it hangs. Per vertex deliberately — a blast lifts the near
+     * corner of a cape before the far one, which is most of what makes cloth read as cloth. Held
+     * vertices are the animation's and take nothing.
+     */
+    public void impulse(PhysicsWorld physics, SceneImpulse push)
+    {
+        boolean pushed = false;
+
+        for (int i = 0; i < this.vertices.length; i++)
+        {
+            if (this.held[i])
+            {
+                continue;
+            }
+
+            SoftBodyVertex vertex = this.vertices[i];
+            Vec3 position = vertex.getPosition();
+
+            /* Vertex-local is scene-space here — the body never moves, see the class note. */
+            if (!push.velocityAt(position.getX(), position.getY(), position.getZ(), this.point))
+            {
+                continue;
+            }
+
+            Vec3 velocity = vertex.getVelocity();
+
+            this.scratch.set(
+                velocity.getX() + this.point.x,
+                velocity.getY() + this.point.y,
+                velocity.getZ() + this.point.z);
+            vertex.setVelocity(this.scratch);
+
+            pushed = true;
+        }
+
+        if (pushed)
+        {
+            /* A sheet Jolt has put to sleep ignores everything it was just told. */
+            physics.getBodies().activateBody(this.bodyId);
+        }
+    }
+
+    /**
      * Pushes the settings that can change on a live body. The sheet's constitution cannot — see
      * the class comment — but fabric feel can, and a slider that does nothing until the film is
      * reopened reads as a slider that does nothing.
