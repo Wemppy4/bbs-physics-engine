@@ -54,6 +54,9 @@ public class ClothProxy
     /** Half the slab's thickness, in blocks — thin, but not so thin that contact is missed. */
     private static final float THICKNESS = 0.01F;
 
+    /** Where a slab sits before it is first placed, and again if its patch stops being a place. */
+    private static final double PARKED_Y = -1000D;
+
     private final int columns;
     private final int rows;
     private final int stride;
@@ -102,6 +105,15 @@ public class ClothProxy
     public static ClothProxy build(PhysicsWorld physics, int columns, int rows, int group)
     {
         int stride = STRIDE;
+
+        /* A sheet with fewer cells than the patch is wide gets none of them at that stride, and a
+         * "collides with cloth" tick that silently built nothing is a setting that does nothing.
+         * One cell per slab always fits something. */
+        while (stride > 1 && slabCount(columns, rows, stride) <= 0)
+        {
+            stride -= 1;
+        }
+
         int slabs = slabCount(columns, rows, stride);
 
         while (slabs > MAX_SLABS)
@@ -126,12 +138,23 @@ public class ClothProxy
         int[] corners = new int[slabs * 4];
 
         BodyInterface bodyInterface = physics.getBodies();
+        int down = patches(rows, stride);
+        int across = patches(columns, stride);
         int i = 0;
 
-        for (int r = 0; r + stride < rows; r += stride)
+        for (int ri = 0; ri < down; ri++)
         {
-            for (int c = 0; c + stride < columns; c += stride)
+            /* The last patch of a run is pulled back to end on the sheet's edge rather than being
+             * dropped for not fitting: a sheet whose cell count is not a multiple of the stride —
+             * seven cells at a stride of two — had its final strip covered by nothing at all, and
+             * another sheet slipped through the gap. Overlapping the patch before it costs nothing:
+             * the slabs are kinematic and only ever meet other sheets. */
+            int r = Math.min(ri * stride, rows - 1 - stride);
+
+            for (int ci = 0; ci < across; ci++)
             {
+                int c = Math.min(ci * stride, columns - 1 - stride);
+
                 corners[i * 4] = r * columns + c;
                 corners[i * 4 + 1] = r * columns + c + stride;
                 corners[i * 4 + 2] = (r + stride) * columns + c;
@@ -141,7 +164,7 @@ public class ClothProxy
                  * unit slab parked out of the way so nothing meets it before it is placed. */
                 BodyCreationSettings settings = new BodyCreationSettings(
                     new BoxShape(0.05F, THICKNESS, 0.05F),
-                    new RVec3(0D, -1000D, 0D), Quat.sIdentity(),
+                    new RVec3(0D, PARKED_Y, 0D), Quat.sIdentity(),
                     EMotionType.Kinematic, PhysicsLayers.CLOTH_PROXY);
 
                 settings.setCollisionGroup(new CollisionGroup(filter, group, 1));
@@ -157,20 +180,19 @@ public class ClothProxy
 
     private static int slabCount(int columns, int rows, int stride)
     {
-        int across = 0;
-        int down = 0;
+        return patches(columns, stride) * patches(rows, stride);
+    }
 
-        for (int c = 0; c + stride < columns; c += stride)
-        {
-            across += 1;
-        }
+    /**
+     * How many patches of {@code stride} cells it takes to cover a run of {@code vertices} — the
+     * whole run, so a remainder shorter than a patch is covered by one that overlaps its
+     * neighbour rather than by nothing.
+     */
+    private static int patches(int vertices, int stride)
+    {
+        int cells = vertices - 1;
 
-        for (int r = 0; r + stride < rows; r += stride)
-        {
-            down += 1;
-        }
-
-        return across * down;
+        return cells < stride ? 0 : (cells + stride - 1) / stride;
     }
 
     /** What the sheet itself must carry so that it is excused from its own slabs. */
@@ -198,7 +220,11 @@ public class ClothProxy
             if (!this.a.isFinite() || !this.b.isFinite() || !this.c.isFinite() || !this.d.isFinite())
             {
                 /* A sheet the solver has lost takes its proxies out of the way rather than to a
-                 * place that is not a place. */
+                 * place that is not a place — parked, not merely left alone: a slab abandoned
+                 * wherever it last stood is a collider hanging in mid-air with no cloth anywhere
+                 * near it, and nothing on screen would connect the two. */
+                this.park(bodyInterface, this.bodies[i]);
+
                 continue;
             }
 
@@ -250,6 +276,16 @@ public class ClothProxy
     public int getCount()
     {
         return this.bodies.length;
+    }
+
+    /** Where a slab waits when it has no patch to stand for — far below anything a film contains. */
+    private void park(BodyInterface bodyInterface, int body)
+    {
+        this.scratchPosition.set(0D, PARKED_Y, 0D);
+        this.scratchRotation.set(0F, 0F, 0F, 1F);
+
+        bodyInterface.setPositionAndRotation(body, this.scratchPosition, this.scratchRotation, EActivation.DontActivate);
+        bodyInterface.setLinearAndAngularVelocity(body, ZERO, ZERO);
     }
 
     private static void read(SoftBodyMotionProperties motion, int vertex, Vector3f out)

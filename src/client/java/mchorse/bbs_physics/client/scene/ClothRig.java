@@ -411,6 +411,16 @@ public class ClothRig
      */
     public void impulse(PhysicsWorld physics, SceneImpulse push)
     {
+        if (PhysicsForms.getAuthority(this.form) >= 1F)
+        {
+            /* The animation owns the whole sheet, and physics has no business kicking keyframes —
+             * the same rule a kinematic rigid body gets for free from its motion type. Without it
+             * the sheet is not even left alone: a push lands after this tick's drive has already
+             * stood every vertex flat, so the blast drags the sheet for one step and the next tick
+             * snaps it back — a twitch on a sheet the author holds. */
+            return;
+        }
+
         boolean pushed = false;
 
         for (int i = 0; i < this.vertices.length; i++)

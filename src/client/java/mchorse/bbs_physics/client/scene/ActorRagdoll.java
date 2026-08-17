@@ -813,14 +813,23 @@ public class ActorRagdoll
      * to whatever velocity it carried — the head of a running character flies out of the run, plus
      * the kick.
      *
-     * <p><b>Every joint between the bone and the rest — not "the bone's own joint".</b> Who
+     * <p><b>Every joint between what comes off and what stays — not "the bone's own joint".</b> Who
      * attaches to whom is the auto-attachment's decision, and its trunk is the bulkiest part —
      * which on Minecraft proportions is the <em>head</em> (8×8×8 beats the 8×12×4 torso). Tear
      * only its own upward link and a trunk bone has none: the kick landed, nothing broke, and the
-     * whole character flew off after its own head — the first live run's exact report. So the
-     * break is decided per neighbour instead, direction-blind: a joint to a bone-tree
-     * <em>descendant</em> of the torn bone survives (hair on a torn head flies with it), a joint
-     * to anything else is severed (whichever end happened to be the "parent").</p>
+     * whole character flew off after its own head — the first live run's exact report. So what
+     * comes off is defined first — the bone and everything under it in the <em>bone tree</em>,
+     * because "the hair is part of the head" is a fact of the model while the attachment graph
+     * flips with cube volumes — and then every joint with one end inside that set and one end
+     * outside is cut, whichever end happened to be called the parent. Hair on a torn head keeps
+     * its joint to the head and flies with it; a strand the geometry pass jointed to the torso
+     * instead loses that joint, rather than being left as a leash the head drags behind it.</p>
+     *
+     * <p><b>And everything in that set is released, not only the bone named.</b> The joint holding
+     * the hair to the head is kept deliberately, and a kept joint with a kinematic body on one end
+     * is a joint that wins: the hair, still glued to its keyframes, would haul the head back and
+     * swing it around its own pivot instead of letting it fly. The kick stays on the bone the
+     * author aimed at — the rest comes along the way anything attached does.</p>
      *
      * <p>Runs inside the recording, on the tick the tear clip fires, which is what makes it
      * deterministic: a re-recording replays the same clip on the same tick. The joint objects stay
@@ -854,40 +863,41 @@ public class ActorRagdoll
 
         BodyInterface bodies = physics.getBodies();
 
-        if (this.torn.add(bone))
+        for (Joint joint : this.joints)
         {
-            for (Joint joint : this.joints)
+            /* What comes off is the torn bone and everything under it in the bone tree — the head
+             * and its hair — so a joint breaks exactly when it crosses that line: one end inside,
+             * one end out. Which end the attachment solver happened to call the parent says nothing
+             * (its trunk is the bulkiest bone, and on Minecraft proportions that is the head), and
+             * neither does whether the torn bone is one of the two ends: a strand of hair jointed
+             * to the torso by geometry rather than to the head it grows from is a leash the head
+             * would drag behind it. */
+            boolean severs = this.comesOff(joint.child, bone) != this.comesOff(joint.parent, bone);
+
+            if (severs && joint.constraint.getEnabled())
             {
-                boolean severs;
+                joint.constraint.setEnabled(false);
+                this.severed.add(joint.constraint);
+            }
+        }
 
-                if (joint.child.equals(bone))
-                {
-                    /* The bone's own upward link always breaks: whatever it was held by, it is
-                     * being torn away from it. */
-                    severs = true;
-                }
-                else if (joint.parent.equals(bone))
-                {
-                    /* Something hangs off the torn bone. Hair on a head rides along — its joint
-                     * survives and it flies with the head. A bone that merely got attached here by
-                     * the trunk choice — the torso of a big-headed character — is the rest of the
-                     * body, and the joint is exactly what a tear exists to break. */
-                    severs = !this.isTreeDescendant(joint.child, bone);
-                }
-                else
-                {
-                    continue;
-                }
-
-                if (severs && joint.constraint.getEnabled())
-                {
-                    joint.constraint.setEnabled(false);
-                    this.severed.add(joint.constraint);
-                }
+        /* And every one of them is let go, not only the bone named. A part below the torn one keeps
+         * its joint on purpose so that it travels along — but a part still riding the animation at
+         * the other end of that joint is immovable, so it would haul the torn bone straight back to
+         * the keyframes and swing it about its own pivot instead of letting it fly. Same mistake
+         * one level up as the joints had: the tear is about a piece of the character, never about a
+         * single bone. */
+        for (Part part : this.parts)
+        {
+            if (!this.comesOff(part.bone, bone))
+            {
+                continue;
             }
 
-            bodies.setMotionType(found.id, EMotionType.Dynamic, EActivation.Activate);
-            bodies.setObjectLayer(found.id, PhysicsLayers.MOVING);
+            this.torn.add(part.bone);
+
+            bodies.setMotionType(part.id, EMotionType.Dynamic, EActivation.Activate);
+            bodies.setObjectLayer(part.id, PhysicsLayers.MOVING);
         }
 
         if ((kickX != 0F || kickY != 0F || kickZ != 0F) && Float.isFinite(kickX) && Float.isFinite(kickY) && Float.isFinite(kickZ))
@@ -932,6 +942,15 @@ public class ActorRagdoll
         }
 
         this.torn.clear();
+    }
+
+    /**
+     * Whether {@code bone} travels with {@code torn} when it comes off: the torn bone itself, and
+     * everything below it in the model's bone tree.
+     */
+    private boolean comesOff(String bone, String torn)
+    {
+        return bone.equals(torn) || this.isTreeDescendant(bone, torn);
     }
 
     /**

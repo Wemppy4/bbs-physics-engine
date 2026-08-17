@@ -47,8 +47,10 @@ import org.joml.Vector3f;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The physics of one film: a single Jolt world, a recording of what it did on every tick, and the
@@ -154,6 +156,13 @@ public class FilmScene implements AutoCloseable
     /** The tick the bodies were last handed, so a jump can be told from a step forward. */
     private int drawnTick = -1;
 
+    /**
+     * Whether the next frame handed out must be a cut rather than a step, whatever the ticks say.
+     * Raised by a rewind: the bodies have been moved back to the opening frame, so the pose each
+     * of them was last drawn in is not a place it travelled from.
+     */
+    private boolean teleport;
+
     /** The region the world's blocks were collected from — see {@link #buildGround()}. */
     private WorldCollider.Window window;
 
@@ -165,6 +174,12 @@ public class FilmScene implements AutoCloseable
 
     /** Scratch for the status readout, which runs per drawn frame. */
     private final Vector3f probe = new Vector3f();
+
+    /**
+     * Bone names a tear clip asked for that no ragdoll of the actor has, so the fact is reported
+     * once per name rather than on every tick of every re-recording.
+     */
+    private final Set<String> warnedTears = new HashSet<>(0);
 
     /**
      * Everything simulated for one actor: its bone bodies and the physics body forms found in its
@@ -263,6 +278,31 @@ public class FilmScene implements AutoCloseable
         this.entities = controller.getEntities();
         this.film = controller.film;
 
+        boolean built = false;
+
+        try
+        {
+            this.assemble(controller);
+
+            built = true;
+        }
+        finally
+        {
+            if (!built)
+            {
+                /* Half a scene is worse than none: a Jolt world is native memory that no garbage
+                 * collector ever comes back for, and the forms already claimed hold a state
+                 * belonging to a simulation that will never step again. The caller only sees the
+                 * exception and drops the object on the floor, so cleaning up is this
+                 * constructor's job. Closing twice is harmless, which is what makes this safe. */
+                this.close();
+            }
+        }
+    }
+
+    /** Everything the constructor does that can fail — see the cleanup it is wrapped in. */
+    private void assemble(BaseFilmController controller)
+    {
         List<Integer> order = castOrder(controller);
 
         this.collectCast(controller, order);
@@ -279,26 +319,32 @@ public class FilmScene implements AutoCloseable
             this.pickOrigin(controller, order);
             this.buildGround();
             this.buildRigs();
+
+            this.world.optimize();
+
+            /* The recording's shape is fixed here: every channel exists, so a tick is a fixed
+             * number of floats and can be indexed arithmetically. A body appearing later would
+             * shift every channel after it, which is why a change to the set of bodies rebuilds
+             * the scene. */
+            this.cache.seal();
+
+            /* The world as assembled is tick 0 of the film — the opening frame, whatever the cursor
+             * happened to be on — and that is the recording's first entry. A physics clip sitting
+             * on frame 0 fires here: the stepping loop only ever poses tick 1 onwards, so without
+             * this the film's very first frame would be the one frame a push cannot land on.
+             *
+             * Inside the borrow, deliberately: recording a tick reads the handle off the form, and
+             * the form only holds tick 0's handle while the cast is standing on tick 0. Written
+             * after the cast was handed back — as it was — the film's opening frame carried
+             * whatever the handle happened to say at the cursor. */
+            this.timeline.start();
+            this.applyClips(0);
+            this.record(0);
         }
         finally
         {
             this.returnCast(controller.getTick());
         }
-
-        this.world.optimize();
-
-        /* The recording's shape is fixed here: every channel exists, so a tick is a fixed number of
-         * floats and can be indexed arithmetically. A body appearing later would shift every
-         * channel after it, which is why a change to the set of bodies rebuilds the scene. */
-        this.cache.seal();
-
-        /* The world as assembled is tick 0 of the film — the opening frame, whatever the cursor
-         * happened to be on — and that is the recording's first entry. A physics clip sitting on
-         * frame 0 fires here: the stepping loop only ever poses tick 1 onwards, so without this
-         * the film's very first frame would be the one frame a push cannot land on. */
-        this.timeline.start();
-        this.applyClips(0);
-        this.record(0);
     }
 
     /** The cast in simulation order, with the replay each actor is played from. */
@@ -791,6 +837,17 @@ public class FilmScene implements AutoCloseable
      */
     public void computeAll()
     {
+        /* An edit that has not been answered yet would otherwise be recorded straight over: the
+         * button would fill the bar to the end, and the next tick would throw the lot away and
+         * start again. Answered here instead, so "compute everything" computes the film as it is
+         * now. */
+        if (this.stale)
+        {
+            this.stale = false;
+
+            this.rewind();
+        }
+
         int end = this.recordingEnd(this.filmTick);
 
         this.borrowCast();
@@ -975,6 +1032,12 @@ public class FilmScene implements AutoCloseable
 
         this.filmTick = tick;
 
+        /* Before the rewind, not after it: these knobs invalidate the recording themselves when
+         * they move, and answering them second meant a whole tick was recorded under the new
+         * gravity on top of a recording made under the old one, only to be thrown away by the
+         * invalidation on the tick after. */
+        this.applyWorldSettings();
+
         if (this.stale)
         {
             this.stale = false;
@@ -982,7 +1045,6 @@ public class FilmScene implements AutoCloseable
             this.rewind();
         }
 
-        this.applyWorldSettings();
         this.compute(tick);
         this.distribute(tick);
     }
@@ -1137,7 +1199,9 @@ public class FilmScene implements AutoCloseable
          * meaningful previous tick, and interpolating out of it would draw bodies sliding the whole
          * way. Asking for the same tick again — a paused editor — is not a jump and needs nothing
          * special: both slots end up holding the same numbers, so the interpolation collapses. */
-        boolean jumped = tick != this.drawnTick && tick != this.drawnTick + 1;
+        boolean jumped = this.teleport || (tick != this.drawnTick && tick != this.drawnTick + 1);
+
+        this.teleport = false;
 
         for (SceneBody body : this.bodies)
         {
@@ -1262,6 +1326,16 @@ public class FilmScene implements AutoCloseable
         }
 
         int relative = tick - clip.tick.get();
+
+        if (relative < 0)
+        {
+            /* The clip has not started. BBS's own passes cannot reach this — they only ever ask a
+             * clip that covers the tick — but the list this reads also hands back "global" clips
+             * whatever the tick, and a repeating clip's modulo says yes to a negative multiple just
+             * as readily as to a positive one. A push before its own frame is not a thing. */
+            return false;
+        }
+
         int frequency = action.frequency.get();
 
         return frequency == 0 ? relative == 0 : relative % frequency == 0;
@@ -1355,6 +1429,16 @@ public class FilmScene implements AutoCloseable
                 }
             }
         }
+
+        /* Nobody owns that bone. Said out loud once per name, because the alternative is the clip
+         * doing nothing at all with no explanation — and the name is typed by hand, so the usual
+         * cause is a bone that is spelled differently, unmarked in the collision tab, or ticked
+         * out of the ragdoll. Exactly the kind of silence the impulse clip's point already cost a
+         * live run over. */
+        if (this.warnedTears.add(bone))
+        {
+            BBSPhysics.LOGGER.warn("A tear clip names the bone '{}', which is not a ragdoll part of that actor; nothing comes off. Check the spelling, that the bone is marked up in the Collision tab, and that it is ticked on in the ragdoll modifier.", bone);
+        }
     }
 
     /**
@@ -1430,20 +1514,28 @@ public class FilmScene implements AutoCloseable
             {
                 this.updateRigs(rigs, 0, true);
             }
+
+            this.timeline.start();
+            this.cache.clear();
+            this.full = false;
+
+            /* Same as at assembly: frame 0 is never posed by the stepping loop, so a clip sitting
+             * on it fires here or not at all. And inside the borrow for the same reason as at
+             * assembly — recording a tick reads the handle off the form, which only says tick 0's
+             * value while the cast is standing on tick 0. */
+            this.applyClips(0);
+            this.record(0);
         }
         finally
         {
             this.returnCast(this.filmTick);
         }
 
-        this.timeline.start();
-        this.cache.clear();
-        this.full = false;
-
-        /* Same as at assembly: frame 0 is never posed by the stepping loop, so a clip sitting on
-         * it fires here or not at all. */
-        this.applyClips(0);
-        this.record(0);
+        /* Everything in the world has just been put back to the opening frame. Whatever each body
+         * was last drawn at is a place it never travelled from, so the next frame is a cut rather
+         * than a step — without this it slides from the old pose to the new one over one frame,
+         * every time an edit lands with the recording already caught up to the cursor. */
+        this.teleport = true;
     }
 
     /**

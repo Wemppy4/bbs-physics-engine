@@ -64,7 +64,11 @@ public class UIBalloonFormPanel extends UIFormPanel<BalloonForm>
 
         this.radius = new UITrackpad((value) -> this.form.radius.set(value.floatValue()));
         this.radius.limit(0.1D, 8D).tooltip(PhysicsKeys.BALLOON_RADIUS);
-        this.segments = new UITrackpad((value) -> this.form.segments.set(value.intValue()));
+        this.segments = new UITrackpad((value) ->
+        {
+            this.form.segments.set(value.intValue());
+            this.syncRings();
+        });
         this.segments.limit(3D, 32D).integer().tooltip(PhysicsKeys.BALLOON_SEGMENTS);
         this.rings = new UITrackpad((value) -> this.form.rings.set(value.intValue()));
         this.rings.limit(2D, 24D).integer().tooltip(PhysicsKeys.BALLOON_RINGS);
@@ -109,7 +113,7 @@ public class UIBalloonFormPanel extends UIFormPanel<BalloonForm>
 
         this.radius.setValue(form.radius.get());
         this.segments.setValue(form.segments.get());
-        this.rings.setValue(form.rings.get());
+        this.syncRings();
 
         this.inflation.setValue(form.inflation.get());
         this.stiffness.setValue(form.stiffness.get());
@@ -119,5 +123,26 @@ public class UIBalloonFormPanel extends UIFormPanel<BalloonForm>
         this.restitution.setValue(form.restitution.get());
         this.damping.setValue(form.damping.get());
         this.authority.setValue(PhysicsForms.getAuthority(form));
+    }
+
+    /**
+     * Holds the ring slider at the fewest rows this many meridians can hold together, and shows
+     * the number the ball is really built with.
+     *
+     * <p>The two numbers are not independent — cells much taller than they are wide take the
+     * solver apart (see {@link BalloonForm#minimumRings}) — and the form widens the mesh whatever
+     * the slider says. Left showing the authored number, the panel would read "2 rings" beside a
+     * ball plainly built from seven, which is the interface disagreeing with itself. So the floor
+     * moves with the meridians and the slider shows the built figure. It only ever bites past
+     * sixteen meridians, which is where the lopsided end begins.</p>
+     *
+     * <p>Shown, not written. Merely opening a form editor has no business editing the form, and
+     * the stored value is harmless where it is — nothing reads it without going through
+     * {@code getRings}. Turning the meridians back down brings the author's own number back.</p>
+     */
+    private void syncRings()
+    {
+        this.rings.limit(BalloonForm.minimumRings(this.form.segments.get()), 24D).integer();
+        this.rings.setValue(this.form.getRings());
     }
 }

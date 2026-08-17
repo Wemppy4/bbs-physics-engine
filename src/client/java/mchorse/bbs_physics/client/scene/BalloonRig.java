@@ -45,9 +45,10 @@ import java.util.Map;
  *
  * <p>No vertex is ever pinned: a ball has no held edge. At authority 1 every vertex is stood on
  * the perfect sphere; below it they are pulled there by the shared velocity mix; at 0 the ball is
- * the solver's alone. Pressure and gravity factor are baked at creation (Jolt exposes no live
- * setter), so those edits take effect when the form editor closes; friction and damping are pushed
- * to the live body every tick like everywhere else.</p>
+ * the solver's alone. Only the ball's <em>constitution</em> is baked at creation — its size, its
+ * mesh and its pressure, which Jolt has no live setter for — so those edits take effect when the
+ * form editor closes; everything an author turns while watching (friction, damping, bounce, the
+ * gravity factor that turns a football into a helium balloon) is pushed to the live body.</p>
  */
 public class BalloonRig
 {
@@ -88,6 +89,8 @@ public class BalloonRig
 
     private float lastFriction;
     private float lastDamping;
+    private float lastRestitution;
+    private float lastGravity;
 
     private BalloonRig(BalloonForm form, String path, int bodyId, int channel, SoftBodyMotionProperties motion, String anchor)
     {
@@ -104,6 +107,8 @@ public class BalloonRig
 
         this.lastFriction = form.friction.get();
         this.lastDamping = form.damping.get();
+        this.lastRestitution = form.restitution.get();
+        this.lastGravity = form.gravity.get();
     }
 
     /** The inflation knob's pressure for this ball — the BalloonSmoke stand's formula. */
@@ -128,7 +133,7 @@ public class BalloonRig
         Matrix4f formWorld = new Matrix4f(actorWorld).mul(entry.matrix());
 
         int segments = form.segments.get();
-        int rings = form.rings.get();
+        int rings = form.getRings();
         int count = form.getVertexCount();
         float mass = Math.max(form.mass.get(), 0.001F);
 
@@ -183,8 +188,14 @@ public class BalloonRig
         shared.createConstraints(new VertexAttributes(compliance, compliance * 2F, compliance * 10F), 1, EBendType.Distance);
 
         /* Contact happens at the vertices: a little thickness, scaled to the mesh, so the ball
-         * rests on surfaces instead of z-fighting them. */
-        shared.setVertexRadius(2F * (float) Math.PI * form.radius.get() / segments / 4F);
+         * rests on surfaces instead of z-fighting them. A quarter of the smaller cell, exactly as
+         * cloth sizes it — the equator's spacing alone was wrong for a coarse ball, where the rings
+         * are the closer of the two and a skin thicker than the gap between them is a ball hovering
+         * over the floor by a visible fraction of its own radius. */
+        float around = 2F * (float) Math.PI * form.radius.get() / segments;
+        float down = (float) Math.PI * form.radius.get() / (rings + 1);
+
+        shared.setVertexRadius(Math.min(around, down) / 4F);
         shared.optimize();
 
         SoftBodyCreationSettings settings = new SoftBodyCreationSettings(shared, new RVec3(0D, 0D, 0D), Quat.sIdentity(), PhysicsLayers.CLOTH);
@@ -325,6 +336,15 @@ public class BalloonRig
      */
     public void impulse(PhysicsWorld physics, SceneImpulse push)
     {
+        if (PhysicsForms.getAuthority(this.form) >= 1F)
+        {
+            /* The animation owns the ball outright — the same "kinematic takes nothing" a rigid
+             * body gets from its motion type. Left in, the push lands after this tick's drive has
+             * already stood every vertex on the sphere, so the ball lurches for one step and snaps
+             * back on the next. */
+            return;
+        }
+
         boolean pushed = false;
 
         for (SoftBodyVertex vertex : this.vertices)
@@ -374,6 +394,29 @@ public class BalloonRig
             this.motion.setLinearDamping(damping);
 
             this.lastDamping = damping;
+        }
+
+        /* Both of these were left at whatever creation baked in, and both are knobs an author
+         * turns while watching: bounce is the whole character of a beach ball, and the gravity
+         * factor is the difference between a football and a helium balloon. A slider that only
+         * takes effect once the form editor has been closed and reopened reads as a slider that
+         * does nothing — the very complaint the live friction and damping were added for. */
+        float restitution = this.form.restitution.get();
+
+        if (restitution != this.lastRestitution)
+        {
+            physics.getBodies().setRestitution(this.bodyId, restitution);
+
+            this.lastRestitution = restitution;
+        }
+
+        float gravity = this.form.gravity.get();
+
+        if (gravity != this.lastGravity)
+        {
+            physics.getBodies().setGravityFactor(this.bodyId, gravity);
+
+            this.lastGravity = gravity;
         }
     }
 

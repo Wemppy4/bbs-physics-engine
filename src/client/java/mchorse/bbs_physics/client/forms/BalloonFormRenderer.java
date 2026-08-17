@@ -122,7 +122,11 @@ public class BalloonFormRenderer extends FormRenderer<BalloonForm>
         }
 
         int segments = this.form.segments.get();
-        int rings = this.form.rings.get();
+        /* The built ring count, not the authored one: a lopsided mesh is widened before it is
+         * simulated (see BalloonForm.minimumRings), and a renderer drawing the authored one would
+         * disagree with the simulation about how many vertices there are — which reads as the ball
+         * never being simulated at all. */
+        int rings = this.form.getRings();
         int count = this.form.getVertexCount();
 
         this.fillPositions(count, transition);

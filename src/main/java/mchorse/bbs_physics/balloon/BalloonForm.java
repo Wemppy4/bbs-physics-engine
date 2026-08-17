@@ -110,10 +110,40 @@ public class BalloonForm extends Form
         this.add(this.gravity);
     }
 
-    /** North pole, {@code rings} rows of {@code segments}, south pole. */
+    /**
+     * How many rows of vertices the ball is actually built from — never fewer than the meridian
+     * count can hold together.
+     *
+     * <p><b>A sliver mesh is not a soft body, it is a blow-up.</b> Both numbers are the author's to
+     * set, and taken independently they make cells of any shape: thirty-two meridians with two
+     * rings are quads five times taller than they are wide, and the solver does not survive them —
+     * measured, not feared. That ball loses every vertex to not-a-number within a couple of
+     * seconds, at any inflation and even at none, and no amount of solver iterations, softer skin
+     * or a different bend type touches it (BalloonSmoke4 sweeps all three). Drawn, it is a ball
+     * that silently ceases to exist.</p>
+     *
+     * <p>So the mesh is kept within twice as tall as wide, which is where the stand's whole sweep
+     * of the meridian slider stays finite with room to spare, and which only ever bites at the
+     * lopsided end an author has no reason to want. Applied here rather than in the builder because
+     * the renderer draws from these same numbers: the two must agree, or the ball is simulated as
+     * one mesh and drawn as another and never shows the simulation at all.</p>
+     */
+    public static int minimumRings(int segments)
+    {
+        /* pi*r/(rings+1) <= 2 * 2*pi*r/segments, solved for rings. */
+        return Math.max(2, (int) Math.ceil(segments / 4D) - 1);
+    }
+
+    /** The rows of vertices between the poles, as the ball is really built — see {@link #minimumRings}. */
+    public int getRings()
+    {
+        return Math.max(this.rings.get(), minimumRings(this.segments.get()));
+    }
+
+    /** North pole, {@link #getRings()} rows of {@code segments}, south pole. */
     public int getVertexCount()
     {
-        return this.rings.get() * this.segments.get() + 2;
+        return this.getRings() * this.segments.get() + 2;
     }
 
     /** The south pole's index — the last vertex. */
@@ -133,7 +163,7 @@ public class BalloonForm extends Form
     {
         float radius = this.radius.get();
         int segments = this.segments.get();
-        int rings = this.rings.get();
+        int rings = this.getRings();
 
         if (v == 0)
         {

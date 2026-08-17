@@ -266,12 +266,27 @@ public class PhysicsCache
         return true;
     }
 
-    /** The authority this channel was simulated under on {@code tick}, or 1 when unrecorded. */
+    /**
+     * The authority this channel was simulated under on {@code tick}, or 1 when the tick is not
+     * recorded or the channel was silent on it.
+     *
+     * <p>Silence has to answer 1 rather than the marker it is stored as. A channel with nothing to
+     * say means the frame is drawn as plain animation (Р8.1), and "plain animation" <em>is</em> a
+     * handle of 1; handing the marker back instead would be a negative handle, which reads as a
+     * ragdoll released harder than fully released.</p>
+     */
     public float readAuthority(int tick, int channel)
     {
         int at = this.at(tick, channel);
 
-        return at < 0 ? 1F : this.data[at + this.widths[channel] - 1];
+        if (at < 0)
+        {
+            return 1F;
+        }
+
+        float authority = this.data[at + this.widths[channel] - 1];
+
+        return authority == SILENT ? 1F : authority;
     }
 
     /**

@@ -14,9 +14,12 @@ import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Who hangs off whom in a ragdoll — the three-step answer, in one place.
@@ -84,6 +87,8 @@ public final class RagdollAttachment
                 loose.add(bone);
             }
         }
+
+        breakCycles(parents, byBone);
 
         if (loose.isEmpty())
         {
@@ -156,6 +161,75 @@ public final class RagdollAttachment
         }
 
         return parents;
+    }
+
+    /**
+     * Cuts one link out of every ring of attachments, so that what comes out is a forest.
+     *
+     * <p>The first two steps can close a ring where the third cannot. The tree walk alone never
+     * does — parenthood is acyclic — but the author's own "attaches to" overrules it per bone, and
+     * one line of it is enough: point the torso at the head while the head resolves to the torso
+     * by parenthood, and the two hold each other. What comes of that is a ragdoll with no free
+     * part anywhere in it, every bone jointed to another bone that is jointed back, and Jolt
+     * solving a closed loop it was never given a way out of — a character that is stiff, jittery
+     * or both, for a reason nothing on screen states.</p>
+     *
+     * <p>The member cut loose is the bulkiest one, for the same reason the trunk is picked that way
+     * when the whole rig is loose: the biggest part is the one that reads as the body. It becomes a
+     * root, not a loose bone — the geometry pass must not simply joint it back into the ring it was
+     * just freed from. The viewport says which one it was without a word: a part with nothing
+     * holding it is drawn in the trunk's white.</p>
+     */
+    private static void breakCycles(Map<String, String> parents, Map<String, CollisionCollector.Piece> byBone)
+    {
+        Set<String> settled = new HashSet<>();
+
+        for (String start : byBone.keySet())
+        {
+            if (settled.contains(start))
+            {
+                continue;
+            }
+
+            Set<String> path = new LinkedHashSet<>();
+            String at = start;
+
+            while (at != null && !settled.contains(at) && path.add(at))
+            {
+                at = parents.get(at);
+            }
+
+            if (at != null && !settled.contains(at))
+            {
+                /* The walk came back to something it had already stepped on: everything from there
+                 * to the end of the path is the ring. */
+                String trunk = null;
+                float best = -1F;
+                boolean inRing = false;
+
+                for (String bone : path)
+                {
+                    inRing |= bone.equals(at);
+
+                    if (!inRing)
+                    {
+                        continue;
+                    }
+
+                    float volume = shapesVolume(byBone.get(bone));
+
+                    if (volume > best)
+                    {
+                        best = volume;
+                        trunk = bone;
+                    }
+                }
+
+                parents.remove(trunk);
+            }
+
+            settled.addAll(path);
+        }
     }
 
     /** Walks up the model's bone tree to the first ancestor that is itself a marked part. */

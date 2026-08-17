@@ -118,6 +118,15 @@ public final class SceneDebugRenderer
 
         for (Replay replay : film.replays.getList())
         {
+            if (!replay.enabled.get())
+            {
+                /* A switched-off replay gets no actor, so the scene never reads its clips and the
+                 * push cannot happen. Marking it anyway would be the overlay promising a blast
+                 * that is not coming — and the mark is here precisely because the point cannot be
+                 * aimed by eye. */
+                continue;
+            }
+
             int local = replay.getTick(scene.getFilmTick());
 
             for (ImpulseActionClip clip : replay.actions.getClips(ImpulseActionClip.class))
