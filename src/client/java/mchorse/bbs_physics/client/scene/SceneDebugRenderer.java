@@ -1,6 +1,12 @@
 package mchorse.bbs_physics.client.scene;
 
+import mchorse.bbs_mod.camera.data.Point;
+import mchorse.bbs_mod.film.Film;
+import mchorse.bbs_mod.film.replays.Replay;
+import mchorse.bbs_physics.actions.ImpulseActionClip;
 import mchorse.bbs_physics.client.collision.CollisionWireframe;
+import mchorse.bbs_physics.client.collision.JointWireframe;
+import mchorse.bbs_physics.collision.CollisionKind;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.util.math.MatrixStack;
@@ -12,6 +18,12 @@ import org.joml.Vector3f;
  * compared against what the model looks like. This is how a physics bug is diagnosed — a collider
  * in the wrong place is obvious the moment it is drawn and invisible otherwise.
  *
+ * <p>The film's impulse clips are marked too: a cross at the point, the ring of the radius, an
+ * arrow for a directed push. The point is a number typed into a panel — world coordinates, which
+ * the first live run proved nobody can aim by eye — and the overlay is the one place that can show
+ * where the blast actually is before the author wonders why nothing moved. Dim while the film is
+ * elsewhere, bright on the frames the clip covers.</p>
+ *
  * <p>Drawn with the world's depth buffer intact, so a body behind a wall is behind the wall: the
  * overlay is meant to show where things are, and one that floated over the scene would be lying
  * about depth.</p>
@@ -20,6 +32,14 @@ public final class SceneDebugRenderer
 {
     private static final Vector3f POSITION = new Vector3f();
     private static final Quaternionf ROTATION = new Quaternionf();
+
+    /** The impulse marks' colour — the clip's own timeline orange, dimmed when the cursor is away. */
+    private static final int IMPULSE_NOW = 0xffff9500;
+    private static final int IMPULSE_ELSEWHERE = 0x59ff9500;
+
+    private static final Vector3f CENTER = new Vector3f();
+    private static final Vector3f ARROW = new Vector3f();
+    private static final Vector3f RADIUS = new Vector3f();
 
     private SceneDebugRenderer()
     {}
@@ -77,6 +97,82 @@ public final class SceneDebugRenderer
             }
 
             stack.pop();
+        }
+
+        drawImpulses(scene, stack, camera);
+    }
+
+    /**
+     * Marks every impulse clip of the film at its point: a cross, the ring of its reach, and the
+     * shove's arrow when it is directed rather than radial. Drawn from the film's data directly —
+     * the marks must follow the panel's numbers as they are typed, not the recording.
+     */
+    private static void drawImpulses(FilmScene scene, MatrixStack stack, Camera camera)
+    {
+        Film film = scene.getFilm();
+
+        if (film == null)
+        {
+            return;
+        }
+
+        for (Replay replay : film.replays.getList())
+        {
+            int local = replay.getTick(scene.getFilmTick());
+
+            for (ImpulseActionClip clip : replay.actions.getClips(ImpulseActionClip.class))
+            {
+                if (!clip.enabled.get())
+                {
+                    continue;
+                }
+
+                Point point = clip.point.get();
+                float radius = Math.max(clip.radius.get(), 0.05F);
+                int color = clip.isInside(local) ? IMPULSE_NOW : IMPULSE_ELSEWHERE;
+
+                stack.push();
+                stack.translate(
+                    point.x - camera.getPos().x,
+                    point.y - camera.getPos().y,
+                    point.z - camera.getPos().z);
+
+                /* The cross at the point — and, for a directed push, the arrow of its shove, drawn
+                 * out to the reach so the pair reads as "from here, this way, this far". */
+                CENTER.zero();
+
+                if (clip.radial.get())
+                {
+                    JointWireframe.draw(stack, CENTER, null, color);
+                }
+                else
+                {
+                    Point direction = clip.direction.get();
+
+                    ARROW.set((float) direction.x, (float) direction.y, (float) direction.z);
+
+                    if (ARROW.lengthSquared() > 1.0e-12F && ARROW.isFinite())
+                    {
+                        ARROW.normalize().mul(radius);
+                    }
+                    else
+                    {
+                        ARROW.zero();
+                    }
+
+                    JointWireframe.draw(stack, CENTER, ARROW, color);
+                }
+
+                RADIUS.set(radius);
+                CollisionWireframe.draw(
+                    stack, CollisionKind.SPHERE, RADIUS,
+                    ((color >> 16) & 0xFF) / 255F,
+                    ((color >> 8) & 0xFF) / 255F,
+                    (color & 0xFF) / 255F,
+                    ((color >> 24) & 0xFF) / 255F);
+
+                stack.pop();
+            }
         }
     }
 }

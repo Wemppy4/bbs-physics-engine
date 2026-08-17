@@ -842,6 +842,18 @@ public class FilmScene implements AutoCloseable
         return this.bodies;
     }
 
+    /** The film this scene simulates — the debug overlay reads its impulse clips to mark them. */
+    public Film getFilm()
+    {
+        return this.film;
+    }
+
+    /** The tick the film last asked for — what the overlay judges "this clip is now" against. */
+    public int getFilmTick()
+    {
+        return this.filmTick;
+    }
+
     /**
      * What the simulation is doing, for the readout over the viewport. Counted per drawn frame
      * rather than kept up to date as things change: there are a handful of bodies, and a number
