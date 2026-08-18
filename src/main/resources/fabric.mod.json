@@ -8,6 +8,7 @@
         "Wemppy"
     ],
     "license": "MIT",
+    "icon": "assets/bbs_physics/icon.png",
     "environment": "*",
     "entrypoints": {
         "main": [
