@@ -19,6 +19,7 @@ import mchorse.bbs_physics.cloth.ClothEdge;
 import mchorse.bbs_physics.cloth.ClothForm;
 import mchorse.bbs_physics.cloth.ClothState;
 import mchorse.bbs_physics.engine.PhysicsLayers;
+import mchorse.bbs_physics.engine.PhysicsMath;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -169,9 +170,14 @@ public class ClothRig extends SoftBodyRig
          * the same thing, which the drive and the recording both lean on. */
         settings.setUpdatePosition(false);
         settings.setMakeRotationIdentity(true);
-        settings.setLinearDamping(form.damping.get());
+        settings.setLinearDamping(PhysicsMath.softDamping(form.damping.get(), physics.getCollisionSteps(), SoftBodyRig.SOLVER_ITERATIONS));
         settings.setFriction(form.friction.get());
-        settings.setNumIterations(5);
+
+        /* Five is Jolt's own default and it is a default for a solver running at 60 Hz or better.
+         * A sheet solved five times against a fifty-millisecond step is a sheet whose constraints
+         * are still visibly unsatisfied when the step ends: the vertices arrive late, overshoot,
+         * and the cloth cracks about like a flag rather than falling like fabric. */
+        settings.setNumIterations(SoftBodyRig.SOLVER_ITERATIONS);
 
         /* Built before the sheet, because the sheet has to be told to consult the proxies' filter —
          * that is the whole of how it is excused from its own stand-ins. */

@@ -27,13 +27,21 @@ import com.github.stephengold.joltjni.TempAllocatorImpl;
 public class PhysicsWorld implements AutoCloseable
 {
     /**
-     * How much of the step Jolt is allowed to re-solve. A film tick is 50 ms, which is long for a
-     * solver aimed at 60 Hz frames, so it is cut in two — the cheapest way to keep stacked bodies
-     * from sinking into each other. Fixed rather than adaptive on purpose: the number of collision
-     * steps is part of the simulation's arithmetic, and a value that drifted with the frame rate
-     * would make a film stop being reproducible.
+     * How many times a film tick is split before Jolt solves it. A tick is 50 ms, which is long for
+     * a solver aimed at 60 Hz frames, so it is cut up — the cheapest way to keep stacked bodies from
+     * sinking into each other, and the difference between a contact that resolves smoothly and one
+     * that arrives as a bang.
+     *
+     * <p>Three, to land on 60 Hz. BBS's own chain solver has always run three sub-steps per tick
+     * and says why in its own comment: the in-between shapes are then actually simulated rather
+     * than guessed from coarse 20 Hz snapshots. Simulating at 40 Hz where the thing an author is
+     * comparing against runs at 60 is a step backwards they can see.</p>
+     *
+     * <p>Fixed rather than adaptive on purpose: the number of steps is part of the simulation's
+     * arithmetic, and a value that drifted with the frame rate would make a film stop being
+     * reproducible.</p>
      */
-    public static final int COLLISION_STEPS = 2;
+    public static final int COLLISION_STEPS = 3;
 
     /** Earth, in blocks per second squared — a block is a metre (§8). */
     public static final float EARTH_GRAVITY = 9.81F;
@@ -105,6 +113,16 @@ public class PhysicsWorld implements AutoCloseable
     public void setCollisionSteps(int steps)
     {
         this.collisionSteps = Math.max(1, steps);
+    }
+
+    /**
+     * How many pieces a tick is solved in. Asked for by the damping conversion, which has to know:
+     * Jolt sheds a rigid body's speed once per sub-step, so the same rate bites harder the fewer
+     * there are — see {@link PhysicsMath#bodyDamping}.
+     */
+    public int getCollisionSteps()
+    {
+        return this.collisionSteps;
     }
 
     /**

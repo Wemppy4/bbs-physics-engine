@@ -82,10 +82,6 @@ public class BoneChainRig implements SceneRig
     private static final float CONE_DEGREES = 80F;
     private static final float TWIST_DEGREES = 45F;
 
-    /** Spin bleeds off faster than travel, the same tuning every rigid body here carries. */
-    private static final float ANGULAR_DAMPING = 0.4F;
-
-
     /** The shortest a bone may be measured as, so a leaf with no child still gets a body. */
     private static final float MIN_LENGTH = 0.05F;
 
@@ -101,7 +97,7 @@ public class BoneChainRig implements SceneRig
     private final RagdollState state = new RagdollState();
 
     private final List<Segment> segments = new ArrayList<>();
-    private final List<SwingTwistConstraint> joints = new ArrayList<>();
+    private final List<Joint> joints = new ArrayList<>();
 
     /** The pins this rig drives itself: one per strand whose anchor bone has no body of its own. */
     private final List<Pin> pins = new ArrayList<>();
@@ -254,8 +250,14 @@ public class BoneChainRig implements SceneRig
             settings.setFriction(0.4F);
             settings.setRestitution(0.05F);
             settings.setGravityFactor(config.gravity());
-            settings.setAngularDamping(ANGULAR_DAMPING);
-            settings.setLinearDamping(0.05F + 0.45F * config.damping());
+            /* Both axes off the one knob, through the scale conversion — a strand's swing is its
+             * bones turning about their joints as much as it is them travelling, and damping only
+             * the travel leaves the swing to ring on. What the knob means as a rate is spelled out
+             * in {@link PhysicsMath#bodyDamping}; read raw, as it was, it bit some thirty times too
+             * softly — 0.7% of a strand's speed per tick where the knob said 20% — which is most of
+             * why hair never calmed down. */
+            settings.setAngularDamping(PhysicsMath.bodyDamping(config.damping(), physics.getCollisionSteps()));
+            settings.setLinearDamping(PhysicsMath.bodyDamping(config.damping(), physics.getCollisionSteps()));
             settings.setMotionQuality(EMotionQuality.LinearCast);
 
             /* The author gives the strand's weight; Jolt would weigh a thin capsule by volume and
@@ -314,6 +316,35 @@ public class BoneChainRig implements SceneRig
             }
         }
 
+        /* Where every bone sits along its own strand, and how long that strand is — what the
+         * spring's falloff towards the tip is measured on. The modifier's bones are a forest and
+         * not a list: an author ticks two pigtails and a fringe in one go, and each of those has
+         * its own root and its own tip. A bone's depth is how many ticked bones stand above it in
+         * an unbroken line; its strand is named by the topmost of them. */
+        Map<String, Integer> depths = new HashMap<>();
+        Map<String, String> roots = new HashMap<>();
+        Map<String, Integer> lengths = new HashMap<>();
+
+        for (Segment segment : chain.segments)
+        {
+            ModelGroup above = groups.get(segment.bone);
+            String root = segment.bone;
+            int depth = 0;
+
+            above = above == null ? null : above.parent;
+
+            while (above != null && byBone.containsKey(above.id))
+            {
+                root = above.id;
+                depth += 1;
+                above = above.parent;
+            }
+
+            depths.put(segment.bone, depth);
+            roots.put(segment.bone, root);
+            lengths.merge(root, depth + 1, Math::max);
+        }
+
         /* Then the joints: each segment onto its parent bone — a fellow segment, the parent's
          * kinematic body, or a pin of our own following that bone. */
         for (Segment segment : chain.segments)
@@ -346,7 +377,10 @@ public class BoneChainRig implements SceneRig
                 anchorSub = made.sub();
             }
 
-            chain.joints.add(chain.joint(physics, scene, anchor, segment, matrices, actorWorld, config));
+            int index = depths.getOrDefault(segment.bone, 0);
+            int count = lengths.getOrDefault(roots.get(segment.bone), index + 1);
+
+            chain.joints.add(new Joint(chain.joint(physics, scene, anchor, segment, matrices, actorWorld, config, index, count), index, count));
 
             /* Neighbours meet at the joint by construction, and the anchor bone especially: it
              * cannot give way, so the overlap would shove the strand out of the head every step. */
@@ -458,8 +492,13 @@ public class BoneChainRig implements SceneRig
         return new Anchor(body, sub);
     }
 
-    /** One cone joint at a bone's pivot, with the stiffness spring on its motors. */
-    private SwingTwistConstraint joint(PhysicsWorld physics, FilmScene scene, Body anchor, Segment segment, MatrixCache matrices, Matrix4f actorWorld, FormChain config)
+    /**
+     * One cone joint at a bone's pivot, with the stiffness spring on its motors.
+     *
+     * @param index how far down its strand this bone sits, the strand's top bone being 0 — the
+     *              spring softens towards the tip, see {@link PhysicsJoints#tune}
+     */
+    private SwingTwistConstraint joint(PhysicsWorld physics, FilmScene scene, Body anchor, Segment segment, MatrixCache matrices, Matrix4f actorWorld, FormChain config, int index, int count)
     {
         MatrixCacheEntry entry = matrices.get(segment.path);
 
@@ -494,7 +533,7 @@ public class BoneChainRig implements SceneRig
 
         physics.getSystem().addConstraint(constraint);
 
-        PhysicsJoints.tune(constraint, config.stiffness(), config.damping());
+        PhysicsJoints.tune(constraint, config.stiffness(), config.damping(), index, count);
 
         return constraint;
     }
@@ -664,9 +703,23 @@ public class BoneChainRig implements SceneRig
 
         if (stiffness != this.lastStiffness || damping != this.lastDamping)
         {
-            for (SwingTwistConstraint joint : this.joints)
+            for (Joint joint : this.joints)
             {
-                PhysicsJoints.tune(joint, stiffness, damping);
+                PhysicsJoints.tune(joint.constraint(), stiffness, damping, joint.index(), joint.count());
+            }
+
+            /* The knob's larger half: what the bones themselves shed. Pushed here as well as at
+             * build time, or an author would drag the slider through a whole take and see only the
+             * springs answer. */
+            if (damping != this.lastDamping)
+            {
+                float rate = PhysicsMath.bodyDamping(damping, physics.getCollisionSteps());
+
+                for (Segment segment : this.segments)
+                {
+                    segment.body().getMotionProperties().setLinearDamping(rate);
+                    segment.body().getMotionProperties().setAngularDamping(rate);
+                }
             }
 
             this.lastStiffness = stiffness;
@@ -844,6 +897,14 @@ public class BoneChainRig implements SceneRig
     {}
 
     /** What a strand's top was jointed to, and its subgroup — for the collision excuse. */
+    /**
+     * One joint with where it sits along its own strand: the root of a strand is 0 and the tip is
+     * {@code count - 1}, which is what the spring's falloff is measured on. Kept rather than
+     * recomputed because an author dragging the stiffness slider re-tunes every joint per tick.
+     */
+    private record Joint(SwingTwistConstraint constraint, int index, int count)
+    {}
+
     private record Anchor(Body body, int sub)
     {}
 }

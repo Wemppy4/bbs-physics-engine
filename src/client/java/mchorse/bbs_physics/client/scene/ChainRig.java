@@ -80,8 +80,6 @@ public class ChainRig implements SceneRig
     private static final float CONE_DEGREES = 85F;
     private static final float TWIST_DEGREES = 60F;
 
-    /** Spin bleeds off faster than travel, the same tuning every rigid body here carries. */
-    private static final float ANGULAR_DAMPING = 0.3F;
 
     /**
      * How the stiffness knob maps to the joint spring, in Hz — 1.0 is a hose that barely bends.
@@ -115,6 +113,11 @@ public class ChainRig implements SceneRig
     private final float segmentLength;
 
     private final int[] bodies;
+
+    /** The same segments as {@link #bodies}, held as Bodies: damping lives on the motion
+     * properties, which an id alone cannot reach. */
+    private final Body[] parts;
+
     private final int[] channels;
     private final SwingTwistConstraint[] joints;
 
@@ -170,7 +173,7 @@ public class ChainRig implements SceneRig
     private float lastStiffness = Float.NaN;
     private float lastDamping = Float.NaN;
 
-    private ChainRig(ChainForm form, String path, String anchor, int[] bodies, int[] channels, SwingTwistConstraint[] joints, Body lastBody, int rootId, SwingTwistConstraint rootJoint, int pinId, PointConstraint pinJoint, GroupFilterTable filter, boolean kinematic)
+    private ChainRig(ChainForm form, String path, String anchor, int[] bodies, Body[] parts, int[] channels, SwingTwistConstraint[] joints, Body lastBody, int rootId, SwingTwistConstraint rootJoint, int pinId, PointConstraint pinJoint, GroupFilterTable filter, boolean kinematic)
     {
         this.form = form;
         this.path = path;
@@ -178,6 +181,7 @@ public class ChainRig implements SceneRig
         this.segments = form.segments.get();
         this.segmentLength = form.getSegmentLength();
         this.bodies = bodies;
+        this.parts = parts;
         this.channels = channels;
         this.joints = joints;
         this.lastBody = lastBody;
@@ -253,8 +257,14 @@ public class ChainRig implements SceneRig
             settings.setFriction(form.friction.get());
             settings.setRestitution(0.05F);
             settings.setGravityFactor(form.gravity.get());
-            settings.setAngularDamping(ANGULAR_DAMPING);
-            settings.setLinearDamping(0.05F + 0.45F * form.damping.get());
+            /* Both axes off the one knob, through the scale conversion — a strand's swing is its
+             * segments turning about their joints as much as it is them travelling, and damping
+             * only the travel leaves the swing to ring on. The rate the knob means is spelled out in
+             * {@link PhysicsMath#bodyDamping}; read raw, as it was, it bit some thirty times too
+             * softly — 0.7% of a segment's speed per tick where the knob said 20% — and nothing the
+             * strand did ever settled. */
+            settings.setAngularDamping(PhysicsMath.bodyDamping(form.damping.get(), physics.getCollisionSteps()));
+            settings.setLinearDamping(PhysicsMath.bodyDamping(form.damping.get(), physics.getCollisionSteps()));
 
             /* A film tick is fifty milliseconds; a swung rope end covers many times its own
              * thickness in one, and tested only at the ends it passes through what it whipped. */
@@ -303,7 +313,7 @@ public class ChainRig implements SceneRig
 
             formWorld.transformPosition(at);
 
-            joints[i - 1] = cone(physics, built[i - 1], built[i], at, down, plane, scene, stiffness, damping);
+            joints[i - 1] = cone(physics, built[i - 1], built[i], at, down, plane, scene, stiffness, damping, i, segments);
 
             /* Neighbours share a joint and their capsules meet at it by design; letting them also
              * collide would have every joint permanently fighting its own limits. */
@@ -333,7 +343,7 @@ public class ChainRig implements SceneRig
             bodies.addBody(root.getId(), EActivation.Activate);
 
             rootId = root.getId();
-            rootJoint = cone(physics, root, built[0], at, down, plane, scene, stiffness, damping);
+            rootJoint = cone(physics, root, built[0], at, down, plane, scene, stiffness, damping, 0, segments);
         }
 
         /* The bottom end's pin: another kinematic speck, and one point constraint to the last
@@ -370,11 +380,16 @@ public class ChainRig implements SceneRig
 
         form.state = new ChainState(segments);
 
-        return new ChainRig(form, path, anchor, ids, channels, joints, built[segments - 1], rootId, rootJoint, pin.getId(), pinJoint, filter, kinematic);
+        return new ChainRig(form, path, anchor, ids, built, channels, joints, built[segments - 1], rootId, rootJoint, pin.getId(), pinJoint, filter, kinematic);
     }
 
-    /** One cone joint between neighbours, with the stiffness spring on its motors. */
-    private static SwingTwistConstraint cone(PhysicsWorld physics, Body parent, Body child, Vector3f at, Vector3f down, Vector3f plane, FilmScene scene, float stiffness, float damping)
+    /**
+     * One cone joint between neighbours, with the stiffness spring on its motors.
+     *
+     * @param index where this joint sits along the strand, the top one being 0 — the spring softens
+     *              towards the tip, see {@link PhysicsJoints#tune}
+     */
+    private static SwingTwistConstraint cone(PhysicsWorld physics, Body parent, Body child, Vector3f at, Vector3f down, Vector3f plane, FilmScene scene, float stiffness, float damping, int index, int count)
     {
         SwingTwistConstraintSettings settings = new SwingTwistConstraintSettings();
 
@@ -401,7 +416,7 @@ public class ChainRig implements SceneRig
         /* The spring toward the built shape. Both bodies were created in the same orientation, so
          * the rest relative rotation is the identity — the default target — and the motor in
          * Position mode is precisely "return to straight". */
-        PhysicsJoints.tune(constraint, stiffness, damping);
+        PhysicsJoints.tune(constraint, stiffness, damping, index, count);
 
         return constraint;
     }
@@ -798,14 +813,28 @@ public class ChainRig implements SceneRig
 
         if (stiffness != this.lastStiffness || damping != this.lastDamping)
         {
-            for (SwingTwistConstraint joint : this.joints)
+            for (int i = 0; i < this.joints.length; i++)
             {
-                PhysicsJoints.tune(joint, stiffness, damping);
+                PhysicsJoints.tune(this.joints[i], stiffness, damping, i + 1, this.segments);
             }
 
             if (this.rootJoint != null)
             {
-                PhysicsJoints.tune(this.rootJoint, stiffness, damping);
+                PhysicsJoints.tune(this.rootJoint, stiffness, damping, 0, this.segments);
+            }
+
+            /* The knob's larger half: what the segments themselves shed. Pushed here as well as at
+             * build time, or an author would drag the slider through a whole take and see only the
+             * springs answer. */
+            if (damping != this.lastDamping)
+            {
+                float rate = PhysicsMath.bodyDamping(damping, physics.getCollisionSteps());
+
+                for (Body part : this.parts)
+                {
+                    part.getMotionProperties().setLinearDamping(rate);
+                    part.getMotionProperties().setAngularDamping(rate);
+                }
             }
 
             this.lastStiffness = stiffness;

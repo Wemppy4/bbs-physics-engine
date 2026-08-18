@@ -17,6 +17,7 @@ import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import mchorse.bbs_physics.balloon.BalloonForm;
 import mchorse.bbs_physics.balloon.BalloonState;
 import mchorse.bbs_physics.engine.PhysicsLayers;
+import mchorse.bbs_physics.engine.PhysicsMath;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -147,10 +148,10 @@ public class BalloonRig extends SoftBodyRig
         settings.setMakeRotationIdentity(true);
         settings.setPressure(pressure(form.inflation.get(), form.radius.get(), mass));
         settings.setGravityFactor(form.gravity.get());
-        settings.setLinearDamping(form.damping.get());
+        settings.setLinearDamping(PhysicsMath.softDamping(form.damping.get(), physics.getCollisionSteps(), SoftBodyRig.SOLVER_ITERATIONS));
         settings.setFriction(form.friction.get());
         settings.setRestitution(form.restitution.get());
-        settings.setNumIterations(5);
+        settings.setNumIterations(SoftBodyRig.SOLVER_ITERATIONS);
 
         Body body = physics.getBodies().createSoftBody(settings);
 

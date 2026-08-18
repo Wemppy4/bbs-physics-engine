@@ -34,6 +34,84 @@ public final class PhysicsMath
         return physics + (animated - physics) * authority;
     }
 
+    /**
+     * The hardest a knob at its very top may bite: nineteen twentieths of a body's speed gone in one
+     * tick. Not 1, because both conversions below take a logarithm and "all of it" has no answer —
+     * and because a body that keeps a twentieth of its motion already reads as stopped.
+     */
+    private static final float DAMPING_CEILING = 0.95F;
+
+    /**
+     * The author's "damping" knob turned into the number Jolt wants — <b>the one place the two
+     * scales meet</b>, because they are not the same scale at all, and reading the knob as if it
+     * were Jolt's own is what made everything here feel sharp.
+     *
+     * <p><b>The knob is a fraction of speed lost over a film tick</b>, which is BBS's own scale: its
+     * chain solver multiplies by {@code pow(1 - damping, h)} every sub-step and ships a default of
+     * 0.15, so hair there sheds fifteen percent of its motion per tick and settles the way an author
+     * expects. Jolt's damping is a <em>rate per second</em>. Handing it 0.2 does not mean "a fifth
+     * per tick", it means a fifth per second — which the {@code DampingSmoke} stand measures at
+     * seven tenths of one percent of a strand's speed per tick, a thirtieth of the intended bite.
+     * Strands and sheets kept nearly all their energy, so nothing ever calmed down, and the motion
+     * read as sharp.</p>
+     *
+     * <p>Jolt sheds the speed <em>linearly</em>, {@code v × (1 - rate × dt)}, once per piece it cuts
+     * the tick into — so inverting it is a matter of counting the pieces, and this is that inversion.
+     * The two callers count differently and the stand is what established the numbers: a rigid body
+     * is damped once per collision sub-step, a soft body's vertices once per solver iteration
+     * <em>within</em> each sub-step. Both land on the asked-for loss to a tenth of a percent, at any
+     * sub-step count — which is the point, since a quality setting must not change how a film
+     * feels.</p>
+     *
+     * @param knob   the author's 0..1 damping value: 0 sheds nothing at all, 0.15 is BBS's own
+     *               default, 1 is as good as stopped
+     * @param pieces how many times the engine will apply the damping across one tick
+     */
+    private static float damping(float knob, int pieces)
+    {
+        float loss = Math.min(Math.max(knob, 0F), DAMPING_CEILING);
+
+        if (loss <= 0F)
+        {
+            return 0F;
+        }
+
+        int count = Math.max(1, pieces);
+
+        /* What has to survive each piece for the tick as a whole to land on the knob. */
+        float perPiece = (float) Math.pow(1F - loss, 1D / count);
+
+        return (1F - perPiece) * count / PhysicsWorld.TICK;
+    }
+
+    /**
+     * The knob for a rigid body — a rope's segment, a bone of hair. Damped once per collision
+     * sub-step.
+     *
+     * @param steps {@link PhysicsWorld#getCollisionSteps()}
+     */
+    public static float bodyDamping(float knob, int steps)
+    {
+        return damping(knob, steps);
+    }
+
+    /**
+     * The knob for a soft body — a sheet of cloth, an inflated ball. Damped once per solver
+     * iteration, and the solver runs its iterations inside every collision sub-step, so the tick is
+     * cut into the product of the two.
+     *
+     * <p>Told apart from {@link #bodyDamping} by measurement, not by reading: a first pass damped
+     * both the same way and the stand caught the sheet shedding 97% where 95% was asked for. Ten
+     * iterations is ten bites out of the speed instead of one, and the rate has to be a tenth as
+     * fierce to arrive at the same place.</p>
+     *
+     * @param iterations the body's own {@code numIterations}
+     */
+    public static float softDamping(float knob, int steps, int iterations)
+    {
+        return damping(knob, steps * Math.max(1, iterations));
+    }
+
     /** Whether a velocity may be handed to the solver at all — one bad component loses the body. */
     public static boolean finite(Vec3 velocity)
     {

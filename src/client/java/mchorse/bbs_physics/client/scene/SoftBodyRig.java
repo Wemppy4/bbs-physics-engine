@@ -41,6 +41,19 @@ import java.nio.FloatBuffer;
  */
 public abstract class SoftBodyRig implements SceneRig
 {
+    /**
+     * How many times the solver passes over a soft body's constraints in one step.
+     *
+     * <p>Jolt's own default is five, and that is five for a solver being stepped at 60 Hz or
+     * better. A film tick is fifty milliseconds — three times that step — so five passes leave the
+     * constraints visibly unsatisfied when the tick ends, and an unsatisfied constraint reads as
+     * exactly what an author complained of: a sheet that cracks about like a flag instead of
+     * falling like fabric, a ball that shudders where it should squash. The passes are cheap next
+     * to everything else a tick does, and unlike a stiffness knob they change how well the shape
+     * is solved, not what shape is being solved for.</p>
+     */
+    public static final int SOLVER_ITERATIONS = 10;
+
     protected final Form form;
     protected final String path;
     protected final int bodyId;
@@ -279,7 +292,7 @@ public abstract class SoftBodyRig implements SceneRig
 
         if (damping != this.lastDamping)
         {
-            this.motion.setLinearDamping(damping);
+            this.motion.setLinearDamping(PhysicsMath.softDamping(damping, physics.getCollisionSteps(), SOLVER_ITERATIONS));
 
             this.lastDamping = damping;
         }

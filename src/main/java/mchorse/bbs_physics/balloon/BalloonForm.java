@@ -73,7 +73,12 @@ public class BalloonForm extends Form implements ITexturedForm
      * picks up a slow contact-fed roll (measured in the stand, not guessed), and this is the knob
      * that keeps it from wandering off the set.
      */
-    public final ValueFloat damping = new ValueFloat("damping", 0.25F, 0F, 1F);
+    /* Low, and lower than the cloth's or a strand's, because a ball is the one soft body here an
+     * author wants lively: air barely slows a football. The number looks like a cut but is not one
+     * — the knob became a fraction of speed lost per tick rather than a rate per second (see
+     * PhysicsMath#softDamping), and 0.05 on the new scale bites several times harder than 0.25 did on
+     * the old. A ball that creeps on a slow floor is still cured by raising it. */
+    public final ValueFloat damping = new ValueFloat("damping", 0.05F, 0F, 1F);
 
     /**
      * Gravity multiplier: 1 falls like anything else, 0 is weightless, below zero floats up — the

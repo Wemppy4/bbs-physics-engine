@@ -5,6 +5,7 @@ import mchorse.bbs_mod.settings.values.numeric.ValueBoolean;
 import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 import mchorse.bbs_mod.settings.values.numeric.ValueInt;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
+import mchorse.bbs_physics.engine.PhysicsWorld;
 
 /**
  * The addon's settings module. It shows up as its own section in BBS's settings overlay, and is
@@ -89,7 +90,7 @@ public class BBSPhysicsSettings
         debugLineWidth = builder.getFloat("debug_line_width", 1F, 0.25F, 6F);
 
         gravity = builder.getFloat("gravity", 9.81F, 0F, 40F);
-        collisionSteps = builder.getInt("collision_steps", 2, 1, 8);
+        collisionSteps = builder.getInt("collision_steps", PhysicsWorld.COLLISION_STEPS, 1, 8);
 
         worldRadius = builder.getInt("world_radius", 32, 8, 96);
         worldBelow = builder.getInt("world_below", 32, 4, 128);
