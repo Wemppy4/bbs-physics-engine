@@ -54,6 +54,15 @@ public abstract class SoftBodyRig implements SceneRig
      */
     public static final int SOLVER_ITERATIONS = 10;
 
+    /**
+     * The fastest the pull may ask a vertex to travel, in blocks per second — the soft twin of the
+     * cap in {@code BodyDrive}, for the same reason: the gap to the authored shape is closed at
+     * gap-per-tick, and a keyframed <em>cut</em> read as a velocity is hundreds of blocks a second
+     * handed to a solver that answers such numbers with NaN. Capped, a cut becomes a fast catch-up
+     * over a few ticks; ordinary drives sit an order of magnitude below it and never feel it.
+     */
+    private static final float MAX_PULL_SPEED = 60F;
+
     protected final Form form;
     protected final String path;
     protected final int bodyId;
@@ -105,6 +114,9 @@ public abstract class SoftBodyRig implements SceneRig
      */
     private float lastFriction = Float.NaN;
     private float lastDamping = Float.NaN;
+
+    /** The sub-step count the damping was converted for — part of the rate's arithmetic. */
+    private int dampedSteps;
 
     protected SoftBodyRig(Form form, String path, int bodyId, int channel, int count, SoftBodyMotionProperties motion, String anchor)
     {
@@ -213,13 +225,28 @@ public abstract class SoftBodyRig implements SceneRig
             else
             {
                 /* The same velocity mix the rigid bodies use: the speed that would carry the vertex
-                 * home this tick, kept in the authority's proportion. */
+                 * home this tick, kept in the authority's proportion — and capped, because a cut in
+                 * the keyframes is not a motion (see MAX_PULL_SPEED). */
                 Vec3 position = vertex.getPosition();
                 Vec3 velocity = vertex.getVelocity();
 
-                float vx = PhysicsMath.mix(velocity.getX(), (x - position.getX()) / PhysicsWorld.TICK, authority);
-                float vy = PhysicsMath.mix(velocity.getY(), (y - position.getY()) / PhysicsWorld.TICK, authority);
-                float vz = PhysicsMath.mix(velocity.getZ(), (z - position.getZ()) / PhysicsWorld.TICK, authority);
+                float homeX = (x - position.getX()) / PhysicsWorld.TICK;
+                float homeY = (y - position.getY()) / PhysicsWorld.TICK;
+                float homeZ = (z - position.getZ()) / PhysicsWorld.TICK;
+                float homeSpeed = (float) Math.sqrt(homeX * homeX + homeY * homeY + homeZ * homeZ);
+
+                if (homeSpeed > MAX_PULL_SPEED)
+                {
+                    float scale = MAX_PULL_SPEED / homeSpeed;
+
+                    homeX *= scale;
+                    homeY *= scale;
+                    homeZ *= scale;
+                }
+
+                float vx = PhysicsMath.mix(velocity.getX(), homeX, authority);
+                float vy = PhysicsMath.mix(velocity.getY(), homeY, authority);
+                float vz = PhysicsMath.mix(velocity.getZ(), homeZ, authority);
 
                 if (Float.isFinite(vx) && Float.isFinite(vy) && Float.isFinite(vz))
                 {
@@ -289,12 +316,16 @@ public abstract class SoftBodyRig implements SceneRig
         }
 
         float damping = this.getDamping();
+        int steps = physics.getCollisionSteps();
 
-        if (damping != this.lastDamping)
+        /* The sub-step count is part of the rate's arithmetic — the same loss split across however
+         * many bites the solver takes — so a changed quality setting re-pushes the same knob. */
+        if (damping != this.lastDamping || steps != this.dampedSteps)
         {
-            this.motion.setLinearDamping(PhysicsMath.softDamping(damping, physics.getCollisionSteps(), SOLVER_ITERATIONS));
+            this.motion.setLinearDamping(PhysicsMath.softDamping(damping, steps, SOLVER_ITERATIONS));
 
             this.lastDamping = damping;
+            this.dampedSteps = steps;
         }
 
         this.applyOwnSettings(physics);

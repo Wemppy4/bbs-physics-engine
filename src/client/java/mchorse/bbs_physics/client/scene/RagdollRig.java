@@ -28,6 +28,7 @@ import mchorse.bbs_physics.client.ragdoll.RagdollAttachment;
 import mchorse.bbs_physics.client.ragdoll.RagdollJoints;
 import mchorse.bbs_physics.client.ragdoll.RagdollWelds;
 import mchorse.bbs_physics.engine.BodyDrive;
+import mchorse.bbs_physics.engine.KinematicDrive;
 import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsMath;
@@ -96,7 +97,13 @@ import java.util.Set;
  */
 public class RagdollRig implements SceneRig
 {
-    /** Spin bleeds off faster than travel — the standard ragdoll tuning against limbs that windmill. */
+    /**
+     * Spin bleeds off faster than travel — the standard ragdoll tuning against limbs that
+     * windmill. <b>A fraction of spin lost per film tick</b>, like every damping number in the
+     * addon, and converted to Jolt's per-second rate through {@link PhysicsMath#bodyDamping}:
+     * handed over raw, as it was, 0.3 meant three tenths <em>per second</em> — one and a half
+     * percent per tick, which is to say nothing at all, and the limbs windmilled anyway.
+     */
     private static final float ANGULAR_DAMPING = 0.3F;
 
     /**
@@ -174,6 +181,13 @@ public class RagdollRig implements SceneRig
 
     /** The velocity blend that pulls a part towards its pose — held, because it carries scratch. */
     private final BodyDrive drive = new BodyDrive();
+
+    /** The steer-or-place move of the kinematic phase — held, because it carries scratch. */
+    private final KinematicDrive move = new KinematicDrive();
+
+    /** The sub-step count the parts' damping was converted for — see {@link #applyDamping}. */
+    private int dampedSteps;
+
     private final Matrix4f poseFrame = new Matrix4f();
 
     /* The two frames a bone's fall is measured between, and the weighted blend of them. Fields
@@ -319,7 +333,7 @@ public class RagdollRig implements SceneRig
                 PhysicsLayers.BONE);
 
             settings.setFriction(0.6F);
-            settings.setAngularDamping(ANGULAR_DAMPING);
+            settings.setAngularDamping(PhysicsMath.bodyDamping(ANGULAR_DAMPING, physics.getCollisionSteps()));
 
             /* A film tick is fifty milliseconds; a flailing hand covers more than its own size in
              * one, and tested only at the ends it passes through the floor it slapped. */
@@ -409,7 +423,34 @@ public class RagdollRig implements SceneRig
 
         FormRagdolls.setState(form, ragdoll.state);
 
+        ragdoll.dampedSteps = physics.getCollisionSteps();
+
         return ragdoll;
+    }
+
+    /**
+     * Re-converts the parts' angular damping when the sub-step count changes. The rate handed to
+     * Jolt depends on how many pieces a tick is cut into ({@link PhysicsMath#bodyDamping}), and the
+     * author can change that setting with a film open; the recording is invalidated by the change
+     * either way, so the re-push lands before anything is re-simulated under it.
+     */
+    private void applyDamping(PhysicsWorld physics)
+    {
+        int steps = physics.getCollisionSteps();
+
+        if (steps == this.dampedSteps)
+        {
+            return;
+        }
+
+        this.dampedSteps = steps;
+
+        float rate = PhysicsMath.bodyDamping(ANGULAR_DAMPING, steps);
+
+        for (Part part : this.parts)
+        {
+            part.body().getMotionProperties().setAngularDamping(rate);
+        }
     }
 
     /**
@@ -512,6 +553,7 @@ public class RagdollRig implements SceneRig
         Map<String, Matrix4f> deltas = update.pinned ? update.deltas : null;
 
         this.captureBase(matrices, actorWorld);
+        this.applyDamping(physics);
 
         BodyInterface bodies = physics.getBodies();
 
@@ -582,12 +624,13 @@ public class RagdollRig implements SceneRig
 
             if (put && !torn)
             {
-                bodies.setPositionAndRotation(part.id, this.scratchPosition, this.scratchRotation, EActivation.Activate);
-                bodies.setLinearAndAngularVelocity(part.id, PhysicsMath.ZERO, PhysicsMath.ZERO);
+                this.move.place(bodies, part.id, this.scratchPosition, this.scratchRotation);
             }
             else if (this.kinematic && !torn)
             {
-                bodies.moveKinematic(part.id, this.scratchPosition, this.scratchRotation, PhysicsWorld.TICK);
+                /* Steered when the keyframes moved, placed when they cut — see KinematicDrive:
+                 * a bone keyed across the set in one frame must not sweep the whole way. */
+                this.move.move(bodies, part.id, this.scratchPosition, this.scratchRotation);
             }
             else if (effective > 0F)
             {

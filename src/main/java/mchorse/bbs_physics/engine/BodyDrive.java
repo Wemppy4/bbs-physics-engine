@@ -36,6 +36,20 @@ import org.joml.Quaternionf;
  */
 public final class BodyDrive
 {
+    /**
+     * The fastest the pull may ask a body to travel, in blocks per second. The gap to the pose is
+     * closed at gap-per-tick, which for any honest animation is modest — but keyframes also cut,
+     * and a cut of twenty blocks read as a velocity is four hundred blocks per second handed to
+     * the solver with the authority as its only brake. Capped, a cut becomes a fast catch-up over
+     * a few ticks instead of a body raking the set; kept safely under the runaway diagnostics'
+     * hundred, so a capped pull can never trip them by itself. The fastest swing a film plausibly
+     * animates is an order of magnitude below the cap, so ordinary drives never feel it.
+     */
+    private static final float MAX_PULL_SPEED = 60F;
+
+    /** The same cap for the turn: about three revolutions per second, under the runaway line. */
+    private static final float MAX_PULL_SPIN = 20F;
+
     /* Where the body actually is, against the target — the difference is what it is given. */
     private final RVec3 currentPosition = new RVec3();
     private final Quat currentRotation = new Quat();
@@ -71,10 +85,27 @@ public final class BodyDrive
         Vec3 velocity = bodies.getLinearVelocity(id);
         Vec3 spin = bodies.getAngularVelocity(id);
 
+        /* The speed that would carry the body home this tick, capped — see MAX_PULL_SPEED: past
+         * the cap the gap is a cut in the keyframes, not a motion, and the pull becomes a fast
+         * catch-up instead of a projectile. */
+        float homeX = (float) (position.xx() - this.currentPosition.xx()) / PhysicsWorld.TICK;
+        float homeY = (float) (position.yy() - this.currentPosition.yy()) / PhysicsWorld.TICK;
+        float homeZ = (float) (position.zz() - this.currentPosition.zz()) / PhysicsWorld.TICK;
+        float homeSpeed = (float) Math.sqrt(homeX * homeX + homeY * homeY + homeZ * homeZ);
+
+        if (homeSpeed > MAX_PULL_SPEED)
+        {
+            float scale = MAX_PULL_SPEED / homeSpeed;
+
+            homeX *= scale;
+            homeY *= scale;
+            homeZ *= scale;
+        }
+
         this.linear.set(
-            PhysicsMath.mix(velocity.getX(), (float) (position.xx() - this.currentPosition.xx()) / PhysicsWorld.TICK, authority),
-            PhysicsMath.mix(velocity.getY(), (float) (position.yy() - this.currentPosition.yy()) / PhysicsWorld.TICK, authority),
-            PhysicsMath.mix(velocity.getZ(), (float) (position.zz() - this.currentPosition.zz()) / PhysicsWorld.TICK, authority));
+            PhysicsMath.mix(velocity.getX(), homeX, authority),
+            PhysicsMath.mix(velocity.getY(), homeY, authority),
+            PhysicsMath.mix(velocity.getZ(), homeZ, authority));
 
         /* The turn that takes the body from where it is facing to where the pose faces, as an axis
          * it spins around and how far — which is what an angular velocity is. Normalized because
@@ -102,7 +133,9 @@ public final class BodyDrive
         {
             float invSinHalf = (float) (1D / Math.sqrt(sinHalfSquared));
 
-            speed = 2F * (float) Math.acos(w) / PhysicsWorld.TICK;
+            /* Capped for the same reason the travel is: a half-turn cut read as one tick's spin
+             * is sixty radians a second, and nothing downstream survives being asked for that. */
+            speed = Math.min(2F * (float) Math.acos(w) / PhysicsWorld.TICK, MAX_PULL_SPIN);
             axisX = this.delta.x * invSinHalf;
             axisY = this.delta.y * invSinHalf;
             axisZ = this.delta.z * invSinHalf;

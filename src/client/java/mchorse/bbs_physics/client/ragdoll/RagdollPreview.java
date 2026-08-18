@@ -12,6 +12,8 @@ import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
+import mchorse.bbs_physics.chain.FormChain;
+import mchorse.bbs_physics.chain.FormChains;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.collision.JointWireframe;
 import mchorse.bbs_physics.ragdoll.FormRagdoll;
@@ -96,7 +98,8 @@ public final class RagdollPreview
         {
             MatrixCache matrices = FormUtilsClient.getRenderer(form).collectMatrices(entity, transition);
             FormRagdoll config = FormRagdolls.get(target);
-            List<CollisionCollector.Piece> bones = bonePieces(form, matrices, model, prefix);
+            FormChain chains = FormChains.get(target);
+            List<CollisionCollector.Piece> bones = bonePieces(form, matrices, model, prefix, chains);
 
             if (bones.isEmpty())
             {
@@ -244,15 +247,17 @@ public final class RagdollPreview
      * built. A bone that ends up in neither list draws nothing, and correctly so: it stays a
      * kinematic body riding the animation, with no joint and nothing to be welded into.
      */
-    private static List<CollisionCollector.Piece> bonePieces(Form form, MatrixCache matrices, Model model, String prefix)
+    private static List<CollisionCollector.Piece> bonePieces(Form form, MatrixCache matrices, Model model, String prefix, FormChain chains)
     {
         List<CollisionCollector.Piece> pieces = new ArrayList<>();
 
         for (CollisionCollector.Piece piece : CollisionCollector.collectAll(form, matrices))
         {
             /* Bone slots of the selected model only: a piece whose path is the form's own path is
-             * the form's shape, not a bone, and it never becomes a ragdoll part. */
-            if (RagdollWelds.isBonePiece(piece, prefix) && model.getGroup(piece.label()) != null)
+             * the form's shape, not a bone, and it never becomes a ragdoll part. A bone the chain
+             * modifier claims is not one either — the scene hands those to the strands before the
+             * ragdoll gets to choose, and a preview that showed a joint there would lie. */
+            if (RagdollWelds.isBonePiece(piece, prefix) && model.getGroup(piece.label()) != null && !chains.claims(piece.label()))
             {
                 pieces.add(piece);
             }

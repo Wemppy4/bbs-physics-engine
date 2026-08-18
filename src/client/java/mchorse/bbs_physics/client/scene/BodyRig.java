@@ -21,6 +21,7 @@ import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
 import mchorse.bbs_physics.engine.BodyDrive;
+import mchorse.bbs_physics.engine.KinematicDrive;
 import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsMath;
@@ -117,6 +118,9 @@ public class BodyRig implements SceneRig
 
     /** The velocity blend that pulls this body towards its pose — held, because it carries scratch. */
     private final BodyDrive drive = new BodyDrive();
+
+    /** The steer-or-place move of the kinematic phase — held, because it carries scratch. */
+    private final KinematicDrive move = new KinematicDrive();
 
     private final SceneBody debug;
 
@@ -373,12 +377,13 @@ public class BodyRig implements SceneRig
 
         if (put)
         {
-            bodies.setPositionAndRotation(this.bodyId, this.scratchPosition, this.scratchRotation, EActivation.Activate);
-            bodies.setLinearAndAngularVelocity(this.bodyId, PhysicsMath.ZERO, PhysicsMath.ZERO);
+            this.move.place(bodies, this.bodyId, this.scratchPosition, this.scratchRotation);
         }
         else if (this.kinematic)
         {
-            bodies.moveKinematic(this.bodyId, this.scratchPosition, this.scratchRotation, PhysicsWorld.TICK);
+            /* Steered when the keyframes moved, placed when they cut — see KinematicDrive: a
+             * crate keyed across the set in one frame must not sweep the whole way there. */
+            this.move.move(bodies, this.bodyId, this.scratchPosition, this.scratchRotation);
         }
         else
         {

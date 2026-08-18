@@ -28,6 +28,7 @@ import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
 import mchorse.bbs_physics.collision.CollisionKind;
 import mchorse.bbs_physics.engine.BodyDrive;
+import mchorse.bbs_physics.engine.KinematicDrive;
 import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsJoints;
 import mchorse.bbs_physics.engine.PhysicsLayers;
@@ -153,6 +154,12 @@ public class ChainRig implements SceneRig
 
     /** The velocity blend that pulls a segment towards its pose — held, because it carries scratch. */
     private final BodyDrive drive = new BodyDrive();
+
+    /** The steer-or-place move of everything kinematic here — held, because it carries scratch. */
+    private final KinematicDrive move = new KinematicDrive();
+
+    /** The sub-step count the bodies' damping was converted for — part of the rate's arithmetic. */
+    private int dampedSteps;
 
     /** Where the strand last was in scene coordinates — what the readout judges against the window. */
     private final Vector3f recordedCenter = new Vector3f();
@@ -513,19 +520,23 @@ public class ChainRig implements SceneRig
 
                 if (reset)
                 {
-                    bodies.setPositionAndRotation(this.rootId, this.scratchPosition, this.scratchRotation, EActivation.Activate);
-                    bodies.setLinearAndAngularVelocity(this.rootId, PhysicsMath.ZERO, PhysicsMath.ZERO);
+                    this.move.place(bodies, this.rootId, this.scratchPosition, this.scratchRotation);
                 }
                 else
                 {
-                    bodies.moveKinematic(this.rootId, this.scratchPosition, this.scratchRotation, PhysicsWorld.TICK);
+                    /* Steered when the form moved, placed when its keyframes cut — see
+                     * KinematicDrive: a hand keyed across the set in one frame must not whip the
+                     * whole rope through everything on the way. */
+                    this.move.move(bodies, this.rootId, this.scratchPosition, this.scratchRotation);
                 }
             }
         }
 
         /* Motion type first, exactly like the ragdoll: switching to dynamic keeps the kinematic
          * velocity, so a strand released mid-swing inherits the swing. */
-        if (wanted != this.kinematic || reset)
+        boolean put = reset;
+
+        if (wanted != this.kinematic)
         {
             this.kinematic = wanted;
 
@@ -533,6 +544,11 @@ public class ChainRig implements SceneRig
             {
                 bodies.setMotionType(id, wanted ? EMotionType.Kinematic : EMotionType.Dynamic, EActivation.Activate);
             }
+
+            /* Taken back by the animation after hanging free: the segments are nowhere near the
+             * straight line, and steering them there over one tick would whip the whole strand
+             * through the set — the exact rake every other rig already answers this way. */
+            put |= wanted;
         }
 
         for (int i = 0; i < this.segments; i++)
@@ -551,17 +567,13 @@ public class ChainRig implements SceneRig
                 this.point.z - scene.getOriginZ());
             this.scratchRotation.set(this.formRotation.x, this.formRotation.y, this.formRotation.z, this.formRotation.w);
 
-            if (reset || wanted)
+            if (put)
             {
-                if (reset)
-                {
-                    bodies.setPositionAndRotation(this.bodies[i], this.scratchPosition, this.scratchRotation, EActivation.Activate);
-                    bodies.setLinearAndAngularVelocity(this.bodies[i], PhysicsMath.ZERO, PhysicsMath.ZERO);
-                }
-                else
-                {
-                    bodies.moveKinematic(this.bodies[i], this.scratchPosition, this.scratchRotation, PhysicsWorld.TICK);
-                }
+                this.move.place(bodies, this.bodies[i], this.scratchPosition, this.scratchRotation);
+            }
+            else if (wanted)
+            {
+                this.move.move(bodies, this.bodies[i], this.scratchPosition, this.scratchRotation);
             }
             else if (authority > 0F)
             {
@@ -693,7 +705,9 @@ public class ChainRig implements SceneRig
             }
             else
             {
-                bodies.moveKinematic(this.pinId, this.scratchPosition, Quat.sIdentity(), PhysicsWorld.TICK);
+                /* Steered while the anchor moves, placed when it cuts — a re-keyed anchor with no
+                 * fade is a jump, and a swept pin would drag the tied end through the set. */
+                this.move.move(bodies, this.pinId, this.scratchPosition, Quat.sIdentity());
             }
 
             bodies.activateBody(this.bodies[this.segments - 1]);
@@ -810,6 +824,7 @@ public class ChainRig implements SceneRig
 
         float stiffness = this.form.stiffness.get();
         float damping = this.form.damping.get();
+        int steps = physics.getCollisionSteps();
 
         if (stiffness != this.lastStiffness || damping != this.lastDamping)
         {
@@ -822,24 +837,28 @@ public class ChainRig implements SceneRig
             {
                 PhysicsJoints.tune(this.rootJoint, stiffness, damping, 0, this.segments);
             }
+        }
 
-            /* The knob's larger half: what the segments themselves shed. Pushed here as well as at
-             * build time, or an author would drag the slider through a whole take and see only the
-             * springs answer. */
-            if (damping != this.lastDamping)
+        /* The knob's larger half: what the segments themselves shed. Pushed here as well as at
+         * build time, or an author would drag the slider through a whole take and see only the
+         * springs answer. The sub-step count is part of the rate's arithmetic (the same loss has
+         * to be split across however many bites Jolt takes), so a changed quality setting
+         * re-pushes the same knob too. */
+        if (damping != this.lastDamping || steps != this.dampedSteps)
+        {
+            float rate = PhysicsMath.bodyDamping(damping, steps);
+
+            for (Body part : this.parts)
             {
-                float rate = PhysicsMath.bodyDamping(damping, physics.getCollisionSteps());
-
-                for (Body part : this.parts)
-                {
-                    part.getMotionProperties().setLinearDamping(rate);
-                    part.getMotionProperties().setAngularDamping(rate);
-                }
+                part.getMotionProperties().setLinearDamping(rate);
+                part.getMotionProperties().setAngularDamping(rate);
             }
 
-            this.lastStiffness = stiffness;
-            this.lastDamping = damping;
+            this.dampedSteps = steps;
         }
+
+        this.lastStiffness = stiffness;
+        this.lastDamping = damping;
     }
 
     /**

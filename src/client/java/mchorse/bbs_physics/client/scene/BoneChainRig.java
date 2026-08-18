@@ -32,6 +32,7 @@ import mchorse.bbs_physics.client.collision.CollisionShapes;
 import mchorse.bbs_physics.client.collision.JoltShapes;
 import mchorse.bbs_physics.collision.CollisionKind;
 import mchorse.bbs_physics.engine.BodyDrive;
+import mchorse.bbs_physics.engine.KinematicDrive;
 import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsJoints;
 import mchorse.bbs_physics.engine.PhysicsLayers;
@@ -75,9 +76,6 @@ import java.util.Map;
  */
 public class BoneChainRig implements SceneRig
 {
-    /** Shared, never written to — the velocity a placed body is stopped with. */
-    private static final Vec3 ZERO = new Vec3(0F, 0F, 0F);
-
     /** How far a joint lets a strand bend — wide, because the strand's shape is the spring's job. */
     private static final float CONE_DEGREES = 80F;
     private static final float TWIST_DEGREES = 45F;
@@ -121,6 +119,16 @@ public class BoneChainRig implements SceneRig
     /** The velocity blend that pulls a segment towards its pose — held, because it carries scratch. */
     private final BodyDrive drive = new BodyDrive();
 
+    /** The steer-or-place move of everything kinematic here — held, because it carries scratch. */
+    private final KinematicDrive move = new KinematicDrive();
+
+    /**
+     * The bone this whole model form hangs on, or null when it rides no bone — the cloth's Р13
+     * case, one level up: a hair-carrying model as a body part on a bone another model's ragdoll
+     * is dropping.
+     */
+    private final String formAnchor;
+
     private boolean kinematic;
     private boolean recorded;
     private boolean lost;
@@ -130,20 +138,25 @@ public class BoneChainRig implements SceneRig
     private float lastDamping = Float.NaN;
     private float lastGravity = Float.NaN;
 
-    private BoneChainRig(ModelForm form, String formPath)
+    /** The sub-step count the bones' damping was converted for — part of the rate's arithmetic. */
+    private int dampedSteps;
+
+    private BoneChainRig(ModelForm form, String formPath, String formAnchor)
     {
         this.form = form;
         this.formPath = formPath;
+        this.formAnchor = formAnchor;
     }
 
     /**
      * Builds the strands of one chain-enabled model form, or returns null when nothing could be
      * built — a model that has not loaded, or a modifier with no bones ticked yet.
      *
-     * @param rig   the actor's kinematic bones, for hanging a strand off a marked-up bone; may be null
-     * @param group the actor's collision group, shared with its bones and ragdolls
+     * @param rig    the actor's kinematic bones, for hanging a strand off a marked-up bone; may be null
+     * @param group  the actor's collision group, shared with its bones and ragdolls
+     * @param anchor the bone this model form itself hangs on, or null — the Р13 delta's address
      */
-    public static BoneChainRig build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> claimed, BoneRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
+    public static BoneChainRig build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> claimed, BoneRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group, String anchor)
     {
         FormChain config = FormChains.get(form);
 
@@ -184,7 +197,7 @@ public class BoneChainRig implements SceneRig
             groups.put(modelGroup.id, modelGroup);
         }
 
-        BoneChainRig chain = new BoneChainRig(form, formPath);
+        BoneChainRig chain = new BoneChainRig(form, formPath, anchor);
         BodyInterface bodies = physics.getBodies();
         Map<String, Segment> byBone = new HashMap<>();
 
@@ -273,7 +286,7 @@ public class BoneChainRig implements SceneRig
 
             bodies.addBody(body.getId(), EActivation.Activate);
 
-            Segment segment = new Segment(bone, path, body.getId(), body, sub, scene.addChannel(), collides);
+            Segment segment = new Segment(bone, path, body.getId(), body, sub, scene.addChannel(), collides, deltaKeys(boneGroup, formPath));
 
             chain.segments.add(segment);
             byBone.put(bone, segment);
@@ -353,12 +366,12 @@ public class BoneChainRig implements SceneRig
             ModelGroup parentGroup = boneGroup == null ? null : boneGroup.parent;
             Segment parent = parentGroup == null ? null : byBone.get(parentGroup.id);
 
-            Body anchor;
+            Body anchorBody;
             int anchorSub;
 
             if (parent != null)
             {
-                anchor = parent.body;
+                anchorBody = parent.body;
                 anchorSub = parent.sub;
             }
             else
@@ -373,14 +386,14 @@ public class BoneChainRig implements SceneRig
                     continue;
                 }
 
-                anchor = made.body();
+                anchorBody = made.body();
                 anchorSub = made.sub();
             }
 
             int index = depths.getOrDefault(segment.bone, 0);
             int count = lengths.getOrDefault(roots.get(segment.bone), index + 1);
 
-            chain.joints.add(new Joint(chain.joint(physics, scene, anchor, segment, matrices, actorWorld, config, index, count), index, count));
+            chain.joints.add(new Joint(chain.joint(physics, scene, anchorBody, segment, matrices, actorWorld, config, index, count), index, count));
 
             /* Neighbours meet at the joint by construction, and the anchor bone especially: it
              * cannot give way, so the overlap would shove the strand out of the head every step. */
@@ -389,7 +402,54 @@ public class BoneChainRig implements SceneRig
 
         FormChains.setState(form, chain.state);
 
+        chain.dampedSteps = physics.getCollisionSteps();
+
         return chain;
+    }
+
+    /**
+     * The matrix-cache paths a ragdoll's published deltas could carry this bone by: the bone
+     * itself and every ancestor up the model's tree, nearest first. A strand's bone is never a
+     * ragdoll part itself (the builder gives every bone one owner), but the bone it grows from —
+     * a head, a hip — very much can be, and hair that ignored the head's fall was simulated
+     * hanging in the air where the animation had the head while the renderer drew the head on the
+     * floor (the cloth's Р13 problem, one rig later).
+     */
+    private static String[] deltaKeys(ModelGroup group, String formPath)
+    {
+        List<String> keys = new ArrayList<>(4);
+
+        for (ModelGroup at = group; at != null; at = at.parent)
+        {
+            keys.add(StringUtils.combinePaths(formPath, at.id));
+        }
+
+        return keys.toArray(new String[0]);
+    }
+
+    /**
+     * The fall to carry a body by: the nearest ragdolled ancestor's published delta, or the model
+     * form's own anchor delta when the whole model rides someone else's falling bone, or null when
+     * nothing above it is falling.
+     */
+    private Matrix4f lift(RigUpdate update, String[] keys)
+    {
+        if (update.deltas.isEmpty())
+        {
+            return null;
+        }
+
+        for (String key : keys)
+        {
+            Matrix4f delta = update.deltas.get(key);
+
+            if (delta != null)
+            {
+                return delta;
+            }
+        }
+
+        return this.formAnchor == null ? null : update.deltas.get(this.formAnchor);
     }
 
     /**
@@ -487,7 +547,7 @@ public class BoneChainRig implements SceneRig
 
         physics.getBodies().addBody(body.getId(), EActivation.Activate);
 
-        this.pins.add(new Pin(path, body.getId(), body, sub));
+        this.pins.add(new Pin(path, body.getId(), body, sub, deltaKeys(parentGroup, formPath)));
 
         return new Anchor(body, sub);
     }
@@ -552,7 +612,7 @@ public class BoneChainRig implements SceneRig
         Matrix4f actorWorld = update.actorWorld;
         boolean reset = update.reset;
 
-        this.captureBase(matrices, actorWorld);
+        this.captureBase(update);
         this.applySettings(physics);
 
         BodyInterface bodies = physics.getBodies();
@@ -561,8 +621,11 @@ public class BoneChainRig implements SceneRig
         boolean wanted = authority >= 1F;
         boolean put = reset;
 
-        /* The pins ride the animation whatever the handle says — they are the head the hair hangs
-         * from, not part of the hair. */
+        /* The pins ride whatever the strand actually hangs from: the animation — or, through the
+         * published delta, the bone a ragdoll has carried away. Hair pinned to a head that is on
+         * the floor has to be simulated at the floor, not at standing height where the keyframes
+         * still have the head; the renderer already draws it composed on the fallen head, and the
+         * two disagreeing was a strand visibly detached from its own scalp. */
         for (Pin pin : this.pins)
         {
             MatrixCacheEntry entry = matrices == null ? null : matrices.get(pin.path);
@@ -572,7 +635,17 @@ public class BoneChainRig implements SceneRig
                 continue;
             }
 
-            this.worldMatrix.set(actorWorld).mul(entry.matrix());
+            Matrix4f delta = this.lift(update, pin.above);
+
+            if (delta == null)
+            {
+                this.worldMatrix.set(actorWorld).mul(entry.matrix());
+            }
+            else
+            {
+                this.worldMatrix.set(delta).mul(actorWorld).mul(entry.matrix());
+            }
+
             this.worldMatrix.getTranslation(this.translation);
             this.worldMatrix.getUnnormalizedRotation(this.orientation);
 
@@ -584,12 +657,12 @@ public class BoneChainRig implements SceneRig
 
             if (reset)
             {
-                bodies.setPositionAndRotation(pin.id, this.scratchPosition, this.scratchRotation, EActivation.Activate);
-                bodies.setLinearAndAngularVelocity(pin.id, ZERO, ZERO);
+                this.move.place(bodies, pin.id, this.scratchPosition, this.scratchRotation);
             }
             else
             {
-                bodies.moveKinematic(pin.id, this.scratchPosition, this.scratchRotation, PhysicsWorld.TICK);
+                /* Steered when the bone moved, placed when its keyframes cut — see KinematicDrive. */
+                this.move.move(bodies, pin.id, this.scratchPosition, this.scratchRotation);
             }
         }
 
@@ -617,7 +690,20 @@ public class BoneChainRig implements SceneRig
                 continue;
             }
 
-            this.worldMatrix.set(actorWorld).mul(entry.matrix());
+            /* The same lift as the pins: the drive's target — the combed rest shape — moves with
+             * the fallen bone the strand grows from, or the strand is pulled towards a hairstyle
+             * hanging in mid-air. */
+            Matrix4f delta = this.lift(update, segment.above);
+
+            if (delta == null)
+            {
+                this.worldMatrix.set(actorWorld).mul(entry.matrix());
+            }
+            else
+            {
+                this.worldMatrix.set(delta).mul(actorWorld).mul(entry.matrix());
+            }
+
             this.worldMatrix.getTranslation(this.translation);
             this.worldMatrix.getUnnormalizedRotation(this.orientation);
 
@@ -629,12 +715,11 @@ public class BoneChainRig implements SceneRig
 
             if (put)
             {
-                bodies.setPositionAndRotation(segment.id, this.scratchPosition, this.scratchRotation, EActivation.Activate);
-                bodies.setLinearAndAngularVelocity(segment.id, ZERO, ZERO);
+                this.move.place(bodies, segment.id, this.scratchPosition, this.scratchRotation);
             }
             else if (this.kinematic)
             {
-                bodies.moveKinematic(segment.id, this.scratchPosition, this.scratchRotation, PhysicsWorld.TICK);
+                this.move.move(bodies, segment.id, this.scratchPosition, this.scratchRotation);
             }
             else if (authority > 0F)
             {
@@ -700,6 +785,7 @@ public class BoneChainRig implements SceneRig
 
         float stiffness = config.stiffness();
         float damping = config.damping();
+        int steps = physics.getCollisionSteps();
 
         if (stiffness != this.lastStiffness || damping != this.lastDamping)
         {
@@ -707,24 +793,27 @@ public class BoneChainRig implements SceneRig
             {
                 PhysicsJoints.tune(joint.constraint(), stiffness, damping, joint.index(), joint.count());
             }
+        }
 
-            /* The knob's larger half: what the bones themselves shed. Pushed here as well as at
-             * build time, or an author would drag the slider through a whole take and see only the
-             * springs answer. */
-            if (damping != this.lastDamping)
+        /* The knob's larger half: what the bones themselves shed. Pushed here as well as at build
+         * time, or an author would drag the slider through a whole take and see only the springs
+         * answer. The sub-step count is part of the rate's arithmetic, so a changed quality
+         * setting re-pushes the same knob too. */
+        if (damping != this.lastDamping || steps != this.dampedSteps)
+        {
+            float rate = PhysicsMath.bodyDamping(damping, steps);
+
+            for (Segment segment : this.segments)
             {
-                float rate = PhysicsMath.bodyDamping(damping, physics.getCollisionSteps());
-
-                for (Segment segment : this.segments)
-                {
-                    segment.body().getMotionProperties().setLinearDamping(rate);
-                    segment.body().getMotionProperties().setAngularDamping(rate);
-                }
+                segment.body().getMotionProperties().setLinearDamping(rate);
+                segment.body().getMotionProperties().setAngularDamping(rate);
             }
 
-            this.lastStiffness = stiffness;
-            this.lastDamping = damping;
+            this.dampedSteps = steps;
         }
+
+        this.lastStiffness = stiffness;
+        this.lastDamping = damping;
     }
 
     /** The velocity blend every driven body here uses — the reasoning lives in {@link BodyDrive}. */
@@ -846,10 +935,27 @@ public class BoneChainRig implements SceneRig
         return this.lost;
     }
 
-    /** The frame the answer is expressed against — the ragdoll's, for the same reason. */
-    private void captureBase(MatrixCache matrices, Matrix4f actorWorld)
+    /**
+     * Hair cares where the ragdoll of the same actor carried the bones it grows from — the pins
+     * and the drive targets are lifted by the published deltas, see {@link #lift}. Without this
+     * the deltas are never published for an actor that is only a ragdoll and its hair, and the
+     * strands stay anchored at standing height while the head lies on the floor.
+     */
+    @Override
+    public boolean readsBoneDeltas()
     {
-        MatrixCacheEntry entry = matrices == null ? null : matrices.get(this.formPath);
+        return true;
+    }
+
+    /**
+     * The frame the answer is expressed against — the ragdoll's, for the same reason. The model
+     * form's own anchor delta is folded in when the whole model rides a falling bone: the recorded
+     * frames have to come out relative to the root the renderer actually composes on, which in
+     * that case is the fallen one.
+     */
+    private void captureBase(RigUpdate update)
+    {
+        MatrixCacheEntry entry = update.matrices == null ? null : update.matrices.get(this.formPath);
 
         if (entry == null || entry.matrix() == null)
         {
@@ -858,7 +964,17 @@ public class BoneChainRig implements SceneRig
             return;
         }
 
-        this.base.set(actorWorld).mul(entry.matrix()).rotateY(MathUtils.PI);
+        Matrix4f delta = this.formAnchor == null || update.deltas.isEmpty() ? null : update.deltas.get(this.formAnchor);
+
+        if (delta == null)
+        {
+            this.base.set(update.actorWorld).mul(entry.matrix()).rotateY(MathUtils.PI);
+        }
+        else
+        {
+            this.base.set(delta).mul(update.actorWorld).mul(entry.matrix()).rotateY(MathUtils.PI);
+        }
+
         this.baseInverse.set(this.base).invert();
         this.baseValid = true;
     }
@@ -887,13 +1003,14 @@ public class BoneChainRig implements SceneRig
 
     /**
      * One claimed bone as a strand segment. {@code collides} is whether the Collision tab gave it
-     * a shape — an unshaped bone hangs in the layer that meets nothing.
+     * a shape — an unshaped bone hangs in the layer that meets nothing. {@code above} is the
+     * bone's own ancestry as delta keys — see {@link #lift}.
      */
-    private record Segment(String bone, String path, int id, Body body, int sub, int channel, boolean collides)
+    private record Segment(String bone, String path, int id, Body body, int sub, int channel, boolean collides, String[] above)
     {}
 
     /** A kinematic handle following a bone that has no body of its own — see {@link #anchorFor}. */
-    private record Pin(String path, int id, Body body, int sub)
+    private record Pin(String path, int id, Body body, int sub, String[] above)
     {}
 
     /** What a strand's top was jointed to, and its subgroup — for the collision excuse. */

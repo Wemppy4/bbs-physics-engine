@@ -13,7 +13,6 @@ import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
-import mchorse.bbs_mod.utils.Pair;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.balloon.BalloonForm;
 import mchorse.bbs_physics.chain.ChainForm;
@@ -181,7 +180,7 @@ final class SceneBuilder
 
         /* One collection of the actor's markup, divided between owners below. */
         List<CollisionCollector.Piece> pieces = CollisionCollector.collectActor(root, matrices);
-        List<Pair<ModelForm, String>> chainModels = chainModels(root);
+        List<ChainModel> chainModels = chainModels(root);
 
         /* Sized before the markup is divided, because that division does not change how many bodies
          * there will be — only which half builds them. The chain modifier's bodies are counted on
@@ -192,8 +191,13 @@ final class SceneBuilder
 
         this.group += 1;
 
-        List<ClaimedRagdoll> ragdolls = this.claimRagdolls(root, pieces);
+        /* The chains take their bones before the ragdolls do, and the order is load bearing: a
+         * hair bone the author marked up (so the strand collides, Р15) and ticked into the chain
+         * modifier is, to the ragdoll, just another marked bone that is not excluded — claimed by
+         * the ragdoll first, it became a falling part AND a strand, two bodies on one bone with
+         * two owners writing its pose. Whoever the author named the strand's owner wins. */
         List<ClaimedChain> chains = claimChains(chainModels, pieces);
+        List<ClaimedRagdoll> ragdolls = this.claimRagdolls(root, pieces);
 
         /* Whatever is left of the markup: the bones the animation keeps. */
         BoneRig bones = BoneRig.build(this.world, root, matrices, this.scene, pieces, actorGroup);
@@ -241,7 +245,7 @@ final class SceneBuilder
         for (ClaimedChain claim : chains)
         {
             BoneChainRig chain = BoneChainRig.build(this.world, claim.form(), claim.formPath(), claim.claimed(),
-                bones, matrices, actorWorld, this.scene, actorGroup);
+                bones, matrices, actorWorld, this.scene, actorGroup, claim.anchor());
 
             if (chain != null)
             {
@@ -483,16 +487,16 @@ final class SceneBuilder
         });
     }
 
-    /** Every model form carrying the chain modifier, with the path it lives at. */
-    private static List<Pair<ModelForm, String>> chainModels(Form root)
+    /** Every model form carrying the chain modifier, with where it lives and what it hangs on. */
+    private static List<ChainModel> chainModels(Form root)
     {
-        List<Pair<ModelForm, String>> found = new ArrayList<>(0);
+        List<ChainModel> found = new ArrayList<>(0);
 
         FormTreeWalk.walk(root, (form, path, anchor) ->
         {
             if (form instanceof ModelForm model && FormChains.isEnabled(model))
             {
-                found.add(new Pair<>(model, path));
+                found.add(new ChainModel(model, path, anchor));
             }
 
             return true;
@@ -507,15 +511,16 @@ final class SceneBuilder
      * has no markup produces no piece at all: the strand still hangs, it simply collides with
      * nothing until the author gives it a shape in the Collision tab.
      */
-    private static List<ClaimedChain> claimChains(List<Pair<ModelForm, String>> models, List<CollisionCollector.Piece> pieces)
+    private static List<ClaimedChain> claimChains(List<ChainModel> models, List<CollisionCollector.Piece> pieces)
     {
         List<ClaimedChain> claims = new ArrayList<>(0);
 
-        for (Pair<ModelForm, String> found : models)
+        for (ChainModel found : models)
         {
-            FormChain config = FormChains.get(found.a);
+            FormChain config = FormChains.get(found.form());
 
-            claims.add(new ClaimedChain(found.a, found.b, claim(pieces, found.b, (piece) -> config.claims(piece.label()))));
+            claims.add(new ClaimedChain(found.form(), found.path(), found.anchor(),
+                claim(pieces, found.path(), (piece) -> config.claims(piece.label()))));
         }
 
         return claims;
@@ -542,13 +547,13 @@ final class SceneBuilder
     }
 
     /** How many bones the chain modifiers claim — what the collision filter table is sized for. */
-    private static int chainBudget(List<Pair<ModelForm, String>> models)
+    private static int chainBudget(List<ChainModel> models)
     {
         int count = 0;
 
-        for (Pair<ModelForm, String> found : models)
+        for (ChainModel found : models)
         {
-            count += FormChains.get(found.a).bones().size();
+            count += FormChains.get(found.form()).bones().size();
         }
 
         return count;
@@ -583,6 +588,10 @@ final class SceneBuilder
     {}
 
     /** The same for a chain modifier: the markup of its bones, taken before the kinematic rig. */
-    private record ClaimedChain(ModelForm form, String formPath, List<CollisionCollector.Piece> claimed)
+    private record ClaimedChain(ModelForm form, String formPath, String anchor, List<CollisionCollector.Piece> claimed)
+    {}
+
+    /** A model carrying the chain modifier: where it lives, and the bone it itself hangs on. */
+    private record ChainModel(ModelForm form, String path, String anchor)
     {}
 }

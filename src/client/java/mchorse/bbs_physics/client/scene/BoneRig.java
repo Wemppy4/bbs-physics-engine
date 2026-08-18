@@ -13,8 +13,8 @@ import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.collision.JoltShapes;
+import mchorse.bbs_physics.engine.KinematicDrive;
 import mchorse.bbs_physics.engine.PhysicsLayers;
-import mchorse.bbs_physics.engine.PhysicsMath;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -60,6 +60,9 @@ public class BoneRig implements SceneRig
     private final Quaternionf orientation = new Quaternionf();
     private final RVec3 target = new RVec3();
     private final Quat targetRotation = new Quat();
+
+    /** The steer-or-place move every kinematic body makes — held, because it carries scratch. */
+    private final KinematicDrive move = new KinematicDrive();
 
     private BoneRig()
     {}
@@ -184,19 +187,15 @@ public class BoneRig implements SceneRig
 
             if (place)
             {
-                bodies.setPositionAndRotation(part.id, this.target, this.targetRotation, EActivation.Activate);
-
-                /* And stop it there. A kinematic body's velocity is state like any other: left
-                 * over from the last steer — or restored along with the rest of the world from a
-                 * checkpoint — it would carry the body away from where it was just put, once per
-                 * step, for the whole of the re-simulation. */
-                bodies.setLinearAndAngularVelocity(part.id, PhysicsMath.ZERO, PhysicsMath.ZERO);
+                this.move.place(bodies, part.id, this.target, this.targetRotation);
             }
             else
             {
                 /* A target for one tick, so Jolt derives the velocity that reaches it — that
-                 * velocity is what shoves whatever the body runs into. */
-                bodies.moveKinematic(part.id, this.target, this.targetRotation, PhysicsWorld.TICK);
+                 * velocity is what shoves whatever the body runs into. Unless the keyframes cut
+                 * rather than moved, in which case the body is placed instead of sweeping the
+                 * whole way — see KinematicDrive. */
+                this.move.move(bodies, part.id, this.target, this.targetRotation);
             }
         }
     }
