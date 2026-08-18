@@ -7,9 +7,11 @@ import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.engine.JoltEngine;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Keeps one {@link FilmScene} per running film and takes the four calls the mixins make.
@@ -27,6 +29,19 @@ import java.util.Map;
 public class FilmScenes
 {
     private static final Map<BaseFilmController, FilmScene> SCENES = new IdentityHashMap<>();
+
+    /**
+     * Controllers whose scene threw on the way up or on the way forward.
+     *
+     * <p>Without this the report above is not the whole story. {@link #onTick} builds a scene for a
+     * controller it has not seen yet, so a film that throws while assembling is assembled again on
+     * the very next tick — and assembling collects the world's blocks, tens of thousands of boxes,
+     * from scratch each time. What the author sees is not a line in the log but a game that
+     * crawls, which is how one broken form reads as "the addon is slow". So a failure is
+     * remembered: reported once, then the film plays without physics until something happens that
+     * could plausibly have fixed it — the cast is rebuilt, or the author edits the film.</p>
+     */
+    private static final Set<BaseFilmController> FAILED = Collections.newSetFromMap(new IdentityHashMap<>());
 
     private FilmScenes()
     {}
@@ -61,6 +76,8 @@ public class FilmScenes
         catch (Throwable e)
         {
             BBSPhysics.LOGGER.error("Failed to build a physics scene for a film, it will play without physics.", e);
+
+            fail(controller);
         }
     }
 
@@ -81,6 +98,11 @@ public class FilmScenes
 
         if (scene == null)
         {
+            if (FAILED.contains(controller))
+            {
+                return;
+            }
+
             /* A controller that started ticking without ever announcing its cast — build the scene
              * on first sight rather than never. */
             onSetup(controller);
@@ -116,7 +138,7 @@ public class FilmScenes
         {
             BBSPhysics.LOGGER.error("A physics scene failed to reach tick {} and was dropped.", tick, e);
 
-            drop(controller);
+            fail(controller);
         }
     }
 
@@ -130,6 +152,11 @@ public class FilmScenes
      */
     public static void onFilmEdited()
     {
+        /* An edit is the one thing that can undo whatever made a scene fail — the author deleting
+         * the form that threw, most plainly — so it also clears the failures. One retry per edit is
+         * paced by a human hand, unlike one per tick. */
+        FAILED.clear();
+
         for (FilmScene scene : SCENES.values())
         {
             scene.invalidate();
@@ -159,7 +186,10 @@ public class FilmScenes
         {
             BBSPhysics.LOGGER.error("A physics scene failed to draw its debug overlay and was dropped.", e);
 
-            drop(controller);
+            /* Remembered as a failure, not merely dropped: rebuilding the scene is no answer to a
+             * drawing bug, so the next tick would build it again only for the next frame to throw
+             * again — the same crawl as a scene that cannot be assembled. */
+            fail(controller);
         }
     }
 
@@ -238,6 +268,19 @@ public class FilmScenes
         {
             scene.close();
         }
+
+        /* Forgetting the controller means forgetting why it has no scene as well. Every fresh
+         * attempt starts here — {@link #onSetup} drops before it builds — so the mark being set
+         * after the drop, by {@link #fail}, is what makes an attempt one attempt. */
+        FAILED.remove(controller);
+    }
+
+    /** The scene is gone and is not to be built again until an edit or a rebuilt cast says so. */
+    private static void fail(BaseFilmController controller)
+    {
+        drop(controller);
+
+        FAILED.add(controller);
     }
 
     /**
@@ -261,7 +304,7 @@ public class FilmScenes
         SCENES.entrySet().removeIf((entry) ->
         {
             BaseFilmController other = entry.getKey();
-            boolean stale = other != controller && other.film != null && filmId.equals(other.film.getId());
+            boolean stale = isStale(controller, filmId, other);
 
             if (stale)
             {
@@ -270,6 +313,16 @@ public class FilmScenes
 
             return stale;
         });
+
+        /* A leftover that failed holds no scene, so the sweep above never sees it — and a mark left
+         * behind keeps a discarded controller, its film and its cast alive for as long as the game
+         * runs. The mark is the leftover's only trace, so it is swept on the same terms. */
+        FAILED.removeIf((other) -> isStale(controller, filmId, other));
+    }
+
+    private static boolean isStale(BaseFilmController controller, String filmId, BaseFilmController other)
+    {
+        return other != controller && other.film != null && filmId.equals(other.film.getId());
     }
 
     /**
@@ -285,6 +338,8 @@ public class FilmScenes
             it.next().close();
             it.remove();
         }
+
+        FAILED.clear();
     }
 
     public static int getSceneCount()

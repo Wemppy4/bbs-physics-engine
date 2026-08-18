@@ -80,8 +80,18 @@ public abstract class SoftBodyRig implements SceneRig
     private boolean lost;
     private boolean misfed;
 
-    private float lastFriction;
-    private float lastDamping;
+    /**
+     * What was last pushed into the body, so an untouched knob is not pushed every tick.
+     *
+     * <p>NaN rather than the form's value, and set here rather than in the constructor: reading the
+     * form would mean asking {@link #getFriction()}, and a subclass answers that out of a field it
+     * only assigns <em>after</em> this constructor has returned — the call would land on a null
+     * form. Any comparison against NaN is unequal, so the first tick pushes both values; the
+     * creation settings baked them in already, which makes that push two setter calls and no
+     * change.</p>
+     */
+    private float lastFriction = Float.NaN;
+    private float lastDamping = Float.NaN;
 
     protected SoftBodyRig(Form form, String path, int bodyId, int channel, int count, SoftBodyMotionProperties motion, String anchor)
     {
@@ -95,9 +105,6 @@ public abstract class SoftBodyRig implements SceneRig
         this.vertices = motion.getVertices();
         this.record = new float[count * 3 + 1];
         this.locations = Jolt.newDirectFloatBuffer(count * 3);
-
-        this.lastFriction = this.getFriction();
-        this.lastDamping = this.getDamping();
     }
 
     /* What the two kinds answer differently */
