@@ -22,6 +22,8 @@ import mchorse.bbs_physics.ragdoll.RagdollIO;
 import mchorse.bbs_physics.ragdoll.RagdollJoint;
 import mchorse.bbs_physics.ragdoll.RagdollJointKind;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.UnaryOperator;
 
 /**
@@ -40,6 +42,12 @@ import java.util.function.UnaryOperator;
  * <p>Only the rows the selected joint actually uses are built. A cone has a spread and a twist; a
  * hinge has an axis and two limits; a weld has neither. Showing all of them and greying out two
  * thirds was most of what made this panel unreadable.</p>
+ *
+ * <p><b>Everything here writes into the whole selection</b> ({@link UIBoneSection}): ten fingers get
+ * their hinge, their axis and their limits in one pass, and each keeps its own reading of the edit —
+ * "twist to −20" is applied to every selected joint's own twist, not copied off the first one's.
+ * Bones the selection caught that carry no shape, or that the ragdoll does not claim, are passed
+ * over: a joint written onto a bone with no body would be a setting that never becomes anything.</p>
  */
 public class UIRagdollSection extends UIBoneSection
 {
@@ -162,6 +170,26 @@ public class UIRagdollSection extends UIBoneSection
         return this.ragdoll.get(this.bone);
     }
 
+    /**
+     * The bones a knob writes into: the selection, minus whatever it caught that has no joint to
+     * describe. See the class note.
+     */
+    private List<String> jointed()
+    {
+        List<String> bones = new ArrayList<>();
+
+        for (String bone : this.targets())
+        {
+            if (this.isMarked(bone) && this.ragdoll.isPart(bone))
+            {
+                bones.add(bone);
+            }
+        }
+
+        return bones;
+    }
+
+    /** One edit, applied to each selected joint in terms of that joint's own current values. */
     private void editJoint(UnaryOperator<RagdollJoint> edit)
     {
         if (this.model == null || this.bone.isEmpty())
@@ -169,26 +197,39 @@ public class UIRagdollSection extends UIBoneSection
             return;
         }
 
-        this.setRagdoll(this.ragdoll.with(this.bone, edit.apply(this.joint())));
+        FormRagdoll ragdoll = this.ragdoll;
+
+        for (String bone : this.jointed())
+        {
+            ragdoll = ragdoll.with(bone, edit.apply(ragdoll.get(bone)));
+        }
+
+        this.setRagdoll(ragdoll);
     }
 
     /**
-     * Takes a bone into the ragdoll or leaves it out. Only a marked-up bone can be claimed — an
+     * Takes bones into the ragdoll or leaves them out. Only a marked-up bone can be claimed — an
      * unmarked one has no shape, so there is no body either way, and a tick on it would be a promise
      * the markup cannot keep.
      */
     @Override
-    protected boolean toggleBone(String bone)
+    protected void setTicked(List<String> bones, boolean ticked)
     {
-        if (this.form == null || this.model == null || !this.isMarked(bone))
+        FormRagdoll ragdoll = this.ragdoll;
+
+        for (String bone : bones)
         {
-            return false;
+            ragdoll = ragdoll.withPart(bone, ticked);
         }
 
-        this.setRagdoll(this.ragdoll.withPart(bone, !this.ragdoll.isPart(bone)));
+        this.setRagdoll(ragdoll);
         this.updateLabels();
+    }
 
-        return true;
+    @Override
+    protected boolean canTick(String bone)
+    {
+        return this.form != null && this.model != null && this.isMarked(bone);
     }
 
     @Override
@@ -227,6 +268,11 @@ public class UIRagdollSection extends UIBoneSection
 
         String current = this.joint().attachTo();
 
+        /* The bone showing in the panel is kept off the list, since nothing hangs off itself — but
+         * with a selection it is very often the thing the rest should hang off (four fingers onto
+         * the hand, the hand among them), so then it is offered and {@link #attachTo} skips it. */
+        boolean many = this.jointed().size() > 1;
+
         this.getContext().replaceContextMenu((menu) ->
         {
             menu.action(Icons.REFRESH, PhysicsKeys.RAGDOLL_ATTACH_AUTO, current.isEmpty(), () ->
@@ -237,18 +283,35 @@ public class UIRagdollSection extends UIBoneSection
 
             for (String bone : this.bones.getList())
             {
-                if (bone.equals(this.bone) || !this.isMarked(bone) || !this.ragdoll.isPart(bone))
+                if ((bone.equals(this.bone) && !many) || !this.isMarked(bone) || !this.ragdoll.isPart(bone))
                 {
                     continue;
                 }
 
-                menu.action(Icons.LIMB, IKey.constant(bone), bone.equals(current), () ->
-                {
-                    this.editJoint((joint) -> joint.withAttachTo(bone));
-                    this.updateLabels();
-                });
+                menu.action(Icons.LIMB, IKey.constant(bone), bone.equals(current), () -> this.attachTo(bone));
             }
         });
+    }
+
+    /**
+     * Hangs every selected joint off {@code target} — except {@code target} itself, which the
+     * selection may well contain (attaching four fingers to the hand, with the hand among them) and
+     * which cannot hang off itself.
+     */
+    private void attachTo(String target)
+    {
+        FormRagdoll ragdoll = this.ragdoll;
+
+        for (String bone : this.jointed())
+        {
+            if (!bone.equals(target))
+            {
+                ragdoll = ragdoll.with(bone, ragdoll.get(bone).withAttachTo(target));
+            }
+        }
+
+        this.setRagdoll(ragdoll);
+        this.updateLabels();
     }
 
     /* Presets */
@@ -314,7 +377,15 @@ public class UIRagdollSection extends UIBoneSection
         }
 
         this.attachTo.label = joint.attachTo().isEmpty() ? PhysicsKeys.RAGDOLL_ATTACH_AUTO : IKey.constant(joint.attachTo());
-        this.boneTitle.label = this.bone.isEmpty() ? IKey.EMPTY : IKey.constant(this.bone);
+
+        /* The title says how far the knobs reach: the bone they are showing, and how many more go
+         * with it. A panel that named one bone while writing into twelve would be lying by
+         * omission at exactly the moment it matters. */
+        int reach = this.jointed().size();
+
+        this.boneTitle.label = this.bone.isEmpty()
+            ? IKey.EMPTY
+            : (reach > 1 ? PhysicsKeys.BONES_MULTI.format(this.bone, reach - 1) : IKey.constant(this.bone));
 
         this.rebuild(joint);
     }

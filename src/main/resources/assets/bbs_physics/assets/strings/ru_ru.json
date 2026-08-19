@@ -87,6 +87,7 @@
     "bbs_physics.forms.body.material.iron": "Железо",
     "bbs_physics.forms.body.material.gold": "Золото",
     "bbs_physics.forms.category":"Физика",
+    "bbs_physics.forms.bones_multi": "%s и ещё %s",
     "bbs_physics.forms.body.title": "Твёрдое тело",
     "bbs_physics.forms.body.authority": "Сила анимации",
     "bbs_physics.forms.body.authority_tooltip": "1 — тело идёт строго по кейфреймам и расталкивает всё вокруг. 0 — живёт само, по физике. Между ними тело тянется за анимацией на столько же: отстаёт, провисает и уступает при ударе. Анимируй с 1 в 0 дорожкой на таймлайне, чтобы отпустить предмет.",

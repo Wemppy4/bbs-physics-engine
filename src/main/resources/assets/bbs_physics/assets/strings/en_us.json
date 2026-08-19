@@ -87,6 +87,7 @@
     "bbs_physics.forms.body.material.iron": "Iron",
     "bbs_physics.forms.body.material.gold": "Gold",
     "bbs_physics.forms.category":"Physics",
+    "bbs_physics.forms.bones_multi": "%s and %s more",
     "bbs_physics.forms.body.title": "Rigid body",
     "bbs_physics.forms.body.authority": "Animation",
     "bbs_physics.forms.body.authority_tooltip": "1 — the body follows its keyframes exactly and shoves everything aside. 0 — it is on its own, purely physics. In between it is pulled towards the animation by that much: it lags, sags and gives way. Animate it from 1 down to 0 on the timeline to let an object go.",

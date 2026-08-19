@@ -18,6 +18,8 @@ import mchorse.bbs_physics.collision.CollisionMode;
 import mchorse.bbs_physics.collision.FormCollision;
 import mchorse.bbs_physics.collision.FormCollisions;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 
 /**
@@ -28,6 +30,18 @@ import java.util.function.Consumer;
  * all of it: the list, the search box, the tick's hit test, the dot that says a bone has a shape, and
  * the "am I syncing" flag that keeps a value callback from writing back what it was just handed. The
  * two copies had already started to differ in ways nobody chose.</p>
+ *
+ * <p><b>Many bones at a time.</b> The list is multi-select, with the gestures BBS's pose bone list
+ * already taught — Shift for a run, Ctrl for one more — and a knob turned here writes into every
+ * selected bone, not just the one the panel is showing. A rig is described in groups (all the
+ * fingers bend the same way, all the hair hangs the same way), and doing that one bone at a time was
+ * the same numbers typed twenty times. The values on screen are the <em>first</em> selected bone's:
+ * a panel showing an average of twenty bones would be showing a number none of them has.</p>
+ *
+ * <p>A tick clicked with several bones selected takes them all in — or leaves them all out, matching
+ * the row that was clicked rather than flipping each one, so the click has one visible outcome
+ * instead of twenty different ones. A tick clicked <em>outside</em> the selection is about that row
+ * alone: the author is pointing at it, not at what happens to be highlighted elsewhere.</p>
  *
  * <p><b>Two rules the subclasses inherit rather than rediscover.</b> A value callback may
  * <em>write</em> but must never change the layout: {@code UITrackpad} calls back while it is being
@@ -54,7 +68,10 @@ public abstract class UIBoneSection extends UIElement
     protected Form form;
     protected ModelInstance model;
 
-    /** The bone the author is standing on, or empty when there is no model to stand on one. */
+    /**
+     * The first of the selected bones — the one whose values the knobs show — or empty when there
+     * is no model to stand on one. What an edit is <em>written</em> to is {@link #targets}.
+     */
     protected String bone = "";
 
     /**
@@ -76,11 +93,14 @@ public abstract class UIBoneSection extends UIElement
 
         this.column(UIConstants.MARGIN).vertical().stretch();
 
-        this.bones = new UIBoneTreeList((l) ->
+        this.bones = new UIPhysicsBoneList((l) ->
         {
-            if (this.model != null && !l.isEmpty())
+            if (this.model != null)
             {
-                this.bone = l.get(0);
+                /* Ctrl-clicking the last selected row leaves nothing selected, and that is an
+                 * honest state to be in: the knobs go away rather than describing a bone the
+                 * author cannot see highlighted. */
+                this.bone = l.isEmpty() ? "" : l.get(0);
 
                 PickedBone.set(this.bone);
             }
@@ -105,7 +125,7 @@ public abstract class UIBoneSection extends UIElement
                 {
                     int index = this.getIndexAtCursor(context);
 
-                    if (index >= 0 && index < this.getList().size() && UIBoneSection.this.toggleBone(this.getList().get(index)))
+                    if (index >= 0 && index < this.getList().size() && UIBoneSection.this.toggleTick(this.getList().get(index)))
                     {
                         return true;
                     }
@@ -124,14 +144,20 @@ public abstract class UIBoneSection extends UIElement
     /* What a subclass fills in */
 
     /**
-     * Takes a bone into the modifier or leaves it out.
-     *
-     * @return whether the click was on a bone that has a tick to give at all
+     * Takes every one of {@code bones} into the modifier, or leaves them all out. Handed the whole
+     * run at once rather than one bone at a time, so a modifier writes itself back onto the form —
+     * and lays its panel out again — once per click instead of once per bone.
      */
-    protected abstract boolean toggleBone(String bone);
+    protected abstract void setTicked(List<String> bones, boolean ticked);
 
     /** Whether this modifier claims {@code bone} — what the tick is filled in for. */
     protected abstract boolean isTicked(String bone);
+
+    /** Whether {@code bone} has a tick to give at all — the ragdoll's unmarked bones have none. */
+    protected boolean canTick(String bone)
+    {
+        return true;
+    }
 
     /** The author moved to another bone in the list. */
     protected abstract void onBonePicked();
@@ -169,11 +195,69 @@ public abstract class UIBoneSection extends UIElement
         this.bones.fillBones(this.model.model, this.model.getDisabledBones());
         this.bones.filter(this.bonesSearch.search.getText());
 
+        /* Filling the list drops its selection, so whatever bone was showing is no longer standing
+         * on anything — and a name left over from the previous model is a bone this one may not
+         * even have. The pick below puts a real one back. */
+        this.bone = "";
+
         if (pick && !this.pickBoneInList(PickedBone.get()) && !this.bones.getList().isEmpty())
         {
             this.bone = this.bones.getList().get(0);
             this.bones.setCurrentScroll(this.bone);
         }
+    }
+
+    /**
+     * The bones an edit lands on: everything selected in the list, the one showing in the knobs
+     * first. Snapshotted because {@code getCurrent} hands back a buffer it reuses — the same guard
+     * BBS's own pose editor takes, and for the same reason: an edit can re-enter the list.
+     */
+    protected List<String> targets()
+    {
+        List<String> targets = new ArrayList<>(this.bones.getCurrent());
+
+        /* Nothing highlighted, but a bone is showing — the panel was pointed at one from outside
+         * (a click in the viewport, a form just opened). That bone is the edit. */
+        if (targets.isEmpty() && !this.bone.isEmpty())
+        {
+            targets.add(this.bone);
+        }
+
+        return targets;
+    }
+
+    /**
+     * The tick was clicked on {@code clicked}: every selected bone follows it, and a bone that has
+     * no tick to give is passed over rather than counted as a miss.
+     *
+     * @return whether the click ticked anything — a click that did not is left to fall through to
+     *         the list, which selects the row instead
+     */
+    private boolean toggleTick(String clicked)
+    {
+        if (!this.canTick(clicked))
+        {
+            return false;
+        }
+
+        List<String> targets = this.targets();
+
+        if (!targets.contains(clicked))
+        {
+            targets.clear();
+            targets.add(clicked);
+        }
+
+        targets.removeIf((bone) -> !this.canTick(bone));
+
+        if (targets.isEmpty())
+        {
+            return false;
+        }
+
+        this.setTicked(targets, !this.isTicked(clicked));
+
+        return true;
     }
 
     /**

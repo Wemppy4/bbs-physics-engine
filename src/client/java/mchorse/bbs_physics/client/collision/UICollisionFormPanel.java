@@ -11,6 +11,7 @@ import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
+import mchorse.bbs_mod.l10n.keys.IKey;
 import mchorse.bbs_mod.ui.UIKeys;
 import mchorse.bbs_mod.ui.forms.editors.UIFormEditor;
 import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
@@ -26,6 +27,7 @@ import mchorse.bbs_mod.ui.framework.elements.input.UIPropTransform;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UIStringList;
+import mchorse.bbs_mod.ui.framework.elements.utils.UILabel;
 import mchorse.bbs_mod.ui.utils.PickedBone;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
@@ -39,6 +41,7 @@ import mchorse.bbs_mod.utils.pose.Transform;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.client.forms.PhysicsColors;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
+import mchorse.bbs_physics.client.forms.UIPhysicsBoneList;
 import mchorse.bbs_physics.collision.CollisionIO;
 import mchorse.bbs_physics.collision.CollisionKind;
 import mchorse.bbs_physics.collision.CollisionFace;
@@ -71,6 +74,17 @@ import java.util.function.UnaryOperator;
  * <p>Modelled on the IK tab down to the preset menu, because it is the same job: describing a model
  * bone by bone. A model is marked up per bone; every other form has one slot of its own and no list
  * to choose from, so it simply does not get one.</p>
+ *
+ * <p><b>Bone by bone, but not one at a time.</b> The list is multi-select with BBS's own gestures —
+ * Shift for a run, Ctrl for one more — and "collides as" and "which face" are written into every
+ * selected bone. Excluding a hand's worth of finger bones, or laying a plate on the same side of
+ * eight hair bones, is one click each way; the automatic pass makes the same edit at rig scale and
+ * has no way to mean "these ones".</p>
+ *
+ * <p>The shapes below stay with the <b>first</b> selected bone, and that is not an oversight. A
+ * primitive is a thing placed by hand in one bone's own frame, dragged by one gizmo; the same offsets
+ * pushed into eight bones would be eight boxes in eight wrong places. The bulk answer to "give these
+ * bones a shape" already exists and is measured per bone — that is what "Automatic" mode is.</p>
  */
 public class UICollisionFormPanel extends UIFormPanel<Form>
 {
@@ -88,6 +102,9 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
     public UIBoneTreeList bones;
     public UISearchList<String> bonesSearch;
+
+    /** Which bone the rows below are showing, and how many more they are writing into. */
+    public UILabel slotTitle;
 
     public ModeCirculate mode;
     private final UIElement modeRow;
@@ -134,7 +151,10 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
         this.preview = new UIToggle(PhysicsKeys.COLLISION_PREVIEW, (b) -> BBSPhysicsSettings.collisionPreview.set(b.getValue()));
 
-        this.bones = new UIBoneTreeList((l) ->
+        this.slotTitle = UI.label(IKey.EMPTY, UIConstants.LIST_ITEM_HEIGHT, Colors.LIGHTER_GRAY);
+        this.slotTitle.labelAnchor(0F, 0.5F);
+
+        this.bones = new UIPhysicsBoneList((l) ->
         {
             if (this.model != null)
             {
@@ -174,7 +194,9 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
                 return;
             }
 
-            this.setSlot(this.slot().withMode(CollisionMode.values()[b.getValue()]));
+            CollisionMode picked = CollisionMode.values()[b.getValue()];
+
+            this.editSlots((slot) -> slot.withMode(picked));
             this.updateLabels();
 
             /* The side picker comes and goes with the mode, so the column has to be built again.
@@ -192,7 +214,9 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         {
             if (!this.syncing)
             {
-                this.setSlot(this.slot().withFace(CollisionFace.values()[b.getValue()]));
+                CollisionFace picked = CollisionFace.values()[b.getValue()];
+
+                this.editSlots((slot) -> slot.withFace(picked));
             }
         });
 
@@ -274,6 +298,46 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         return this.collision.get(this.slot);
     }
 
+    /**
+     * The slots an edit lands on: every bone selected in the list, the one showing in the rows
+     * first. A form that is not a model has the one slot and no list to select in.
+     *
+     * <p>Snapshotted because {@code getCurrent} hands back a buffer it reuses, and writing the
+     * markup back re-enters the list through the panel's own callbacks.</p>
+     */
+    private List<String> slots()
+    {
+        if (this.model == null)
+        {
+            return List.of(FormCollision.SELF);
+        }
+
+        List<String> slots = new ArrayList<>(this.bones.getCurrent());
+
+        if (slots.isEmpty())
+        {
+            slots.add(this.slot);
+        }
+
+        return slots;
+    }
+
+    /** One change, written into every selected bone in terms of that bone's own slot. */
+    private void editSlots(UnaryOperator<CollisionSlot> edit)
+    {
+        FormCollision collision = this.collision;
+
+        for (String slot : this.slots())
+        {
+            collision = collision.with(slot, edit.apply(collision.get(slot)));
+        }
+
+        this.collision = collision;
+
+        this.commit();
+    }
+
+    /** One change to the bone the rows are showing — what the hand-placed shapes are edited by. */
     private void setSlot(CollisionSlot slot)
     {
         this.collision = this.collision.with(this.slot, slot);
@@ -655,7 +719,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
         if (model)
         {
-            this.options.add(this.bonesSearch);
+            this.options.add(this.bonesSearch, this.slotTitle);
         }
 
         this.options.add(this.modeRow);
@@ -726,6 +790,15 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         {
             this.syncing = false;
         }
+
+        /* How far the rows under it reach: the bone they are showing, and how many more go with it.
+         * Without it a mode switch that quietly rewrote twelve bones would look exactly like one
+         * that rewrote the single bone whose name is nowhere on screen. */
+        int reach = this.slots().size();
+
+        this.slotTitle.label = this.model == null || this.slot.isEmpty()
+            ? IKey.EMPTY
+            : (reach > 1 ? PhysicsKeys.BONES_MULTI.format(this.slot, reach - 1) : IKey.constant(this.slot));
 
         boolean hasShape = this.shape() != null;
 

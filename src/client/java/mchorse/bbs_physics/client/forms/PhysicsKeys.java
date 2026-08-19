@@ -12,6 +12,9 @@ public class PhysicsKeys
     public static final IKey CATEGORY = L10n.lang("bbs_physics.forms.category");
     public static final IKey BODY_TITLE = L10n.lang("bbs_physics.forms.body.title");
 
+    /** The bone the knobs are showing and how many more they write into — %s name, %s count. */
+    public static final IKey BONES_MULTI = L10n.lang("bbs_physics.forms.bones_multi");
+
     public static final IKey PHYSICS_TITLE = L10n.lang("bbs_physics.forms.physics.title");
     public static final IKey PHYSICS_ADD = L10n.lang("bbs_physics.forms.physics.add");
     public static final IKey PHYSICS_ADD_BODY = L10n.lang("bbs_physics.forms.physics.add_body");

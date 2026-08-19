@@ -15,6 +15,7 @@ import mchorse.bbs_physics.client.forms.PhysicsKeys;
 import mchorse.bbs_physics.client.forms.UIBoneSection;
 
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.UnaryOperator;
 
@@ -23,7 +24,13 @@ import java.util.function.UnaryOperator;
  *
  * <p>Ticks in a bone list, deliberately the same gesture the ragdoll uses — an author who has ticked
  * "these bones fall" already knows how to tick "these bones hang". Unlike the ragdoll, an unmarked
- * bone can be ticked: a strand with no shape still hangs and swings, it simply meets nothing.</p>
+ * bone can be ticked: a strand with no shape still hangs and swings, it simply meets nothing. Select
+ * a run with Shift and one tick takes the whole run in, which is how a fringe of twenty hair bones
+ * stops being twenty clicks.</p>
+ *
+ * <p>The knobs below describe the <em>modifier</em>, not a bone — one stiffness for all the strands
+ * it owns — so unlike the ragdoll's they do not change with the selection. Hair that needs two
+ * stiffnesses is two forms, the way it already is in BBS's own chain physics.</p>
  *
  * <p>🔴 <b>This modifier describes no shapes at all</b> — the Collision tab does. It briefly did the
  * opposite: a "thickness" knob here built a capsule per bone, which read as physics inventing
@@ -83,11 +90,19 @@ public class UIChainSection extends UIBoneSection
     /* Editing */
 
     @Override
-    protected boolean toggleBone(String bone)
+    protected void setTicked(List<String> bones, boolean ticked)
     {
-        this.editComposition((chain) -> chain.withBone(bone, !chain.bones().contains(bone)));
+        this.editComposition((chain) ->
+        {
+            FormChain edited = chain;
 
-        return true;
+            for (String bone : bones)
+            {
+                edited = edited.withBone(bone, ticked);
+            }
+
+            return edited;
+        });
     }
 
     @Override
