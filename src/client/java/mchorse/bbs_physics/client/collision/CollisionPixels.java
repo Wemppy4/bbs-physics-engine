@@ -431,7 +431,7 @@ public final class CollisionPixels
                 half[v] = height * stepV * 0.5F;
                 half[axis] = halfThickness;
 
-                out.add(plate(center, half, surface, cube, bonePivot, scale));
+                out.add(plate(center, half, axis, surface, cube, bonePivot, scale));
             }
         }
     }
@@ -441,7 +441,7 @@ public final class CollisionPixels
      * steps a measured cube takes: the cube's rotation about its own pivot, the bone's pivot, the
      * model's scale, and the half turn of §10.1.
      */
-    private static CollisionShapes.SubShape plate(float[] center, float[] half, float surface, ModelCube cube, Vector3f bonePivot, Vector3f scale)
+    private static CollisionShapes.SubShape plate(float[] center, float[] half, int axis, float surface, ModelCube cube, Vector3f bonePivot, Vector3f scale)
     {
         /* Only the plate's own floor: MIN_HALF keeps a volume solvable, and a plate is not one.
          * In the plane a cell is half a pixel across at the least, well above it anyway. */
@@ -454,6 +454,13 @@ public final class CollisionPixels
 
         CollisionShapes.intoBoneFrame(offset, rotation, cube, bonePivot, scale);
 
-        return new CollisionShapes.SubShape(CollisionKind.BOX, halves, offset, rotation, surface);
+        /* The half turn of §10.1 is applied to the rotation by conjugation (F·R·F), which a box
+         * cannot tell from F·R — except through its own axes: the trailing F turns the plate's
+         * local X and Z round. The side the pixels are on was named in the cube's axes, so along
+         * those two it changes sign here; Y is the axis of the turn and keeps it. The overlay
+         * drew every plate on its far side until this was accounted for. */
+        float local = axis == 1 ? surface : -surface;
+
+        return new CollisionShapes.SubShape(CollisionKind.BOX, halves, offset, rotation, local);
     }
 }

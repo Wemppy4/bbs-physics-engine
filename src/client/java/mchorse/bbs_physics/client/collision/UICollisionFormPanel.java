@@ -114,6 +114,9 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
     public UITrackpad plate;
     private final UIElement thicknessRow;
 
+    /** Whether the column currently holds the thickness row — see {@link #updateLabels}. */
+    private boolean thicknessShown;
+
     public UIStringList shapes;
     public UIIcon addShape;
     public UIIcon removeShape;
@@ -199,10 +202,6 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
             this.editSlots((slot) -> slot.withMode(picked));
             this.updateLabels();
-
-            /* The thickness row comes and goes with the mode, so the column has to be built
-             * again. Safe from here: this is a click, not the render pass. */
-            this.rebuild();
         });
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_NONE);
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_AUTO);
@@ -745,7 +744,9 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         this.options.add(this.modeRow);
 
         /* The thickness belongs to one mode and would be a dead row in every other. */
-        if (this.slot().mode() == CollisionMode.PIXELS)
+        this.thicknessShown = this.slot().mode() == CollisionMode.PIXELS;
+
+        if (this.thicknessShown)
         {
             this.options.add(this.thicknessRow);
         }
@@ -773,6 +774,16 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         }
 
         CollisionSlot slot = this.slot();
+
+        /* The thickness row follows the slot being shown, and the slot changes under this method
+         * from more places than the mode switch — a click in the bone list, the editor reopening
+         * on a remembered bone. Rebuilding here, whenever what is shown stops matching what is
+         * needed, is the one place that catches all of them; the callers are all clicks, never
+         * the render pass, so the column may be rebuilt from here. */
+        if (this.thicknessShown != (slot.mode() == CollisionMode.PIXELS))
+        {
+            this.rebuild();
+        }
 
         /* "Shapes by hand" is what a slot with shapes in it <em>is</em>, not a mode to select
          * beforehand. Selecting it on an empty slot could not work — a slot with no shapes is
