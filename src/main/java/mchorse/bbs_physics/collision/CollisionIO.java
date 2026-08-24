@@ -22,7 +22,6 @@ import java.util.Map;
 public final class CollisionIO
 {
     private static final String KEY_MODE = "mode";
-    private static final String KEY_FACE = "face";
     private static final String KEY_SHAPES = "shapes";
 
     private static final String KEY_KIND = "kind";
@@ -100,7 +99,7 @@ public final class CollisionIO
             }
         }
 
-        return new CollisionSlot(mode, CollisionFace.byId(map.getString(KEY_FACE), CollisionFace.FRONT), shapes);
+        return new CollisionSlot(mode, shapes);
     }
 
     private static MapType slotToData(CollisionSlot slot)
@@ -108,11 +107,6 @@ public final class CollisionIO
         MapType map = new MapType();
 
         map.putString(KEY_MODE, slot.mode().id);
-
-        if (slot.mode() == CollisionMode.FACE)
-        {
-            map.putString(KEY_FACE, slot.face().id);
-        }
 
         if (slot.mode() == CollisionMode.SHAPES)
         {

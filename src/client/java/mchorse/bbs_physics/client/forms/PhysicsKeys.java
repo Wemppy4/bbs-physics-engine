@@ -2,7 +2,6 @@ package mchorse.bbs_physics.client.forms;
 
 import mchorse.bbs_mod.l10n.L10n;
 import mchorse.bbs_mod.l10n.keys.IKey;
-import mchorse.bbs_physics.collision.CollisionFace;
 import mchorse.bbs_physics.collision.CollisionKind;
 import mchorse.bbs_physics.ragdoll.RagdollJointKind;
 
@@ -135,29 +134,7 @@ public class PhysicsKeys
     public static final IKey COLLISION_MODE_TOOLTIP = L10n.lang("bbs_physics.forms.collision.mode_tooltip");
     public static final IKey COLLISION_MODE_NONE = L10n.lang("bbs_physics.forms.collision.mode_none");
     public static final IKey COLLISION_MODE_AUTO = L10n.lang("bbs_physics.forms.collision.mode_auto");
-    public static final IKey COLLISION_MODE_FACE = L10n.lang("bbs_physics.forms.collision.mode_face");
-    public static final IKey COLLISION_FACE = L10n.lang("bbs_physics.forms.collision.face");
-    public static final IKey COLLISION_FACE_TOOLTIP = L10n.lang("bbs_physics.forms.collision.face_tooltip");
-
-    private static final IKey FACE_FRONT = L10n.lang("bbs_physics.forms.collision.face.front");
-    private static final IKey FACE_BACK = L10n.lang("bbs_physics.forms.collision.face.back");
-    private static final IKey FACE_LEFT = L10n.lang("bbs_physics.forms.collision.face.left");
-    private static final IKey FACE_RIGHT = L10n.lang("bbs_physics.forms.collision.face.right");
-    private static final IKey FACE_TOP = L10n.lang("bbs_physics.forms.collision.face.top");
-    private static final IKey FACE_BOTTOM = L10n.lang("bbs_physics.forms.collision.face.bottom");
-
-    public static IKey face(CollisionFace face)
-    {
-        return switch (face)
-        {
-            case FRONT -> FACE_FRONT;
-            case BACK -> FACE_BACK;
-            case LEFT -> FACE_LEFT;
-            case RIGHT -> FACE_RIGHT;
-            case TOP -> FACE_TOP;
-            case BOTTOM -> FACE_BOTTOM;
-        };
-    }
+    public static final IKey COLLISION_MODE_PIXELS = L10n.lang("bbs_physics.forms.collision.mode_pixels");
     public static final IKey COLLISION_MODE_SHAPES = L10n.lang("bbs_physics.forms.collision.mode_shapes");
 
     public static final IKey COLLISION_SHAPES = L10n.lang("bbs_physics.forms.collision.shapes");

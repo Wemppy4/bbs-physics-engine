@@ -17,25 +17,25 @@ public enum CollisionMode
     AUTO("auto"),
 
     /**
-     * A plate on one chosen side of the bone's cubes — the author says which side, the geometry
-     * says where that side is.
+     * The bone's cubes as their <em>drawn</em> surface: every side of every cube becomes thin
+     * plates laid over the pixels that are actually painted, and nothing is built where the
+     * texture is transparent — or inside the cube at all.
      *
-     * <p>For the case a cubic rig makes unavoidable: a second layer — hair, a jacket, a brim — is
-     * drawn as a thin cube <em>inside</em> the cube it sits on, because that is how its texture is
-     * made to appear over it. Two solids in the same place is the one thing a physics engine may
-     * not have — it must push them apart and cannot — so the strand is thrown out of the head. A
-     * plate on the outward-facing side is a surface to slide along instead of a volume to be
-     * expelled from.</p>
+     * <p>For the way cubic models are really made. A strand of hair is not a solid box: it is a
+     * flat cube, often of no depth whatsoever, with a lock painted on it and the rest of the
+     * texture left clear; the second layer of a head is a whole cube with hair painted on three
+     * of its sides. Measured by its bounds, such a cube collides as a slab of air and hits the
+     * body a pixel or more before the hair does. Read by its pixels, the collision is the
+     * silhouette the viewer sees.</p>
      *
-     * <p><b>Which side is the author's call</b>, and that is the whole design. The version before
-     * this one worked it out from the geometry — thinnest axis, whichever way the cube leaned — and
-     * a guess that is right most of the time is worse than a choice, because when it is wrong there
-     * is nothing to correct. Here there is a list of six.</p>
+     * <p>This replaces the older "face" mode — one plate on one side the author named — which is
+     * exactly what this produces for a cube whose side is painted edge to edge, without the
+     * author having to name the side. Files saved with that mode load as this one.</p>
      *
-     * <p>Live, like {@link #AUTO}: nothing is written down but the side, so a cube that changes
-     * size or moves takes its collision with it.</p>
+     * <p>Live, like {@link #AUTO}: nothing is written down but the choice, so a cube that changes
+     * size, or a texture that is repainted, takes its collision with it.</p>
      */
-    FACE("face"),
+    PIXELS("pixels"),
 
     /** The primitives the author placed by hand. */
     SHAPES("shapes");
@@ -49,6 +49,13 @@ public enum CollisionMode
 
     public static CollisionMode byId(String id, CollisionMode fallback)
     {
+        /* The retired "face" mode was a plate on one side, chosen by hand; a pixel read lays the
+         * same plate wherever that side is painted, so a file that asked for one gets the other. */
+        if ("face".equals(id))
+        {
+            return PIXELS;
+        }
+
         for (CollisionMode mode : values())
         {
             if (mode.id.equals(id))

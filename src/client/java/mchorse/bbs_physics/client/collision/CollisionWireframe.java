@@ -44,11 +44,23 @@ public final class CollisionWireframe
     private CollisionWireframe()
     {}
 
+    /** A shape as the collector described it — a plate is outlined on the pixels it stands on. */
+    public static void draw(MatrixStack stack, CollisionShapes.SubShape shape, float red, float green, float blue, float alpha)
+    {
+        draw(stack, shape.kind(), shape.half(), shape.surface(), red, green, blue, alpha);
+    }
+
     public static void draw(MatrixStack stack, CollisionKind kind, Vector3f half, float red, float green, float blue, float alpha)
+    {
+        draw(stack, kind, half, 0F, red, green, blue, alpha);
+    }
+
+    /** @param surface the painted side of a plate — see {@code CollisionShapes.SubShape.surface} */
+    public static void draw(MatrixStack stack, CollisionKind kind, Vector3f half, float surface, float red, float green, float blue, float alpha)
     {
         switch (kind)
         {
-            case BOX -> box(stack, half, red, green, blue, alpha);
+            case BOX -> box(stack, half, surface, red, green, blue, alpha);
             case SPHERE -> sphere(stack, half.x, red, green, blue, alpha);
             case CAPSULE -> capsule(stack, half.x, half.y, red, green, blue, alpha);
             case CYLINDER -> cylinder(stack, half.x, half.y, red, green, blue, alpha);
@@ -69,8 +81,18 @@ public final class CollisionWireframe
      * width but one, so a line-width setting would do nothing on most machines. Bars are geometry
      * — they scale, and they respect perspective the way the shape they outline does.</p>
      */
-    public static void box(MatrixStack stack, Vector3f half, float red, float green, float blue, float alpha)
+    public static void box(MatrixStack stack, Vector3f half, float surface, float red, float green, float blue, float alpha)
     {
+        boolean flatten = BBSPhysicsSettings.debugFlatPlates == null || BBSPhysicsSettings.debugFlatPlates.get();
+        int flat = flatten ? flatAxis(half) : -1;
+
+        if (flat >= 0)
+        {
+            plate(stack, half, flat, surface, red, green, blue, alpha);
+
+            return;
+        }
+
         float t = thickness(half);
 
         float x1 = -half.x;
@@ -101,6 +123,75 @@ public final class CollisionWireframe
         }
 
         BufferRenderer.drawWithGlobalProgram(builder.end());
+    }
+
+    /**
+     * Which axis a box is a plate along — the one thinner than a plate's own thickness — or −1
+     * for a box that is a box.
+     */
+    private static int flatAxis(Vector3f half)
+    {
+        float limit = CollisionShapes.PLATE_THICKNESS;
+
+        if (half.x <= limit && half.x <= half.y && half.x <= half.z) return 0;
+        if (half.y <= limit && half.y <= half.x && half.y <= half.z) return 1;
+        if (half.z <= limit) return 2;
+
+        return -1;
+    }
+
+    /**
+     * A plate as a flat rectangle — four bars that have width in the plane and next to no depth
+     * across it — drawn on the plate's <em>painted</em> side ({@code surface}, see {@code
+     * SubShape.surface}), which is the pixels it collides for; in its mid-plane when it has no
+     * such side.
+     *
+     * <p>A plate is a surface as far as an author is concerned, and twelve bars around a
+     * quarter-pixel box standing a quarter pixel off the model showed a box floating beside the
+     * hair, which is the one thing the overlay must not suggest. A setting ({@code
+     * debug_flat_plates}, on by default) turns it off for whoever wants to see the sliver itself.
+     * The little depth the bars keep is only so they do not vanish into the depth buffer
+     * edge-on.</p>
+     */
+    private static void plate(MatrixStack stack, Vector3f half, int axis, float surface, float red, float green, float blue, float alpha)
+    {
+        float scale = BBSPhysicsSettings.debugLineWidth == null ? 1F : BBSPhysicsSettings.debugLineWidth.get();
+        float t = Math.max(BASE_THICKNESS * scale, MIN_THICKNESS);
+        int u = axis == 0 ? 1 : 0;
+        int v = axis == 2 ? 1 : 2;
+        float hu = half.get(u);
+        float hv = half.get(v);
+        float at = Math.signum(surface) * half.get(axis);
+
+        BufferBuilder builder = Tessellator.getInstance().getBuffer();
+
+        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
+        builder.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
+
+        /* Two bars along u at ±hv, two along v at ±hu, each grown by t in the plane so the corners
+         * meet, and by the bare minimum across it. */
+        bar(builder, stack, axis, u, v, -hu - t, hu + t, -hv - t, -hv + t, at, red, green, blue, alpha);
+        bar(builder, stack, axis, u, v, -hu - t, hu + t, hv - t, hv + t, at, red, green, blue, alpha);
+        bar(builder, stack, axis, u, v, -hu - t, -hu + t, -hv - t, hv + t, at, red, green, blue, alpha);
+        bar(builder, stack, axis, u, v, hu - t, hu + t, -hv - t, hv + t, at, red, green, blue, alpha);
+
+        BufferRenderer.drawWithGlobalProgram(builder.end());
+    }
+
+    /** A box given by its extents along the plate's two in-plane axes, {@code at} along the third. */
+    private static void bar(BufferBuilder builder, MatrixStack stack, int axis, int u, int v, float u1, float u2, float v1, float v2, float at, float red, float green, float blue, float alpha)
+    {
+        float[] min = new float[3];
+        float[] max = new float[3];
+
+        min[u] = u1;
+        max[u] = u2;
+        min[v] = v1;
+        max[v] = v2;
+        min[axis] = at - MIN_THICKNESS;
+        max[axis] = at + MIN_THICKNESS;
+
+        Draw.fillBox(builder, stack, min[0], min[1], min[2], max[0], max[1], max[2], red, green, blue, alpha);
     }
 
     /**

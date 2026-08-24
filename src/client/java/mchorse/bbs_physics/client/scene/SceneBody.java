@@ -59,9 +59,17 @@ public class SceneBody
     private final RVec3 scratchPosition = new RVec3();
     private final Quat scratchRotation = new Quat();
 
-    /** One shape inside the body: what it is, how big, and where it sits in the body's frame. */
-    public record Shape(CollisionKind kind, Vector3f half, Vector3f offset, Quaternionf rotation)
-    {}
+    /**
+     * One shape inside the body: what it is, how big, and where it sits in the body's frame.
+     * {@code surface} is carried for the overlay alone — see {@code CollisionShapes.SubShape}.
+     */
+    public record Shape(CollisionKind kind, Vector3f half, Vector3f offset, Quaternionf rotation, float surface)
+    {
+        public Shape(CollisionKind kind, Vector3f half, Vector3f offset, Quaternionf rotation)
+        {
+            this(kind, half, offset, rotation, 0F);
+        }
+    }
 
     public SceneBody(int id, float red, float green, float blue)
     {
@@ -89,7 +97,7 @@ public class SceneBody
     {
         for (CollisionShapes.SubShape sub : subs)
         {
-            this.shapes.add(new Shape(sub.kind(), sub.half(), sub.offset(), sub.rotation()));
+            this.shapes.add(new Shape(sub.kind(), sub.half(), sub.offset(), sub.rotation(), sub.surface()));
         }
     }
 

@@ -5,22 +5,16 @@ import java.util.Collections;
 import java.util.List;
 
 /** What one slot — a bone, or a form itself — collides as. */
-public record CollisionSlot(CollisionMode mode, CollisionFace face, List<CollisionShape> shapes)
+public record CollisionSlot(CollisionMode mode, List<CollisionShape> shapes)
 {
     public static final CollisionSlot NONE = new CollisionSlot(CollisionMode.NONE, Collections.emptyList());
     public static final CollisionSlot AUTO = new CollisionSlot(CollisionMode.AUTO, Collections.emptyList());
+    public static final CollisionSlot PIXELS = new CollisionSlot(CollisionMode.PIXELS, Collections.emptyList());
 
     public CollisionSlot
     {
         mode = mode == null ? CollisionMode.NONE : mode;
-        face = face == null ? CollisionFace.FRONT : face;
         shapes = shapes == null ? Collections.emptyList() : List.copyOf(shapes);
-    }
-
-    /** The old shape of this record — everything that does not care which side a plate is on. */
-    public CollisionSlot(CollisionMode mode, List<CollisionShape> shapes)
-    {
-        this(mode, CollisionFace.FRONT, shapes);
     }
 
     /**
@@ -35,18 +29,12 @@ public record CollisionSlot(CollisionMode mode, CollisionFace face, List<Collisi
 
     public CollisionSlot withMode(CollisionMode mode)
     {
-        return new CollisionSlot(mode, this.face, this.shapes);
-    }
-
-    /** The same slot laying its plate on another side — see {@link CollisionMode#FACE}. */
-    public CollisionSlot withFace(CollisionFace face)
-    {
-        return new CollisionSlot(this.mode, face, this.shapes);
+        return new CollisionSlot(mode, this.shapes);
     }
 
     public CollisionSlot withShapes(List<CollisionShape> shapes)
     {
-        return new CollisionSlot(this.mode, this.face, shapes);
+        return new CollisionSlot(this.mode, shapes);
     }
 
     /** The same slot with one more primitive, switched to {@code SHAPES} since it now has some. */
@@ -56,6 +44,6 @@ public record CollisionSlot(CollisionMode mode, CollisionFace face, List<Collisi
 
         shapes.add(shape);
 
-        return new CollisionSlot(CollisionMode.SHAPES, this.face, shapes);
+        return new CollisionSlot(CollisionMode.SHAPES, shapes);
     }
 }

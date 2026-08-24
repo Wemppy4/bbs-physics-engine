@@ -44,7 +44,6 @@ import mchorse.bbs_physics.client.forms.PhysicsKeys;
 import mchorse.bbs_physics.client.forms.UIPhysicsBoneList;
 import mchorse.bbs_physics.collision.CollisionIO;
 import mchorse.bbs_physics.collision.CollisionKind;
-import mchorse.bbs_physics.collision.CollisionFace;
 import mchorse.bbs_physics.collision.CollisionMode;
 import mchorse.bbs_physics.collision.CollisionShape;
 import mchorse.bbs_physics.collision.CollisionSlot;
@@ -76,10 +75,10 @@ import java.util.function.UnaryOperator;
  * to choose from, so it simply does not get one.</p>
  *
  * <p><b>Bone by bone, but not one at a time.</b> The list is multi-select with BBS's own gestures —
- * Shift for a run, Ctrl for one more — and "collides as" and "which face" are written into every
- * selected bone. Excluding a hand's worth of finger bones, or laying a plate on the same side of
- * eight hair bones, is one click each way; the automatic pass makes the same edit at rig scale and
- * has no way to mean "these ones".</p>
+ * Shift for a run, Ctrl for one more — and "collides as" is written into every selected bone.
+ * Excluding a hand's worth of finger bones, or reading eight hair bones by their pixels, is one
+ * click each way; the automatic pass makes the same edit at rig scale and has no way to mean
+ * "these ones".</p>
  *
  * <p>The shapes below stay with the <b>first</b> selected bone, and that is not an oversight. A
  * primitive is a thing placed by hand in one bone's own frame, dragged by one gizmo; the same offsets
@@ -108,10 +107,6 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
     public ModeCirculate mode;
     private final UIElement modeRow;
-
-    /** Which side of the cubes a face plate lies on — shown only in that mode. */
-    public UICirculate face;
-    private final UIElement faceRow;
 
     public UIStringList shapes;
     public UIIcon addShape;
@@ -198,35 +193,13 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
             this.editSlots((slot) -> slot.withMode(picked));
             this.updateLabels();
-
-            /* The side picker comes and goes with the mode, so the column has to be built again.
-             * Safe from here: this is a click, not the render pass. */
-            this.rebuild();
         });
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_NONE);
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_AUTO);
-        this.mode.addLabel(PhysicsKeys.COLLISION_MODE_FACE);
+        this.mode.addLabel(PhysicsKeys.COLLISION_MODE_PIXELS);
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_SHAPES);
         this.mode.tooltip(PhysicsKeys.COLLISION_MODE_TOOLTIP);
         this.modeRow = UI.labelRow(PhysicsKeys.COLLISION_MODE, this.mode);
-
-        this.face = new UICirculate((b) ->
-        {
-            if (!this.syncing)
-            {
-                CollisionFace picked = CollisionFace.values()[b.getValue()];
-
-                this.editSlots((slot) -> slot.withFace(picked));
-            }
-        });
-
-        for (CollisionFace value : CollisionFace.values())
-        {
-            this.face.addLabel(PhysicsKeys.face(value));
-        }
-
-        this.face.tooltip(PhysicsKeys.COLLISION_FACE_TOOLTIP);
-        this.faceRow = UI.labelRow(PhysicsKeys.COLLISION_FACE, this.face);
 
         this.shapes = new UIStringList((l) -> this.updateLabels());
         this.shapes.background();
@@ -566,6 +539,12 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
      * pick them up. Hand-placed primitives still win over this, as they win over everything else
      * here: putting one on a chain bone is a deliberate act, and a button that undid deliberate
      * acts would be a button nobody dares press.</p>
+     *
+     * <p>A bone drawn as sheets — every cube of it a pixel thin or less: a strand, a cape, a
+     * fringe — is read by its pixels rather than measured, because the measure of a sheet is a
+     * slab of air around whatever is painted on it. That is a guess about the author's intent
+     * made from the geometry, and the one case where the geometry cannot be wrong about it: a
+     * sheet has no volume to collide as.</p>
      */
     private void autoMark()
     {
@@ -597,8 +576,9 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             }
 
             boolean big = CollisionShapes.boneSize(model, bone, scale) >= threshold;
+            boolean sheet = model instanceof Model cubic && CollisionPixels.isSheet(cubic, bone);
 
-            collision = collision.with(bone, big ? CollisionSlot.AUTO : CollisionSlot.NONE);
+            collision = collision.with(bone, big ? (sheet ? CollisionSlot.PIXELS : CollisionSlot.AUTO) : CollisionSlot.NONE);
         }
 
         this.collision = collision;
@@ -722,15 +702,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             this.options.add(this.bonesSearch, this.slotTitle);
         }
 
-        this.options.add(this.modeRow);
-
-        /* The side picker belongs to one mode and would be a dead row in every other. */
-        if (this.slot().mode() == CollisionMode.FACE)
-        {
-            this.options.add(this.faceRow);
-        }
-
-        this.options.add(this.primitives);
+        this.options.add(this.modeRow, this.primitives);
 
         if (model)
         {
@@ -768,9 +740,9 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
          * none — the option would be a button that quietly does nothing. */
         this.mode.allow(CollisionMode.AUTO.ordinal(), this.model != null);
 
-        /* A plate lies on a cube's side, so the mode needs cubes: a BOBJ bone has none and would
+        /* Pixels lie on a cube's sides, so the mode needs cubes: a BOBJ bone has none and would
          * silently fall back to a plain measure. */
-        this.mode.allow(CollisionMode.FACE.ordinal(), this.model != null && this.model.model instanceof Model);
+        this.mode.allow(CollisionMode.PIXELS.ordinal(), this.model != null && this.model.model instanceof Model);
         this.mode.allow(CollisionMode.SHAPES.ordinal(), hasShapes);
 
         this.syncing = true;
@@ -778,7 +750,6 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         try
         {
             this.mode.setValue(slot.mode().ordinal());
-            this.face.setValue(slot.face().ordinal());
             this.fillShapes(slot);
 
             CollisionShape shape = this.shape();

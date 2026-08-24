@@ -91,7 +91,7 @@ public final class SceneDebugRenderer
                 stack.translate(offset.x, offset.y, offset.z);
                 stack.multiply(shape.rotation());
 
-                CollisionWireframe.draw(stack, shape.kind(), shape.half(), body.red, body.green, body.blue, 1F);
+                CollisionWireframe.draw(stack, shape.kind(), shape.half(), shape.surface(), body.red, body.green, body.blue, 1F);
 
                 stack.pop();
             }

@@ -16,15 +16,15 @@ public final class PhysicsColors
     {}
 
     /**
-     * How a bone's shape was described: measured from its own cubes, cut to one of their faces, or
-     * placed by hand.
+     * How a bone's shape was described: measured from its own cubes, read off their painted pixels,
+     * or placed by hand.
      */
     public static int markup(CollisionMode mode)
     {
         return switch (mode)
         {
             case AUTO -> Colors.CYAN;
-            case FACE -> Colors.GREEN;
+            case PIXELS -> Colors.GREEN;
             default -> Colors.ORANGE;
         };
     }

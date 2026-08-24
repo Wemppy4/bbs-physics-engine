@@ -7,6 +7,7 @@ import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
+import mchorse.bbs_mod.resources.Link;
 import mchorse.bbs_mod.utils.StringUtils;
 import mchorse.bbs_physics.collision.CollisionMode;
 import mchorse.bbs_physics.collision.CollisionSlot;
@@ -142,6 +143,11 @@ public final class CollisionCollector
 
         Collection<String> known = model.getAllGroupKeys();
 
+        /* The texture's painted pixels, for bones read by them — resolved the way the renderer
+         * resolves it (the form's override, else the model's own), and only when some bone asks. */
+        TextureAlpha alpha = null;
+        boolean alphaResolved = false;
+
         for (Map.Entry<String, CollisionSlot> entry : collision.slots().entrySet())
         {
             String bone = entry.getKey();
@@ -155,9 +161,17 @@ public final class CollisionCollector
                 continue;
             }
 
+            if (entry.getValue().mode() == CollisionMode.PIXELS && !alphaResolved)
+            {
+                Link texture = modelForm.texture.get();
+
+                alpha = TextureAlpha.of(texture == null ? instance.getTexture() : texture);
+                alphaResolved = true;
+            }
+
             String bonePath = StringUtils.combinePaths(path, bone);
 
-            add(pieces, bonePath, bone, CollisionShapes.ofBone(model, bone, entry.getValue(), frameScale(matrices, bonePath)));
+            add(pieces, bonePath, bone, CollisionShapes.ofBone(model, bone, entry.getValue(), frameScale(matrices, bonePath), alpha));
         }
     }
 

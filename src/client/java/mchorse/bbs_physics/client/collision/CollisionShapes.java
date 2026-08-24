@@ -7,7 +7,6 @@ import mchorse.bbs_mod.cubic.data.model.ModelCube;
 import mchorse.bbs_mod.cubic.data.model.ModelGroup;
 import mchorse.bbs_mod.cubic.model.bobj.BOBJModel;
 import mchorse.bbs_mod.utils.MathUtils;
-import mchorse.bbs_physics.collision.CollisionFace;
 import mchorse.bbs_physics.collision.CollisionKind;
 import mchorse.bbs_physics.collision.CollisionMode;
 import mchorse.bbs_physics.collision.CollisionShape;
@@ -23,10 +22,12 @@ import java.util.List;
 /**
  * Turns collision markup into the shapes the engine is handed.
  *
- * <p>Two things happen here and they are worth keeping apart. <b>Measuring</b> is the automatic
+ * <p>Three things happen here and they are worth keeping apart. <b>Measuring</b> is the automatic
  * mode: a bone is read off the geometry it is drawn from — one box per cube for cubic models, a
- * capsule along the bone for BOBJ ones. <b>Placing</b> is the manual mode: the author's primitives
- * are carried from the frame they were typed in into the frame the body actually uses.</p>
+ * capsule along the bone for BOBJ ones. <b>Reading pixels</b> ({@link CollisionPixels}) is the
+ * surface mode: the sides of those cubes, cut to what the texture paints on them. <b>Placing</b>
+ * is the manual mode: the author's primitives are carried from the frame they were typed in into
+ * the frame the body actually uses.</p>
  *
  * <p><b>The frame dance</b> (§10.1 of the concept, established by scouting and not to be
  * rediscovered). {@code ModelInstance.captureMatrices} builds a cubic bone's matrix as
@@ -59,42 +60,55 @@ public final class CollisionShapes
     private static final float MAX_CAPSULE_RADIUS = 0.12F;
 
     /**
-     * How thick a face plate is, in blocks — a quarter of a model pixel.
+     * How thick a pixel plate is, in blocks — a quarter of a model pixel.
      *
      * <p>A pixel was the first answer and an author's eye rejected it on sight: at that thickness
-     * the overlay draws a visibly narrow <em>box</em>, and the mode is called a face. A quarter of
-     * a pixel reads as a surface and still behaves as a solid, because what a body may not do is
+     * the overlay draws a visibly narrow <em>box</em>, and a plate is meant to read as a surface.
+     * A quarter of a pixel does, and still behaves as a solid, because what a body may not do is
      * step over the plate between two ticks — and the bodies that could are swept ({@code
      * LinearCast}), which tests the whole path rather than the endpoints.</p>
      */
-    private static final float PLATE_THICKNESS = 0.015625F;
+    static final float PLATE_THICKNESS = 0.015625F;
 
     /**
      * The floor under a plate's half thickness, in blocks. Deliberately far below {@link #MIN_HALF},
      * which exists to keep a <em>volume</em> solvable — a plate is not trying to be one.
      */
-    private static final float PLATE_MIN_HALF = 0.004F;
+    static final float PLATE_MIN_HALF = 0.004F;
 
     private static final float EPS = 1.0e-6F;
 
     /**
      * One collision shape inside a body, in that body's own frame.
      *
-     * @param half half extents for a box; {@code half.x} is the radius of a sphere, a capsule or a
-     *             cylinder, and {@code half.y} the half height of the straight part of a capsule
-     *             or the half height of a cylinder
+     * @param half    half extents for a box; {@code half.x} is the radius of a sphere, a capsule
+     *                or a cylinder, and {@code half.y} the half height of the straight part of a
+     *                capsule or the half height of a cylinder
+     * @param surface for a plate, which side of it — along its thin axis, in its own frame — is
+     *                the painted surface it stands on: {@code +1}, {@code -1}, or {@code 0} for a
+     *                sheet and for anything that is not a plate. Only the overlay reads it: a
+     *                plate stands a quarter pixel off the pixels it collides for, and the
+     *                outline is drawn on the pixels rather than in the air beside them.
      */
-    public record SubShape(CollisionKind kind, Vector3f half, Vector3f offset, Quaternionf rotation)
-    {}
+    public record SubShape(CollisionKind kind, Vector3f half, Vector3f offset, Quaternionf rotation, float surface)
+    {
+        public SubShape(CollisionKind kind, Vector3f half, Vector3f offset, Quaternionf rotation)
+        {
+            this(kind, half, offset, rotation, 0F);
+        }
+    }
 
     private CollisionShapes()
     {}
 
     /**
-     * The shapes of one of a model's bones, in that bone's frame — measured, placed by hand, or
-     * nothing at all when the bone is not marked up.
+     * The shapes of one of a model's bones, in that bone's frame — measured, read off its pixels,
+     * placed by hand, or nothing at all when the bone is not marked up.
+     *
+     * @param alpha the painted pixels of the model's texture, for the pixel mode; null when they
+     *              cannot be known, in which case every side of every cube counts as painted
      */
-    public static List<SubShape> ofBone(IModel model, String bone, CollisionSlot slot, Vector3f scale)
+    public static List<SubShape> ofBone(IModel model, String bone, CollisionSlot slot, Vector3f scale, TextureAlpha alpha)
     {
         if (slot == null || slot.mode() == CollisionMode.NONE)
         {
@@ -106,9 +120,11 @@ public final class CollisionShapes
             return measure(model, bone, scale);
         }
 
-        if (slot.mode() == CollisionMode.FACE)
+        if (slot.mode() == CollisionMode.PIXELS)
         {
-            return face(model, bone, scale, slot.face());
+            /* Only a cubic model has sides with pixels on them; a BOBJ bone is measured instead
+             * of pretending. */
+            return model instanceof Model cubic ? CollisionPixels.of(cubic, bone, scale, alpha) : measure(model, bone, scale);
         }
 
         /* Cubic bones sit half a turn away from model space; BOBJ ones do not — see the class note. */
@@ -148,114 +164,6 @@ public final class CollisionShapes
         return Collections.emptyList();
     }
 
-    /**
-     * A bone as plates on one chosen side of its cubes — the {@link CollisionMode#FACE} mode.
-     *
-     * <p>Which side is the author's answer, not a guess: a second layer is drawn inside the cube it
-     * sits on, and only the author knows which of its sides faces the world. The plate is laid on
-     * that side of every cube the bone draws, so a strand made of three cubes gets three plates and
-     * keeps its outline.</p>
-     *
-     * <p>Only cubic models have sides to speak of, so a BOBJ bone falls back to the plain
-     * measurement rather than pretending.</p>
-     */
-    public static List<SubShape> face(IModel model, String bone, Vector3f scale, CollisionFace face)
-    {
-        if (!(model instanceof Model cubic))
-        {
-            return measure(model, bone, scale);
-        }
-
-        ModelGroup group = cubic.getGroup(bone);
-
-        if (group == null || group.cubes.isEmpty())
-        {
-            return Collections.emptyList();
-        }
-
-        List<SubShape> shapes = new ArrayList<>(group.cubes.size());
-        Vector3f pivot = group.initial.translate;
-
-        for (ModelCube cube : group.cubes)
-        {
-            shapes.add(plateOfCube(cube, pivot, scale, face));
-        }
-
-        return shapes;
-    }
-
-    /**
-     * One cube as a plate lying on one of its sides.
-     *
-     * <p>The plate keeps the cube's other two dimensions — a face is the size of the face — and is
-     * given a thickness that is only as much as the solver needs to see it as a solid. It straddles
-     * the surface rather than sitting inside or outside it: half its thickness each way, so what is
-     * collided against is the side itself, wherever the author put the cube.</p>
-     *
-     * <p>The cube's own rotation is applied about the cube's own pivot, exactly as the plain
-     * measurement does it, so a tilted layer gets a tilted plate — and the frame's half turn
-     * (§10.1) is carried at the end for the same reason.</p>
-     */
-    private static SubShape plateOfCube(ModelCube cube, Vector3f bonePivot, Vector3f scale, CollisionFace face)
-    {
-        float grow = cube.inflate;
-
-        float ax = (cube.origin.x - grow) / PIXELS;
-        float ay = (cube.origin.y - grow) / PIXELS;
-        float az = (cube.origin.z - grow) / PIXELS;
-        float bx = (cube.origin.x + cube.size.x + grow) / PIXELS;
-        float by = (cube.origin.y + cube.size.y + grow) / PIXELS;
-        float bz = (cube.origin.z + cube.size.z + grow) / PIXELS;
-
-        float[] min = {Math.min(ax, bx), Math.min(ay, by), Math.min(az, bz)};
-        float[] max = {Math.max(ax, bx), Math.max(ay, by), Math.max(az, bz)};
-        float[] size = {max[0] - min[0], max[1] - min[1], max[2] - min[2]};
-        float[] center = {(min[0] + max[0]) * 0.5F, (min[1] + max[1]) * 0.5F, (min[2] + max[2]) * 0.5F};
-
-        int axis = face.axis;
-
-        /* On the chosen side, straddling it. */
-        center[axis] = face.sign > 0F ? max[axis] : min[axis];
-        size[axis] = PLATE_THICKNESS;
-
-        /* The plate's own axis escapes the usual floor: MIN_HALF keeps a volume solvable, and
-         * applying it here would inflate the plate back into the narrow box this mode exists to
-         * stop being. The other two axes keep it — a face is as wide as the face. */
-        float[] scales = {scale.x, scale.y, scale.z};
-        Vector3f half = new Vector3f();
-
-        for (int i = 0; i < 3; i++)
-        {
-            float value = size[i] * 0.5F * scales[i];
-
-            half.setComponent(i, Math.max(value, i == axis ? PLATE_MIN_HALF : MIN_HALF));
-        }
-
-        Vector3f offset = new Vector3f(center[0], center[1], center[2]);
-        Quaternionf rotation = new Quaternionf();
-
-        if (cube.rotate.x != 0F || cube.rotate.y != 0F || cube.rotate.z != 0F)
-        {
-            rotation
-                .rotateZ(MathUtils.toRad(cube.rotate.z))
-                .rotateY(MathUtils.toRad(cube.rotate.y))
-                .rotateX(MathUtils.toRad(cube.rotate.x));
-
-            Vector3f cubePivot = new Vector3f(cube.pivot).div(PIXELS);
-
-            offset.sub(cubePivot);
-            rotation.transform(offset);
-            offset.add(cubePivot);
-        }
-
-        offset.sub(bonePivot.x / PIXELS, bonePivot.y / PIXELS, bonePivot.z / PIXELS);
-        offset.mul(scale);
-
-        flipY180(offset, rotation);
-
-        return new SubShape(CollisionKind.BOX, half, offset, rotation);
-    }
-
     private static List<SubShape> measureCubic(Model model, String bone, Vector3f scale)
     {
         ModelGroup group = model.getGroup(bone);
@@ -281,7 +189,7 @@ public final class CollisionShapes
      * cube's own rotation about the cube's own pivot — replicating {@code CubicCubeRenderer.rotate}'s
      * Z·Y·X order exactly — and only then carried into the bone frame by the half turn.
      */
-    private static SubShape ofCube(ModelCube cube, Vector3f bonePivot, Vector3f scale)
+    static SubShape ofCube(ModelCube cube, Vector3f bonePivot, Vector3f scale)
     {
         /* Inflate grows the drawn cube past its size, so it grows the collision too. Corners are
          * min/maxed per component in case of negative sizes. */
@@ -300,10 +208,22 @@ public final class CollisionShapes
             Math.max(Math.abs(bz - az) * 0.5F * scale.z, MIN_HALF));
 
         Vector3f center = new Vector3f((ax + bx) * 0.5F, (ay + by) * 0.5F, (az + bz) * 0.5F);
-
-        /* The cube's own rotation, about its own pivot: center' = pivot + R × (center − pivot). */
         Quaternionf rotation = new Quaternionf();
 
+        intoBoneFrame(center, rotation, cube, bonePivot, scale);
+
+        return new SubShape(CollisionKind.BOX, half, center, rotation);
+    }
+
+    /**
+     * Carries a point and an orientation given in the cube's own axis-aligned space — model
+     * space, in blocks — into the bone's frame, in place: the cube's rotation about its own pivot
+     * ({@code p' = pivot + R × (p − pivot)}), then the bone's pivot, the model's scale, and the
+     * half turn of §10.1. The one path every measured or pixel-read shape of a cube takes, so
+     * that they cannot drift apart.
+     */
+    static void intoBoneFrame(Vector3f point, Quaternionf rotation, ModelCube cube, Vector3f bonePivot, Vector3f scale)
+    {
         if (cube.rotate.x != 0F || cube.rotate.y != 0F || cube.rotate.z != 0F)
         {
             rotation
@@ -313,17 +233,15 @@ public final class CollisionShapes
 
             Vector3f cubePivot = new Vector3f(cube.pivot).div(PIXELS);
 
-            center.sub(cubePivot);
-            rotation.transform(center);
-            center.add(cubePivot);
+            point.sub(cubePivot);
+            rotation.transform(point);
+            point.add(cubePivot);
         }
 
-        center.sub(bonePivot.x / PIXELS, bonePivot.y / PIXELS, bonePivot.z / PIXELS);
-        center.mul(scale);
+        point.sub(bonePivot.x / PIXELS, bonePivot.y / PIXELS, bonePivot.z / PIXELS);
+        point.mul(scale);
 
-        flipY180(center, rotation);
-
-        return new SubShape(CollisionKind.BOX, half, center, rotation);
+        flipY180(point, rotation);
     }
 
     /**
@@ -487,7 +405,7 @@ public final class CollisionShapes
             half.set(half.x * lateral, half.y * scale.y, half.z * lateral);
         }
 
-        return new SubShape(shape.kind(), half, offset, rotation.mul(shape.rotation(), new Quaternionf()));
+        return new SubShape(shape.kind(), half, offset, rotation.mul(shape.rotation(), new Quaternionf()), shape.surface());
     }
 
     /**

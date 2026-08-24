@@ -332,8 +332,8 @@ public abstract class UIBoneSection extends UIElement
      * The tick that says this bone is claimed, and — for the ragdoll — the dot that says whether
      * there is anything to claim.
      *
-     * <p>The dot is coloured by how the shape was described: measured from the bone's own cubes, cut
-     * to one of its faces, or placed by hand. The same colours the Collision tab draws, because it
+     * <p>The dot is coloured by how the shape was described: measured from the bone's own cubes, read
+     * off their painted pixels, or placed by hand. The same colours the Collision tab draws, because it
      * is the same fact; a bone with no dot cannot fall, and that is visible at a glance across a
      * whole rig instead of being discovered one click at a time.</p>
      */

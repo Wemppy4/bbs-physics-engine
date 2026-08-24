@@ -43,6 +43,17 @@ public class BBSPhysicsSettings
     public static ValueFloat debugLineWidth;
 
     /**
+     * Whether a plate — a box thinner than a quarter pixel along one axis — is outlined as a flat
+     * rectangle in its mid-plane rather than as the twelve edges of the sliver it really is.
+     *
+     * <p>On by default: a plate is a surface as far as an author is concerned, and twelve edges
+     * around a quarter-pixel box read as a narrow box, which is the one thing the overlay must not
+     * suggest. Off shows the honest sliver, for when the actual thickness is what is being
+     * looked at.</p>
+     */
+    public static ValueBoolean debugFlatPlates;
+
+    /**
      * How far around the scene the world's blocks are collected, in blocks.
      *
      * <p>Author-facing because there is no right answer: a shot in a room needs a fraction of what
@@ -88,6 +99,7 @@ public class BBSPhysicsSettings
         debug = builder.getBoolean("debug", false);
         collisionPreview = builder.getBoolean("collision_preview", true);
         debugLineWidth = builder.getFloat("debug_line_width", 1F, 0.25F, 6F);
+        debugFlatPlates = builder.getBoolean("debug_flat_plates", true);
 
         gravity = builder.getFloat("gravity", 9.81F, 0F, 40F);
         collisionSteps = builder.getInt("collision_steps", PhysicsWorld.COLLISION_STEPS, 1, 8);

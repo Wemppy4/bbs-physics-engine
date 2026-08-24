@@ -91,7 +91,7 @@ public final class CollisionPreview
                     stack.translate(offset.x, offset.y, offset.z);
                     stack.multiply(sub.rotation());
 
-                    CollisionWireframe.draw(stack, sub.kind(), sub.half(), 0.2F, 1F, 0.5F, 1F);
+                    CollisionWireframe.draw(stack, sub, 0.2F, 1F, 0.5F, 1F);
 
                     stack.pop();
                 }
