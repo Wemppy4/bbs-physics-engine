@@ -159,6 +159,12 @@
     "bbs_physics.forms.collision.mode_none": "Ничем",
     "bbs_physics.forms.collision.mode_auto": "Авто из кубов",
     "bbs_physics.forms.collision.mode_pixels": "По пикселям",
+    "bbs_physics.forms.collision.thickness": "Толщина",
+    "bbs_physics.forms.collision.thickness_tooltip": "Плите нужна толщина (четверть пикселя — без неё движок ничего не считает), и она встаёт либо с одной стороны нарисованных пикселей, либо с другой. У толстого куба «наружу» — от центра в воздух, «внутрь» — в куб. У листа нулевой толщины внутренности нет: «наружу» — сторона граней «перед», «право», «верх», «внутрь» — «зад», «лево», «низ». Две пряди-карточки, одна перед головой, другая за ней, хотят разного — вот для этого. «По центру» — седлом, пополам.",
+    "bbs_physics.forms.collision.plate_tooltip": "Толщина плиты в пикселях модели. По умолчанию четверть: на глаз поверхность, для движка уже тело. Тоньше 1/16 Jolt бокс не строит; толще — если сквозь плиту что-то проскакивает (ткань не подметается, ей тонкое не преграда) или если нужен зазор.",
+    "bbs_physics.forms.collision.thickness.outward": "Наружу",
+    "bbs_physics.forms.collision.thickness.inward": "Внутрь",
+    "bbs_physics.forms.collision.thickness.centered": "По центру",
     "bbs_physics.forms.collision.mode_shapes": "Формы вручную",
 
     "bbs_physics.forms.collision.shapes": "Формы вручную",

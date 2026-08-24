@@ -22,6 +22,8 @@ import java.util.Map;
 public final class CollisionIO
 {
     private static final String KEY_MODE = "mode";
+    private static final String KEY_THICKNESS = "thickness";
+    private static final String KEY_PLATE = "plate";
     private static final String KEY_SHAPES = "shapes";
 
     private static final String KEY_KIND = "kind";
@@ -99,7 +101,11 @@ public final class CollisionIO
             }
         }
 
-        return new CollisionSlot(mode, shapes);
+        return new CollisionSlot(
+            mode,
+            CollisionThickness.byId(map.getString(KEY_THICKNESS), CollisionThickness.OUTWARD),
+            map.has(KEY_PLATE) ? map.getFloat(KEY_PLATE) : CollisionSlot.DEFAULT_PLATE,
+            shapes);
     }
 
     private static MapType slotToData(CollisionSlot slot)
@@ -107,6 +113,17 @@ public final class CollisionIO
         MapType map = new MapType();
 
         map.putString(KEY_MODE, slot.mode().id);
+
+        /* Only where it is read, and only when it says something the default does not. */
+        if (slot.mode() == CollisionMode.PIXELS && slot.thickness() != CollisionThickness.OUTWARD)
+        {
+            map.putString(KEY_THICKNESS, slot.thickness().id);
+        }
+
+        if (slot.mode() == CollisionMode.PIXELS && slot.plate() != CollisionSlot.DEFAULT_PLATE)
+        {
+            map.putFloat(KEY_PLATE, slot.plate());
+        }
 
         if (slot.mode() == CollisionMode.SHAPES)
         {

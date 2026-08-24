@@ -3,6 +3,7 @@ package mchorse.bbs_physics.client.forms;
 import mchorse.bbs_mod.l10n.L10n;
 import mchorse.bbs_mod.l10n.keys.IKey;
 import mchorse.bbs_physics.collision.CollisionKind;
+import mchorse.bbs_physics.collision.CollisionThickness;
 import mchorse.bbs_physics.ragdoll.RagdollJointKind;
 
 /** The addon's own UI strings, resolved from its language files. */
@@ -136,6 +137,23 @@ public class PhysicsKeys
     public static final IKey COLLISION_MODE_AUTO = L10n.lang("bbs_physics.forms.collision.mode_auto");
     public static final IKey COLLISION_MODE_PIXELS = L10n.lang("bbs_physics.forms.collision.mode_pixels");
     public static final IKey COLLISION_MODE_SHAPES = L10n.lang("bbs_physics.forms.collision.mode_shapes");
+
+    public static final IKey COLLISION_THICKNESS = L10n.lang("bbs_physics.forms.collision.thickness");
+    public static final IKey COLLISION_THICKNESS_TOOLTIP = L10n.lang("bbs_physics.forms.collision.thickness_tooltip");
+    public static final IKey COLLISION_PLATE_TOOLTIP = L10n.lang("bbs_physics.forms.collision.plate_tooltip");
+    private static final IKey THICKNESS_OUTWARD = L10n.lang("bbs_physics.forms.collision.thickness.outward");
+    private static final IKey THICKNESS_INWARD = L10n.lang("bbs_physics.forms.collision.thickness.inward");
+    private static final IKey THICKNESS_CENTERED = L10n.lang("bbs_physics.forms.collision.thickness.centered");
+
+    public static IKey thickness(CollisionThickness thickness)
+    {
+        return switch (thickness)
+        {
+            case OUTWARD -> THICKNESS_OUTWARD;
+            case INWARD -> THICKNESS_INWARD;
+            case CENTERED -> THICKNESS_CENTERED;
+        };
+    }
 
     public static final IKey COLLISION_SHAPES = L10n.lang("bbs_physics.forms.collision.shapes");
     public static final IKey COLLISION_SHAPE_ADD = L10n.lang("bbs_physics.forms.collision.shape_add");

@@ -6,6 +6,7 @@ import mchorse.bbs_mod.cubic.data.model.ModelGroup;
 import mchorse.bbs_mod.cubic.data.model.ModelQuad;
 import mchorse.bbs_mod.cubic.data.model.ModelVertex;
 import mchorse.bbs_physics.collision.CollisionKind;
+import mchorse.bbs_physics.collision.CollisionThickness;
 import org.joml.Quaternionf;
 import org.joml.Vector2f;
 import org.joml.Vector3f;
@@ -57,7 +58,11 @@ public final class CollisionPixels
      */
     private static final float SHEET = CollisionShapes.PLATE_THICKNESS;
 
-    private static final float HALF_THICKNESS = CollisionShapes.PLATE_THICKNESS * 0.5F;
+    /**
+     * Which way along each axis a sheet's "outward" points: towards the side its right (+x), top
+     * (+y) or front (−z) face is drawn on — the faces an author sees first in the model editor.
+     */
+    private static final float[] SHEET_OUTWARD = {1F, 1F, -1F};
 
     /** How many texels across a cell are sampled at most, so a huge texture stays cheap. */
     private static final int MAX_SAMPLES = 8;
@@ -66,13 +71,17 @@ public final class CollisionPixels
     {}
 
     /** The plates of one bone of a cubic model, in the bone's frame. */
-    public static List<CollisionShapes.SubShape> of(Model model, String bone, Vector3f scale, TextureAlpha alpha)
+    public static List<CollisionShapes.SubShape> of(Model model, String bone, Vector3f scale, TextureAlpha alpha, CollisionThickness thickness, float plate)
     {
-        return of(model.getGroup(bone), scale, alpha);
+        return of(model.getGroup(bone), scale, alpha, thickness, plate);
     }
 
-    /** The plates of one group's cubes, in the group's frame. */
-    public static List<CollisionShapes.SubShape> of(ModelGroup group, Vector3f scale, TextureAlpha alpha)
+    /**
+     * The plates of one group's cubes, in the group's frame.
+     *
+     * @param plate how thick a plate is, in model pixels
+     */
+    public static List<CollisionShapes.SubShape> of(ModelGroup group, Vector3f scale, TextureAlpha alpha, CollisionThickness thickness, float plate)
     {
         if (group == null || group.cubes.isEmpty())
         {
@@ -84,7 +93,7 @@ public final class CollisionPixels
 
         for (ModelCube cube : group.cubes)
         {
-            platesOfCube(cube, pivot, scale, alpha, shapes);
+            platesOfCube(cube, pivot, scale, alpha, thickness == null ? CollisionThickness.OUTWARD : thickness, plate / CollisionShapes.PIXELS * 0.5F, shapes);
         }
 
         return shapes;
@@ -141,7 +150,8 @@ public final class CollisionPixels
         }
     }
 
-    private static void platesOfCube(ModelCube cube, Vector3f bonePivot, Vector3f scale, TextureAlpha alpha, List<CollisionShapes.SubShape> out)
+    /** @param half half the plate thickness, in blocks */
+    private static void platesOfCube(ModelCube cube, Vector3f bonePivot, Vector3f scale, TextureAlpha alpha, CollisionThickness thickness, float half, List<CollisionShapes.SubShape> out)
     {
         /* A cube whose quads were never built has no sides to read; it is measured whole rather
          * than skipped, so the bone does not vanish from collision for a reason nobody can see. */
@@ -192,26 +202,37 @@ public final class CollisionPixels
             Mask near = masks[axis * 2];
             Mask far = masks[axis * 2 + 1];
 
+            /* How far the plate's centre stands off the surface, as a fraction of its half
+             * thickness: 1 is flush on the far side of it, 0 straddles it. The overlay is told
+             * the opposite sign — where the surface is, seen from the plate. */
+            float off = thickness == CollisionThickness.CENTERED ? 0F : 1F;
+
             if (max[axis] - min[axis] < SHEET)
             {
-                /* One sheet: what is painted on either face is painted on the sheet. Centred,
-                 * because a sheet has no outside to stand off from. */
+                /* One sheet: what is painted on either face is painted on the sheet. A sheet has
+                 * no inside, so "outward" is a convention — the side of its front, right or top
+                 * face — and the author has the setting to turn it round, which is the whole
+                 * reason the setting exists: two cards, one before the head and one behind it,
+                 * want opposite answers. */
                 Mask sheet = near == null ? far : near.union(far);
+                float side = thickness == CollisionThickness.INWARD ? -SHEET_OUTWARD[axis] : SHEET_OUTWARD[axis];
+                float at = (min[axis] + max[axis]) * 0.5F + side * off * half;
 
-                emit(sheet, axis, (min[axis] + max[axis]) * 0.5F, 0F, min, max, cube, bonePivot, scale, out);
+                emit(sheet, axis, at, -side * off, half, min, max, cube, bonePivot, scale, out);
             }
             else
             {
-                /* Wholly OUTSIDE the cube, flush with the side: the plate's inner surface is the
-                 * painted surface, and its thickness stands off it into the air. Outside rather
-                 * than inside (the first fix after "they are not flat") because of what a cube
-                 * usually has inside it: the second layer of a head is a cube around the head,
-                 * and a plate sunk into that cube is a plate sunk into the head's own body — two
-                 * solids in one place, the thing an engine may not have. Standing off, it meets
-                 * nothing it should not. The quarter pixel it stands off by is under what a body
-                 * can be seen to sink in. */
-                emit(near, axis, min[axis] - HALF_THICKNESS, 1F, min, max, cube, bonePivot, scale, out);
-                emit(far, axis, max[axis] + HALF_THICKNESS, -1F, min, max, cube, bonePivot, scale, out);
+                /* Flush with the side, thickness standing off it — outward by default, into the
+                 * air, because of what a cube usually has inside it: the second layer of a head
+                 * is a cube around the head, and a plate sunk into that cube is a plate sunk into
+                 * the head's own body, two solids in one place. Standing off, it meets nothing it
+                 * should not, and the quarter pixel it stands off by is under what a body can be
+                 * seen to sink in. Inward is there for the cube that has nothing inside it and a
+                 * neighbour outside. */
+                float side = thickness == CollisionThickness.INWARD ? -1F : 1F;
+
+                emit(near, axis, min[axis] - side * off * half, side * off, half, min, max, cube, bonePivot, scale, out);
+                emit(far, axis, max[axis] + side * off * half, -side * off, half, min, max, cube, bonePivot, scale, out);
             }
         }
     }
@@ -342,7 +363,7 @@ public final class CollisionPixels
      * row allows, then as tall as every row below allows at that width. Not the fewest rectangles
      * possible, but a whole painted side is one, and a strand is a handful.
      */
-    private static void emit(Mask mask, int axis, float at, float surface, float[] min, float[] max, ModelCube cube, Vector3f bonePivot, Vector3f scale, List<CollisionShapes.SubShape> out)
+    private static void emit(Mask mask, int axis, float at, float surface, float halfThickness, float[] min, float[] max, ModelCube cube, Vector3f bonePivot, Vector3f scale, List<CollisionShapes.SubShape> out)
     {
         if (mask == null)
         {
@@ -408,7 +429,7 @@ public final class CollisionPixels
                 center[axis] = at;
                 half[u] = width * stepU * 0.5F;
                 half[v] = height * stepV * 0.5F;
-                half[axis] = HALF_THICKNESS;
+                half[axis] = halfThickness;
 
                 out.add(plate(center, half, surface, cube, bonePivot, scale));
             }

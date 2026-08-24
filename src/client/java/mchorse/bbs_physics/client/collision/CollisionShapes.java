@@ -60,7 +60,9 @@ public final class CollisionShapes
     private static final float MAX_CAPSULE_RADIUS = 0.12F;
 
     /**
-     * How thick a pixel plate is, in blocks — a quarter of a model pixel.
+     * How thick a pixel plate is by default, in blocks — a quarter of a model pixel. The author
+     * can set it per bone ({@code CollisionSlot.plate}); this is also what a shape has to be
+     * thinner than to count as a sheet.
      *
      * <p>A pixel was the first answer and an author's eye rejected it on sight: at that thickness
      * the overlay draws a visibly narrow <em>box</em>, and a plate is meant to read as a surface.
@@ -124,7 +126,7 @@ public final class CollisionShapes
         {
             /* Only a cubic model has sides with pixels on them; a BOBJ bone is measured instead
              * of pretending. */
-            return model instanceof Model cubic ? CollisionPixels.of(cubic, bone, scale, alpha) : measure(model, bone, scale);
+            return model instanceof Model cubic ? CollisionPixels.of(cubic, bone, scale, alpha, slot.thickness(), slot.plate()) : measure(model, bone, scale);
         }
 
         /* Cubic bones sit half a turn away from model space; BOBJ ones do not — see the class note. */

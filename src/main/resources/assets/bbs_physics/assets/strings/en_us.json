@@ -159,6 +159,12 @@
     "bbs_physics.forms.collision.mode_none": "Nothing",
     "bbs_physics.forms.collision.mode_auto": "Auto from cubes",
     "bbs_physics.forms.collision.mode_pixels": "By pixels",
+    "bbs_physics.forms.collision.thickness": "Thickness",
+    "bbs_physics.forms.collision.thickness_tooltip": "A plate needs thickness (a quarter pixel — the engine solves nothing without it), and it stands on one side of the painted pixels or the other. On a thick cube, \"outward\" is away from the centre into the air, \"inward\" is into the cube. A sheet of no depth has no inside: \"outward\" is the side of its front, right and top faces, \"inward\" the side of its back, left and bottom. Two strand cards, one before the head and one behind it, want opposite answers — that is what this is for. \"Centered\" straddles the surface, half each way.",
+    "bbs_physics.forms.collision.plate_tooltip": "Plate thickness in model pixels. A quarter by default: a surface to the eye, already a solid to the engine. Below 1/16 Jolt builds no box; go thicker if something slips through (cloth is not swept and ignores thin things) or a gap is wanted.",
+    "bbs_physics.forms.collision.thickness.outward": "Outward",
+    "bbs_physics.forms.collision.thickness.inward": "Inward",
+    "bbs_physics.forms.collision.thickness.centered": "Centered",
     "bbs_physics.forms.collision.mode_shapes": "Shapes by hand",
 
     "bbs_physics.forms.collision.shapes": "Shapes by hand",

@@ -47,6 +47,7 @@ import mchorse.bbs_physics.collision.CollisionKind;
 import mchorse.bbs_physics.collision.CollisionMode;
 import mchorse.bbs_physics.collision.CollisionShape;
 import mchorse.bbs_physics.collision.CollisionSlot;
+import mchorse.bbs_physics.collision.CollisionThickness;
 import mchorse.bbs_physics.collision.FormCollision;
 import mchorse.bbs_physics.collision.FormCollisions;
 import org.joml.Matrix4f;
@@ -107,6 +108,11 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
     public ModeCirculate mode;
     private final UIElement modeRow;
+
+    /** Which way a pixel plate's thickness stands, and how thick — shown only in that mode. */
+    public UICirculate thickness;
+    public UITrackpad plate;
+    private final UIElement thicknessRow;
 
     public UIStringList shapes;
     public UIIcon addShape;
@@ -193,6 +199,10 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
             this.editSlots((slot) -> slot.withMode(picked));
             this.updateLabels();
+
+            /* The thickness row comes and goes with the mode, so the column has to be built
+             * again. Safe from here: this is a click, not the render pass. */
+            this.rebuild();
         });
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_NONE);
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_AUTO);
@@ -200,6 +210,36 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_SHAPES);
         this.mode.tooltip(PhysicsKeys.COLLISION_MODE_TOOLTIP);
         this.modeRow = UI.labelRow(PhysicsKeys.COLLISION_MODE, this.mode);
+
+        this.thickness = new UICirculate((b) ->
+        {
+            if (!this.syncing)
+            {
+                CollisionThickness picked = CollisionThickness.values()[b.getValue()];
+
+                this.editSlots((slot) -> slot.withThickness(picked));
+            }
+        });
+
+        for (CollisionThickness value : CollisionThickness.values())
+        {
+            this.thickness.addLabel(PhysicsKeys.thickness(value));
+        }
+
+        this.thickness.tooltip(PhysicsKeys.COLLISION_THICKNESS_TOOLTIP);
+
+        this.plate = new UITrackpad((v) ->
+        {
+            if (!this.syncing)
+            {
+                float picked = v.floatValue();
+
+                this.editSlots((slot) -> slot.withPlate(picked));
+            }
+        });
+        this.plate.limit(CollisionSlot.MIN_PLATE, CollisionSlot.MAX_PLATE).increment(0.25D).values(0.0625D, 0.0625D, 0.5D);
+        this.plate.tooltip(PhysicsKeys.COLLISION_PLATE_TOOLTIP);
+        this.thicknessRow = UI.labelRow(PhysicsKeys.COLLISION_THICKNESS, UI.row(this.thickness, this.plate));
 
         this.shapes = new UIStringList((l) -> this.updateLabels());
         this.shapes.background();
@@ -702,7 +742,15 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             this.options.add(this.bonesSearch, this.slotTitle);
         }
 
-        this.options.add(this.modeRow, this.primitives);
+        this.options.add(this.modeRow);
+
+        /* The thickness belongs to one mode and would be a dead row in every other. */
+        if (this.slot().mode() == CollisionMode.PIXELS)
+        {
+            this.options.add(this.thicknessRow);
+        }
+
+        this.options.add(this.primitives);
 
         if (model)
         {
@@ -750,6 +798,8 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         try
         {
             this.mode.setValue(slot.mode().ordinal());
+            this.thickness.setValue(slot.thickness().ordinal());
+            this.plate.setValue(slot.plate());
             this.fillShapes(slot);
 
             CollisionShape shape = this.shape();

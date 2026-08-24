@@ -126,12 +126,13 @@ public final class CollisionWireframe
     }
 
     /**
-     * Which axis a box is a plate along — the one thinner than a plate's own thickness — or −1
-     * for a box that is a box.
+     * Which axis a box is a plate along — the one no thicker than a model pixel — or −1 for a box
+     * that is a box.
      */
     private static int flatAxis(Vector3f half)
     {
-        float limit = CollisionShapes.PLATE_THICKNESS;
+        /* Up to a pixel through: the author can thicken a plate, and it stays a plate. */
+        float limit = 1F / CollisionShapes.PIXELS / 2F;
 
         if (half.x <= limit && half.x <= half.y && half.x <= half.z) return 0;
         if (half.y <= limit && half.y <= half.x && half.y <= half.z) return 1;
