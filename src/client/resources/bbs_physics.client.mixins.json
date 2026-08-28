@@ -17,6 +17,7 @@
         "UIFormRendererMixin",
         "UIFormUndoHandlerMixin",
         "UIPickableFormRendererMixin",
+        "UISelectionScreenMixin",
         "WorldFilmControllerMixin"
     ],
     "injectors": {
