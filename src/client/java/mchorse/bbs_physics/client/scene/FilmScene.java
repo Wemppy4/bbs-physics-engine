@@ -427,44 +427,6 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
-     * Records the rest of the film right now, however long it takes.
-     *
-     * <p>The button for authors who would rather wait once than watch the bar creep — Blender's
-     * {@code Calculate to Frame}, without the frame. Everything else about the recording is
-     * unchanged: this is the same loop the background catch-up runs, with the budget removed.</p>
-     */
-    public void computeAll()
-    {
-        /* An edit that has not been answered yet would otherwise be recorded straight over: the
-         * button would fill the bar to the end, and the next tick would throw the lot away and start
-         * again. Answered here instead, so "compute everything" computes the film as it is now. */
-        if (this.stale)
-        {
-            this.stale = false;
-
-            this.rewind();
-        }
-
-        int end = this.recordingEnd(this.filmTick);
-
-        this.cast.borrow();
-
-        try
-        {
-            while (this.cache.getComputed() <= end && this.cache.canWrite(this.timeline.getTick() + 1))
-            {
-                this.step();
-            }
-        }
-        finally
-        {
-            this.cast.restore(this.filmTick);
-        }
-
-        this.distribute(this.filmTick);
-    }
-
-    /**
      * Picks up the scene-wide knobs — gravity and collision steps — and throws the recording away
      * when either has moved.
      *

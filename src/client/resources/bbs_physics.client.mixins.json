@@ -6,7 +6,6 @@
         "BaseFilmControllerMixin",
         "FormCategoriesMixin",
         "FormRendererMixin",
-        "UIDashboardMixin",
         "ModelFormRendererMixin",
         "ModelPhysicsRuntimeMixin",
         "ModelPivotFramesMixin",

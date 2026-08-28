@@ -60,6 +60,16 @@ public class SceneBody
     private final Quat scratchRotation = new Quat();
 
     /**
+     * Where the tick being recorded put the body. Its own pair rather than the drawn one, which is
+     * the whole point: recording runs ahead of the cursor, so writing a simulated tick into the
+     * transform the overlay reads left {@link #readCache} carrying a <em>later</em> tick forward as
+     * "the previous frame" — and the overlay shook its way between the future and the present for
+     * as long as the background catch-up was running.
+     */
+    private final Vector3f recorded = new Vector3f();
+    private final Quaternionf recordedRotation = new Quaternionf();
+
+    /**
      * One shape inside the body: what it is, how big, and where it sits in the body's frame.
      * {@code surface} is carried for the overlay alone — see {@code CollisionShapes.SubShape}.
      */
@@ -145,13 +155,13 @@ public class SceneBody
     {
         bodies.getPositionAndRotation(this.id, this.scratchPosition, this.scratchRotation);
 
-        this.position.set(this.scratchPosition.x(), this.scratchPosition.y(), this.scratchPosition.z());
-        this.rotation.set(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW());
+        this.recorded.set(this.scratchPosition.x(), this.scratchPosition.y(), this.scratchPosition.z());
+        this.recordedRotation.set(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW());
 
-        this.lost = !finite(this.position.x) || !finite(this.position.y) || !finite(this.position.z)
-            || !finite(this.rotation.x) || !finite(this.rotation.y) || !finite(this.rotation.z) || !finite(this.rotation.w);
+        this.lost = !finite(this.recorded.x) || !finite(this.recorded.y) || !finite(this.recorded.z)
+            || !finite(this.recordedRotation.x) || !finite(this.recordedRotation.y) || !finite(this.recordedRotation.z) || !finite(this.recordedRotation.w);
 
-        cache.write(tick, this.channel, this.position, this.rotation, this.lost ? PhysicsCache.SILENT : 1F);
+        cache.write(tick, this.channel, this.recorded, this.recordedRotation, this.lost ? PhysicsCache.SILENT : 1F);
     }
 
     /**
