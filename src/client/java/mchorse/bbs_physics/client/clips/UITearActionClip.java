@@ -10,8 +10,7 @@ import mchorse.bbs_mod.ui.film.IUIClipsDelegate;
 import mchorse.bbs_mod.ui.film.clips.actions.UIActionClip;
 import mchorse.bbs_mod.ui.film.clips.modules.UIPointModule;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
-import mchorse.bbs_mod.ui.framework.elements.input.text.UITextbox;
-import mchorse.bbs_mod.ui.utils.icons.Icons;
+import mchorse.bbs_mod.ui.utils.bones.UIBonePicker;
 import mchorse.bbs_physics.actions.TearActionClip;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
 import mchorse.bbs_physics.collision.FormCollisions;
@@ -24,14 +23,14 @@ import java.util.List;
 /**
  * The tear clip's panel: which bone comes off, and the kick it gets on the way out.
  *
- * <p>The bone is typed or picked — a right-click on the field lists the ragdoll parts of the actor
- * this clip's timeline belongs to, gathered the way the scene gathers them: collision-marked bones
- * of ragdoll-enabled models, minus the ones the author unchecked. Typing stays possible because the
- * list needs the film in a settled state and a name is sometimes quicker anyway.</p>
+ * <p>The bone is picked, never typed: the button lists the ragdoll parts of the actor this clip's
+ * timeline belongs to, gathered the way the scene gathers them — collision-marked bones of
+ * ragdoll-enabled models, minus the ones the author unchecked. A name off that list could not be
+ * torn anyway, so there is nothing a text field could add but typos.</p>
  */
 public class UITearActionClip extends UIActionClip<TearActionClip>
 {
-    public UITextbox bone;
+    public UIBonePicker bone;
     public UITrackpad strength;
     public UIPointModule direction;
 
@@ -45,19 +44,16 @@ public class UITearActionClip extends UIActionClip<TearActionClip>
     {
         super.registerUI();
 
-        this.bone = new UITextbox(120, (name) -> this.editor.editMultiple(this.clip.bone, (bone) -> bone.set(name)));
-        this.bone.tooltip(PhysicsKeys.CLIP_BONE_TOOLTIP);
-        this.bone.context((menu) ->
+        /* BBS's own bone picker — the button the IK and body-part editors use — filled with the
+         * ragdoll parts of this clip's actor. Nothing to type: a bone that is not on the list
+         * could not be torn anyway. */
+        this.bone = new UIBonePicker((name) ->
         {
-            for (String candidate : this.candidates())
-            {
-                menu.action(Icons.LIMB, IKey.raw(candidate), () ->
-                {
-                    this.editor.editMultiple(this.clip.bone, (bone) -> bone.set(candidate));
-                    this.bone.setText(candidate);
-                });
-            }
+            this.editor.editMultiple(this.clip.bone, (bone) -> bone.set(name));
+            this.label(name);
         });
+        this.bone.menu((picker) -> picker.list(this.candidates()).none().set(this.clip.bone.get()));
+        this.bone.tooltip(PhysicsKeys.CLIP_BONE_TOOLTIP);
 
         this.strength = new UITrackpad((v) -> this.editor.editMultiple(this.clip.strength, (strength) -> strength.set(v.floatValue())));
         this.strength.limit(0F).tooltip(PhysicsKeys.CLIP_KICK_TOOLTIP);
@@ -80,9 +76,15 @@ public class UITearActionClip extends UIActionClip<TearActionClip>
     {
         super.fillData();
 
-        this.bone.setText(this.clip.bone.get());
+        this.label(this.clip.bone.get());
         this.strength.setValue(this.clip.strength.get());
         this.direction.fill(this.clip.direction);
+    }
+
+    /** The button reads the chosen bone, or says that none is. */
+    private void label(String bone)
+    {
+        this.bone.setLabel(bone == null || bone.isEmpty() ? PhysicsKeys.CLIP_BONE_NONE : IKey.raw(bone));
     }
 
     /**

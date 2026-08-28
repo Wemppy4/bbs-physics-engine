@@ -42,7 +42,8 @@
     "bbs_physics.clips.radius_tooltip": "How far the push reaches. The strength fades with distance and is zero at the edge.",
     "bbs_physics.clips.direction": "Direction",
     "bbs_physics.clips.bone": "Bone",
-    "bbs_physics.clips.bone_tooltip": "Which bone comes off — a ragdoll part of this actor. Right-click for the list. From this clip's frame the bone belongs to physics for the rest of the film, whatever the animation-strength handle does; the body keeps walking its keyframes.",
+    "bbs_physics.clips.bone_tooltip": "Which bone comes off — a ragdoll part of this actor; the list holds only the bones that are marked up and belong to the ragdoll. From this clip's frame the bone belongs to physics for the rest of the film, whatever the animation-strength handle does; the body keeps walking its keyframes.",
+    "bbs_physics.clips.bone_none": "— no bone chosen —",
     "bbs_physics.clips.kick": "Kick (blocks/s)",
     "bbs_physics.clips.kick_tooltip": "The speed the torn bone is thrown with, on top of whatever it already had. Zero — it just drops off.",
 

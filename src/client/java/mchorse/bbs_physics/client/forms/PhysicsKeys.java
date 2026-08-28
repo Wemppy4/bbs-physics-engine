@@ -202,6 +202,7 @@ public class PhysicsKeys
     public static final IKey CLIP_DIRECTION = L10n.lang("bbs_physics.clips.direction");
     public static final IKey CLIP_BONE = L10n.lang("bbs_physics.clips.bone");
     public static final IKey CLIP_BONE_TOOLTIP = L10n.lang("bbs_physics.clips.bone_tooltip");
+    public static final IKey CLIP_BONE_NONE = L10n.lang("bbs_physics.clips.bone_none");
     public static final IKey CLIP_KICK = L10n.lang("bbs_physics.clips.kick");
     public static final IKey CLIP_KICK_TOOLTIP = L10n.lang("bbs_physics.clips.kick_tooltip");
 
