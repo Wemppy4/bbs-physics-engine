@@ -51,7 +51,6 @@
     "bbs_physics.forms.physics.add_body": "Rigid body",
     "bbs_physics.forms.physics.add_ragdoll": "Ragdoll",
     "bbs_physics.forms.physics.add_chain": "Chain (hair, tail)",
-    "bbs_physics.forms.physics.add_obstacle": "Obstacle (later)",
     "bbs_physics.forms.physics.remove": "Remove the modifier",
     "bbs_physics.forms.physics.bake": "Bake to keyframes",
     "bbs_physics.forms.physics.bake_tooltip": "Turn this form's computed physics into ordinary replay keyframes — one per tick of the film. The Animation strength handle goes to 1 afterwards, the animation owns the form, and the keys can be edited by hand. Undone like any other edit of the film.",
@@ -186,6 +185,7 @@
     "bbs_physics.forms.collision.fit": "Box from bounds",
     "bbs_physics.forms.collision.fit_tooltip": "Puts one box the size of what the form draws into the form's own slot. A block is measured from its real outline; anything else gets a block-sized box to drag from.",
     "bbs_physics.forms.collision.clear": "Clear all markup",
+    "bbs_physics.forms.collision.solid": "A marked-up form is already solid to physics: crates, cloth, hair and fallen characters collide with it. It needs no modifier for that — a modifier is only for things that fall on their own.",
 
     "bbs_physics.forms.collision.context.copy": "Copy the markup",
     "bbs_physics.forms.collision.context.paste": "Paste the markup",

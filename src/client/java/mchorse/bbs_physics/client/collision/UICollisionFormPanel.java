@@ -28,6 +28,7 @@ import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UIStringList;
 import mchorse.bbs_mod.ui.framework.elements.utils.UILabel;
+import mchorse.bbs_mod.ui.framework.elements.utils.UIText;
 import mchorse.bbs_mod.ui.utils.PickedBone;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
@@ -137,6 +138,9 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
     public UIButton autoMark;
     public UIButton fitBounds;
     public UIButton clearAll;
+
+    /** Marked-up = solid, no modifier needed: the answer to "where is the obstacle modifier". */
+    private final UIText solid;
 
     private final UISection primitives;
 
@@ -289,6 +293,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         this.fitBounds = new UIButton(PhysicsKeys.COLLISION_FIT, (b) -> this.fitBounds());
         this.fitBounds.tooltip(PhysicsKeys.COLLISION_FIT_TOOLTIP);
         this.clearAll = new UIButton(PhysicsKeys.COLLISION_CLEAR, (b) -> this.clearAll());
+        this.solid = new UIText(PhysicsKeys.COLLISION_SOLID).color(Colors.LIGHTER_GRAY, true).padding(0, 2);
 
         /* Folded, and below the automatic pass: automation is the answer for the common case, hand
          * placement is the correction. One level of folding and no deeper — a panel with sections
@@ -762,7 +767,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             this.options.add(this.fitBounds);
         }
 
-        this.options.add(this.clearAll, this.preview);
+        this.options.add(this.clearAll, this.preview, this.solid);
         this.options.resize();
     }
 

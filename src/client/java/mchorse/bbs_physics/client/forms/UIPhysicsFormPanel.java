@@ -275,10 +275,11 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
                 menu.action(Icons.CURVES, PhysicsKeys.PHYSICS_ADD_CHAIN, () -> this.toggleChain(true));
             }
 
-            menu.action(Icons.STRUCTURE, PhysicsKeys.PHYSICS_ADD_OBSTACLE, () -> {});
-
-            /* Cloth is not on this menu any more: it became a form of its own (Р12), picked from
-             * the palette's Physics section like any other form, not a behaviour added to one. */
+            /* Two things are deliberately not on this menu. Cloth became a form of its own (Р12),
+             * picked from the palette's Physics section like any other form. And there is no
+             * "obstacle": a form the animation moves is already solid the moment it is marked up in
+             * the Collision tab — its markup becomes kinematic bodies whether or not it carries a
+             * modifier — so a button for it would only promise what is already the case. */
         });
     }
 

@@ -20,7 +20,6 @@ public class PhysicsKeys
     public static final IKey PHYSICS_ADD_BODY = L10n.lang("bbs_physics.forms.physics.add_body");
     public static final IKey PHYSICS_ADD_RAGDOLL = L10n.lang("bbs_physics.forms.physics.add_ragdoll");
     public static final IKey PHYSICS_ADD_CHAIN = L10n.lang("bbs_physics.forms.physics.add_chain");
-    public static final IKey PHYSICS_ADD_OBSTACLE = L10n.lang("bbs_physics.forms.physics.add_obstacle");
     public static final IKey PHYSICS_REMOVE = L10n.lang("bbs_physics.forms.physics.remove");
     public static final IKey PHYSICS_UNMARKED = L10n.lang("bbs_physics.forms.physics.unmarked");
 
@@ -167,6 +166,8 @@ public class PhysicsKeys
     public static final IKey COLLISION_FIT = L10n.lang("bbs_physics.forms.collision.fit");
     public static final IKey COLLISION_FIT_TOOLTIP = L10n.lang("bbs_physics.forms.collision.fit_tooltip");
     public static final IKey COLLISION_CLEAR = L10n.lang("bbs_physics.forms.collision.clear");
+    /** Under the markup tools: marked-up = solid, no modifier needed. */
+    public static final IKey COLLISION_SOLID = L10n.lang("bbs_physics.forms.collision.solid");
 
     public static final IKey COLLISION_CONTEXT_COPY = L10n.lang("bbs_physics.forms.collision.context.copy");
     public static final IKey COLLISION_CONTEXT_PASTE = L10n.lang("bbs_physics.forms.collision.context.paste");

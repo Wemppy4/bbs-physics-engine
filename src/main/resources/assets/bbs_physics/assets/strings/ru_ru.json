@@ -51,7 +51,6 @@
     "bbs_physics.forms.physics.add_body": "Твёрдое тело",
     "bbs_physics.forms.physics.add_ragdoll": "Рэгдолл",
     "bbs_physics.forms.physics.add_chain": "Цепочка (волосы, хвост)",
-    "bbs_physics.forms.physics.add_obstacle": "Препятствие (позже)",
     "bbs_physics.forms.physics.remove": "Убрать модификатор",
     "bbs_physics.forms.physics.bake": "Запечь в ключи",
     "bbs_physics.forms.physics.bake_tooltip": "Превратить просчитанную физику этой формы в обычные ключи реплея — по одному на каждый тик фильма. После этого ручка «Сила анимации» встаёт на 1, анимация владеет формой, а ключи можно править руками. Отменяется как обычная правка фильма.",
@@ -186,6 +185,7 @@
     "bbs_physics.forms.collision.fit": "Бокс по габаритам",
     "bbs_physics.forms.collision.fit_tooltip": "Кладёт в слот самой формы один бокс размером с то, что она рисует. Для блока — по его настоящему контуру, для остального — с блок величиной, дальше подгоняете руками.",
     "bbs_physics.forms.collision.clear": "Снять всю разметку",
+    "bbs_physics.forms.collision.solid": "Размеченная форма уже твёрдая для физики: об неё бьются ящики, ткань, волосы и упавшие персонажи. Модификатор для этого не нужен — он нужен только тому, что должно падать само.",
 
     "bbs_physics.forms.collision.context.copy": "Скопировать разметку",
     "bbs_physics.forms.collision.context.paste": "Вставить разметку",
