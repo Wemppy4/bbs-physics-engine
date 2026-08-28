@@ -21,7 +21,6 @@ import net.minecraft.client.gl.ShaderProgram;
 import net.minecraft.client.gl.VertexBuffer;
 import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.LightmapTextureManager;
 import net.minecraft.client.render.OverlayTexture;
@@ -30,6 +29,7 @@ import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
+import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
@@ -142,7 +142,7 @@ public abstract class TexturedMeshFormRenderer<T extends Form & ITexturedForm> e
 
         VertexFormat format = shading ? VertexFormats.POSITION_COLOR_TEXTURE_OVERLAY_LIGHT_NORMAL : VertexFormats.POSITION_TEXTURE_LIGHT_COLOR;
         Supplier<ShaderProgram> shader = this.getShader(context,
-            shading ? GameRenderer::getRenderTypeEntityTranslucentProgram : GameRenderer::getPositionTexColorProgram,
+            shading ? GameRenderer::getRenderTypeEntityTranslucentProgram : GameRenderer::getPositionTexLightmapColorProgram,
             shading ? BBSShaders::getPickerBillboardProgram : BBSShaders::getPickerBillboardNoShadingProgram
         );
 
@@ -180,9 +180,10 @@ public abstract class TexturedMeshFormRenderer<T extends Form & ITexturedForm> e
         this.u2 = 1F - crop.z / texture.width;
         this.v2 = 1F - crop.w / texture.height;
 
+        BufferBuilder builder = Tessellator.getInstance().getBuffer();
         Color color = new Color().set(overlayColor, true);
         Matrix4f matrix = matrices.peek().getPositionMatrix();
-        MatrixStack.Entry entry = matrices.peek();
+        Matrix3f normal = matrices.peek().getNormalMatrix();
 
         blend(color, this.form.getColor().get());
 
@@ -201,25 +202,20 @@ public abstract class TexturedMeshFormRenderer<T extends Form & ITexturedForm> e
 
         texture.bind();
         texture.setFilterMipmap(linear, mipmap);
+        builder.begin(VertexFormat.DrawMode.TRIANGLES, format);
 
-        BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, format);
-        MeshTarget target = new MeshTarget(format, builder, matrix, entry, color, overlay, light);
+        MeshTarget target = new MeshTarget(format, builder, matrix, normal, color, overlay, light);
 
         this.emit(target);
 
         RenderSystem.defaultBlendFunc();
         RenderSystem.enableBlend();
 
-        BuiltBuffer built = builder.endNullable();
-
-        if (built != null)
-        {
-            /* Drawn where it stands. CML has no end-of-frame translucent queue to defer into, so a
-             * see-through cloth blends against whatever is already in the buffer rather than being
-             * sorted against the other translucent forms of the scene — visible only when two of
-             * them overlap. */
-            BufferRenderer.drawWithGlobalProgram(built);
-        }
+        /* Drawn where it stands. CML has no end-of-frame translucent queue to defer into, so a
+         * see-through cloth blends against whatever is already in the buffer rather than being
+         * sorted against the other translucent forms of the scene — visible only when two of
+         * them overlap. */
+        BufferRenderer.drawWithGlobalProgram(builder.end());
 
         texture.setFilterMipmap(false, false);
 
@@ -266,7 +262,8 @@ public abstract class TexturedMeshFormRenderer<T extends Form & ITexturedForm> e
             target.builder.vertex(target.matrix, x, y, z)
                 .texture(tu, tv)
                 .light(target.light)
-                .color(target.color.r, target.color.g, target.color.b, target.color.a);
+                .color(target.color.r, target.color.g, target.color.b, target.color.a)
+                .next();
 
             return;
         }
@@ -278,7 +275,8 @@ public abstract class TexturedMeshFormRenderer<T extends Form & ITexturedForm> e
             .texture(tu, tv)
             .overlay(target.overlay)
             .light(target.light)
-            .normal(target.entry, target.normal.x, target.normal.y, target.normal.z);
+            .normal(target.normalMatrix, target.normal.x, target.normal.y, target.normal.z)
+            .next();
     }
 
     /** Everything one draw's vertices are written with — passed around rather than re-derived. */
@@ -287,19 +285,19 @@ public abstract class TexturedMeshFormRenderer<T extends Form & ITexturedForm> e
         private final VertexFormat format;
         private final VertexConsumer builder;
         private final Matrix4f matrix;
-        private final MatrixStack.Entry entry;
+        private final Matrix3f normalMatrix;
         private final Color color;
         private final int overlay;
         private final int light;
 
         private final Vector3f normal = new Vector3f();
 
-        private MeshTarget(VertexFormat format, VertexConsumer builder, Matrix4f matrix, MatrixStack.Entry entry, Color color, int overlay, int light)
+        private MeshTarget(VertexFormat format, VertexConsumer builder, Matrix4f matrix, Matrix3f normalMatrix, Color color, int overlay, int light)
         {
             this.format = format;
             this.builder = builder;
             this.matrix = matrix;
-            this.entry = entry;
+            this.normalMatrix = normalMatrix;
             this.color = color;
             this.overlay = overlay;
             this.light = light;
