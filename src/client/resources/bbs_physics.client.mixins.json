@@ -16,6 +16,7 @@
         "UIFormMixin",
         "UIFormRendererMixin",
         "UIFormUndoHandlerMixin",
+        "UIModelRendererInvoker",
         "UIPickableFormRendererMixin",
         "WorldFilmControllerMixin"
     ],

@@ -6,7 +6,6 @@ import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_physics.client.EditorPreview;
 import net.minecraft.client.util.math.MatrixStack;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -24,16 +23,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * to framebuffers of their own and leave nothing behind for the overlay to undo.</p>
  */
 @Mixin(UIPickableFormRenderer.class)
-public abstract class UIPickableFormRendererMixin
+public class UIPickableFormRendererMixin
 {
-    /** See {@link UIFormRendererMixin#createCameraStack()}. */
-    @Shadow
-    protected abstract MatrixStack createCameraStack();
-
     @Inject(method = "renderUserModel", at = @At("TAIL"))
     private void bbs_physics$drawCollision(UIContext context, CallbackInfo info)
     {
         UIPickableFormRenderer renderer = (UIPickableFormRenderer) (Object) this;
+        MatrixStack stack = ((UIModelRendererInvoker) this).bbs_physics$createCameraStack();
 
         /* The target entity, not the renderer's own stub: when the editor was opened from a film,
          * the preview is posed by the actor it belongs to, and the markup has to be measured
@@ -42,6 +38,6 @@ public abstract class UIPickableFormRendererMixin
          * The editor comes along so the overlay can draw the selected body part alone — found by
          * walking up the UI tree, because this viewport is a child of it and nothing else knows
          * which entry the author is standing on. */
-        EditorPreview.render(renderer.form, renderer.getTargetEntity(), this.createCameraStack(), context, renderer.getParent(UIFormEditor.class));
+        EditorPreview.render(renderer.form, renderer.getTargetEntity(), stack, context, renderer.getParent(UIFormEditor.class));
     }
 }
