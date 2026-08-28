@@ -643,7 +643,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
     {
         this.slot = FormCollision.SELF;
 
-        this.setSlot(new CollisionSlot(CollisionMode.SHAPES, List.of(FormBounds.of(this.form))));
+        this.setSlot(new CollisionSlot(CollisionMode.SHAPES, FormBounds.of(this.form)));
         this.selectShape(0);
         this.updateLabels();
     }

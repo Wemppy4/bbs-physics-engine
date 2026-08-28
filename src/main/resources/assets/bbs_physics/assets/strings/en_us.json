@@ -183,7 +183,7 @@
     "bbs_physics.forms.collision.auto_mark": "Mark up automatically",
     "bbs_physics.forms.collision.auto_mark_tooltip": "Sets \"auto from cubes\" on every bone above the threshold — and \"by pixels\" on the flat ones, where no cube is thicker than a pixel: a strand, a cape, a fringe. Bones you placed shapes on by hand are left alone — this is a draft, not an answer.",
     "bbs_physics.forms.collision.fit": "Box from bounds",
-    "bbs_physics.forms.collision.fit_tooltip": "Puts one box the size of what the form draws into the form's own slot. A block is measured from its real outline; anything else gets a block-sized box to drag from.",
+    "bbs_physics.forms.collision.fit_tooltip": "Puts boxes the size of what the form draws into the form's own slot. A block is measured from its real outline, piece by piece (stairs get two boxes). An item from its model: a flat one becomes a pixel-thick plate, a block item becomes the block. A picture or an extruded texture from its painted pixels, transparent margins left out. A mob from its kind's hitbox. Anything else gets a block-sized box to drag from.",
     "bbs_physics.forms.collision.clear": "Clear all markup",
     "bbs_physics.forms.collision.solid": "A marked-up form is already solid to physics: crates, cloth, hair and fallen characters collide with it. It needs no modifier for that — a modifier is only for things that fall on their own.",
 
