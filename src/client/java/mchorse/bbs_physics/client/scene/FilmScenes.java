@@ -69,10 +69,11 @@ public class FilmScenes
 
             SCENES.put(controller, scene);
 
-            BBSPhysics.LOGGER.info("Physics scene is up for film \"{}\": {} bodies around ({}, {}, {}).",
+            BBSPhysics.LOGGER.info("Physics scene is up for film \"{}\": {} bodies around ({}, {}, {}), on world collision from {} blocks.",
                 controller.film == null ? "?" : controller.film.getId(),
                 scene.getWorld().getBodyCount(),
-                scene.getOriginX(), scene.getOriginY(), scene.getOriginZ());
+                scene.getOriginX(), scene.getOriginY(), scene.getOriginZ(),
+                scene.getWorldBoxes());
         }
         catch (Throwable e)
         {
