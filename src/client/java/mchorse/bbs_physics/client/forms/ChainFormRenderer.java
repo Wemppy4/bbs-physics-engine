@@ -26,7 +26,6 @@ import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
-import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -263,15 +262,14 @@ public class ChainFormRenderer extends FormRenderer<ChainForm>
 
         texture.bind();
 
-        BufferBuilder builder = Tessellator.getInstance().getBuffer();
         Matrix4f matrix = stack.peek().getPositionMatrix();
-        Matrix3f normal = stack.peek().getNormalMatrix();
+        MatrixStack.Entry entry = stack.peek();
 
-        builder.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR_TEXTURE_OVERLAY_LIGHT_NORMAL);
+        BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR_TEXTURE_OVERLAY_LIGHT_NORMAL);
 
         /* Two ribbons crossed at right angles, each drawn from both sides. */
-        this.strip(builder, matrix, normal, overlay, light, width, segmentLength, true);
-        this.strip(builder, matrix, normal, overlay, light, width, segmentLength, false);
+        this.strip(builder, matrix, entry, overlay, light, width, segmentLength, true);
+        this.strip(builder, matrix, entry, overlay, light, width, segmentLength, false);
 
         RenderSystem.defaultBlendFunc();
         RenderSystem.enableBlend();
@@ -282,7 +280,7 @@ public class ChainFormRenderer extends FormRenderer<ChainForm>
         gameRenderer.getOverlayTexture().teardownOverlayColor();
     }
 
-    private void strip(BufferBuilder builder, Matrix4f matrix, Matrix3f normal, int overlay, int light, float width, float length, boolean acrossX)
+    private void strip(BufferBuilder builder, Matrix4f matrix, MatrixStack.Entry entry, int overlay, int light, float width, float length, boolean acrossX)
     {
         float x1 = acrossX ? -width : 0F;
         float z1 = acrossX ? 0F : -width;
@@ -293,32 +291,31 @@ public class ChainFormRenderer extends FormRenderer<ChainForm>
         float nz = acrossX ? 1F : 0F;
 
         /* Front. */
-        this.corner(builder, matrix, normal, x1, -length, z1, 0F, 1F, overlay, light, nx, nz);
-        this.corner(builder, matrix, normal, x2, -length, z2, 1F, 1F, overlay, light, nx, nz);
-        this.corner(builder, matrix, normal, x1, 0F, z1, 0F, 0F, overlay, light, nx, nz);
+        this.corner(builder, matrix, entry, x1, -length, z1, 0F, 1F, overlay, light, nx, nz);
+        this.corner(builder, matrix, entry, x2, -length, z2, 1F, 1F, overlay, light, nx, nz);
+        this.corner(builder, matrix, entry, x1, 0F, z1, 0F, 0F, overlay, light, nx, nz);
 
-        this.corner(builder, matrix, normal, x2, -length, z2, 1F, 1F, overlay, light, nx, nz);
-        this.corner(builder, matrix, normal, x2, 0F, z2, 1F, 0F, overlay, light, nx, nz);
-        this.corner(builder, matrix, normal, x1, 0F, z1, 0F, 0F, overlay, light, nx, nz);
+        this.corner(builder, matrix, entry, x2, -length, z2, 1F, 1F, overlay, light, nx, nz);
+        this.corner(builder, matrix, entry, x2, 0F, z2, 1F, 0F, overlay, light, nx, nz);
+        this.corner(builder, matrix, entry, x1, 0F, z1, 0F, 0F, overlay, light, nx, nz);
 
         /* Back — the same strip the other way round, so the band exists from behind. */
-        this.corner(builder, matrix, normal, x1, 0F, z1, 0F, 0F, overlay, light, -nx, -nz);
-        this.corner(builder, matrix, normal, x2, -length, z2, 1F, 1F, overlay, light, -nx, -nz);
-        this.corner(builder, matrix, normal, x1, -length, z1, 0F, 1F, overlay, light, -nx, -nz);
+        this.corner(builder, matrix, entry, x1, 0F, z1, 0F, 0F, overlay, light, -nx, -nz);
+        this.corner(builder, matrix, entry, x2, -length, z2, 1F, 1F, overlay, light, -nx, -nz);
+        this.corner(builder, matrix, entry, x1, -length, z1, 0F, 1F, overlay, light, -nx, -nz);
 
-        this.corner(builder, matrix, normal, x1, 0F, z1, 0F, 0F, overlay, light, -nx, -nz);
-        this.corner(builder, matrix, normal, x2, 0F, z2, 1F, 0F, overlay, light, -nx, -nz);
-        this.corner(builder, matrix, normal, x2, -length, z2, 1F, 1F, overlay, light, -nx, -nz);
+        this.corner(builder, matrix, entry, x1, 0F, z1, 0F, 0F, overlay, light, -nx, -nz);
+        this.corner(builder, matrix, entry, x2, 0F, z2, 1F, 0F, overlay, light, -nx, -nz);
+        this.corner(builder, matrix, entry, x2, -length, z2, 1F, 1F, overlay, light, -nx, -nz);
     }
 
-    private void corner(BufferBuilder builder, Matrix4f matrix, Matrix3f normal, float x, float y, float z, float u, float v, int overlay, int light, float nx, float nz)
+    private void corner(BufferBuilder builder, Matrix4f matrix, MatrixStack.Entry entry, float x, float y, float z, float u, float v, int overlay, int light, float nx, float nz)
     {
         builder.vertex(matrix, x, y, z)
             .color(1F, 1F, 1F, 1F)
             .texture(u, v)
             .overlay(overlay)
             .light(light)
-            .normal(normal, nx, 0F, nz)
-            .next();
+            .normal(entry, nx, 0F, nz);
     }
 }

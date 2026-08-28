@@ -54,7 +54,7 @@ public final class SceneDebugRenderer
         }
 
         MatrixStack stack = context.matrixStack();
-        float transition = context.tickDelta();
+        float transition = context.tickCounter().getTickDelta(false);
 
         /* Everything is drawn relative to the camera, as the world pass expects: the scene's
          * origin brings simulation coordinates back into the world, the camera position takes them

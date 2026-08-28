@@ -102,10 +102,9 @@ public final class CollisionWireframe
         float y2 = half.y;
         float z2 = half.z;
 
-        BufferBuilder builder = Tessellator.getInstance().getBuffer();
-
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-        builder.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
+
+        BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
 
         /* Four uprights, then the two rings that cap them. Each bar is grown by t on every side, so
          * the corners overlap and there are no gaps to look through. */
@@ -164,10 +163,9 @@ public final class CollisionWireframe
         float hv = half.get(v);
         float at = Math.signum(surface) * half.get(axis);
 
-        BufferBuilder builder = Tessellator.getInstance().getBuffer();
-
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-        builder.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
+
+        BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
 
         /* Two bars along u at ±hv, two along v at ±hu, each grown by t in the plane so the corners
          * meet, and by the bare minimum across it. */
@@ -309,19 +307,16 @@ public final class CollisionWireframe
 
     private static void line(BufferBuilder builder, Matrix4f matrix, float x1, float y1, float z1, float x2, float y2, float z2, float red, float green, float blue, float alpha)
     {
-        builder.vertex(matrix, x1, y1, z1).color(red, green, blue, alpha).next();
-        builder.vertex(matrix, x2, y2, z2).color(red, green, blue, alpha).next();
+        builder.vertex(matrix, x1, y1, z1).color(red, green, blue, alpha);
+        builder.vertex(matrix, x2, y2, z2).color(red, green, blue, alpha);
     }
 
     private static BufferBuilder begin()
     {
-        BufferBuilder builder = Tessellator.getInstance().getBuffer();
-
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
         RenderSystem.lineWidth(lineWidth());
-        builder.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
 
-        return builder;
+        return Tessellator.getInstance().begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
     }
 
     private static void end(BufferBuilder builder)

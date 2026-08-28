@@ -1,6 +1,5 @@
 package mchorse.bbs_physics.client;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import mchorse.bbs_mod.forms.FormUtils;
 import mchorse.bbs_mod.forms.entities.IEntity;
 import mchorse.bbs_mod.forms.forms.Form;
@@ -11,7 +10,6 @@ import mchorse.bbs_mod.ui.utils.Area;
 import mchorse.bbs_mod.ui.utils.UIUtils;
 import mchorse.bbs_physics.client.collision.CollisionPreview;
 import mchorse.bbs_physics.client.ragdoll.RagdollPreview;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.math.MatrixStack;
 
 /**
@@ -33,6 +31,11 @@ import net.minecraft.client.util.math.MatrixStack;
  * restored afterwards, which is the same dance BBS itself does in {@code Gizmo.renderInterface}.
  * Re-applying a viewport that is already right costs nothing, so the plain form viewport — which
  * has no stencil pass and was never broken — goes down the same path.</p>
+ *
+ * <p>What is restored afterwards is the viewport that was actually set, read back with
+ * {@link UIUtils#currentViewport()} — not the window's size. While a film renders, the window
+ * reports the video framebuffer's size instead of the screen's, so putting that back would land
+ * everything the UI draws next in a viewport bigger than the window.</p>
  */
 public final class EditorPreview
 {
@@ -55,6 +58,8 @@ public final class EditorPreview
         float transition = context.getTransition();
         String selection = selection(form, editor);
 
+        int[] previousViewport = UIUtils.currentViewport();
+
         UIUtils.viewportArea(area);
 
         try
@@ -64,9 +69,7 @@ public final class EditorPreview
         }
         finally
         {
-            MinecraftClient mc = MinecraftClient.getInstance();
-
-            RenderSystem.viewport(0, 0, mc.getWindow().getFramebufferWidth(), mc.getWindow().getFramebufferHeight());
+            UIUtils.restoreViewport(previousViewport);
         }
     }
 

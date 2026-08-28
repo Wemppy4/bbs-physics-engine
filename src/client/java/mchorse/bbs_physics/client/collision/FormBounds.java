@@ -313,9 +313,9 @@ public final class FormBounds
         }
 
         EntityDimensions dimensions = type.getDimensions();
-        float half = dimensions.width * 0.5F;
+        float half = dimensions.width() * 0.5F;
 
-        return List.of(box(-half, 0F, -half, half, dimensions.height, half));
+        return List.of(box(-half, 0F, -half, half, dimensions.height(), half));
     }
 
     /**
