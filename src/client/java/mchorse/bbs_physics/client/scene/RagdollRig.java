@@ -4,11 +4,14 @@ import com.github.stephengold.joltjni.Body;
 import com.github.stephengold.joltjni.BodyCreationSettings;
 import com.github.stephengold.joltjni.BodyInterface;
 import com.github.stephengold.joltjni.Quat;
+import com.github.stephengold.joltjni.MassProperties;
 import com.github.stephengold.joltjni.RVec3;
+import com.github.stephengold.joltjni.SwingTwistConstraint;
 import com.github.stephengold.joltjni.TwoBodyConstraint;
 import com.github.stephengold.joltjni.TwoBodyConstraintSettings;
 import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
+import com.github.stephengold.joltjni.enumerate.EAllowedDofs;
 import com.github.stephengold.joltjni.enumerate.EMotionQuality;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
 import com.github.stephengold.joltjni.readonly.ConstShape;
@@ -30,6 +33,7 @@ import mchorse.bbs_physics.client.ragdoll.RagdollWelds;
 import mchorse.bbs_physics.engine.BodyDrive;
 import mchorse.bbs_physics.engine.KinematicDrive;
 import mchorse.bbs_physics.engine.PhysicsCache;
+import mchorse.bbs_physics.engine.PhysicsJoints;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsMath;
 import mchorse.bbs_physics.engine.PhysicsWorld;
@@ -104,7 +108,6 @@ public class RagdollRig implements SceneRig
      * handed over raw, as it was, 0.3 meant three tenths <em>per second</em> — one and a half
      * percent per tick, which is to say nothing at all, and the limbs windmilled anyway.
      */
-    private static final float ANGULAR_DAMPING = 0.3F;
 
     /**
      * Speeds no part of a character ever reaches honestly, in blocks and radians per second: a film
@@ -185,8 +188,25 @@ public class RagdollRig implements SceneRig
     /** The steer-or-place move of the kinematic phase — held, because it carries scratch. */
     private final KinematicDrive move = new KinematicDrive();
 
-    /** The sub-step count the parts' damping was converted for — see {@link #applyDamping}. */
+    /** The sub-step count the parts' damping was converted for — see {@link #applySettings}. */
     private int dampedSteps;
+
+    /* What the parts and joints were last told — compared against the form every tick, because
+     * the author turns these with the film open. */
+    private float lastDamping = Float.NaN;
+    private float lastGravity = Float.NaN;
+    private float lastFriction = Float.NaN;
+    private float lastMuscles = Float.NaN;
+    private float lastMuscleDamping = Float.NaN;
+
+    /* Scratch for the muscles' target — per joint per tick, so fields. */
+    private final Quaternionf parentRotation = new Quaternionf();
+    private final Quaternionf childRotation = new Quaternionf();
+    private final Quaternionf target = new Quaternionf();
+    private final Quat targetQuat = new Quat();
+
+    /** Whether a muscle frame that failed its own check has been reported. */
+    private boolean muscleMisframed;
 
     private final Matrix4f poseFrame = new Matrix4f();
 
@@ -333,7 +353,8 @@ public class RagdollRig implements SceneRig
                 PhysicsLayers.BONE);
 
             settings.setFriction(0.6F);
-            settings.setAngularDamping(PhysicsMath.bodyDamping(ANGULAR_DAMPING, physics.getCollisionSteps()));
+            settings.setAngularDamping(PhysicsMath.bodyDamping(config.damping(), physics.getCollisionSteps()));
+            settings.setGravityFactor(config.gravity());
 
             /* A film tick is fifty milliseconds; a flailing hand covers more than its own size in
              * one, and tested only at the ends it passes through the floor it slapped. */
@@ -370,6 +391,44 @@ public class RagdollRig implements SceneRig
             return null;
         }
 
+        /* The author's weight for the whole body, shared out by volume: Jolt weighed every part at
+         * water's density, which keeps the proportions right, and here the total is scaled to what
+         * was asked. 0 leaves Jolt's answer alone. */
+        if (config.mass() > 0F)
+        {
+            float total = 0F;
+
+            for (Part part : ragdoll.parts)
+            {
+                total += part.body.getShape().getMassProperties().getMass();
+            }
+
+            if (total > 0F)
+            {
+                for (Part part : ragdoll.parts)
+                {
+                    MassProperties properties = part.body.getShape().getMassProperties();
+
+                    properties.scaleToMass(config.mass() * properties.getMass() / total);
+                    part.body.getMotionProperties().setMassProperties(EAllowedDofs.All, properties);
+                }
+            }
+        }
+
+        /* Parts that share no joint collide with each other unless the author says otherwise —
+         * off is cheaper, and fine for a body that only ever lies down. The neighbours are
+         * excused below either way. */
+        if (!config.selfCollide())
+        {
+            for (int i = 0; i < ragdoll.parts.size(); i++)
+            {
+                for (int j = i + 1; j < ragdoll.parts.size(); j++)
+                {
+                    group.excuse(ragdoll.parts.get(i).sub, ragdoll.parts.get(j).sub);
+                }
+            }
+        }
+
         /* Who hangs off whom — the three-step answer, shared with the viewport preview so that the
          * lines an author sees are the joints that will actually be built (§7.6). The bones the
          * animation kept are in the candidate list too: a part whose tree parent is not falling —
@@ -401,18 +460,42 @@ public class RagdollRig implements SceneRig
 
             RagdollJoint joint = config.get(part.bone);
             String parentPath = parent != null ? parent.path : kinematicParent.path();
-            TwoBodyConstraintSettings settings = RagdollJoints.build(joint, part.bone, part.path, parentBone, parentPath,
-                formPath, groups, matrices, actorWorld, scene);
+            RagdollJoints.Built built = RagdollJoints.build(joint, part.bone, part.path, parentBone, parentPath,
+                formPath, groups, matrices, actorWorld, scene, config.friction());
 
-            if (settings == null)
+            if (built == null || built.settings() == null)
             {
                 continue;
             }
 
+            TwoBodyConstraintSettings settings = built.settings();
             TwoBodyConstraint constraint = settings.create(parent != null ? parent.body : rigParent.body(), part.body);
 
             physics.getSystem().addConstraint(constraint);
-            ragdoll.joints.add(new Joint(part.bone, parentBone, constraint));
+
+            /* A cone gets a muscle: the two rotations that carry a target from "child relative to
+             * parent, in the parent's frame" — which the animated pose gives — into the joint's own
+             * space, which is what Jolt wants it in. Fixed at build, from the same rotations the
+             * bodies were created with. */
+            Quaternionf toParent = null;
+            Quaternionf toChild = null;
+
+            if (built.frame() != null && constraint instanceof SwingTwistConstraint)
+            {
+                MatrixCacheEntry parentEntry = matrices.get(parentPath);
+                MatrixCacheEntry childEntry = matrices.get(part.path);
+
+                if (parentEntry != null && parentEntry.matrix() != null && childEntry != null && childEntry.matrix() != null)
+                {
+                    Quaternionf parentRotation = new Matrix4f(actorWorld).mul(parentEntry.matrix()).getUnnormalizedRotation(new Quaternionf()).normalize();
+                    Quaternionf childRotation = new Matrix4f(actorWorld).mul(childEntry.matrix()).getUnnormalizedRotation(new Quaternionf()).normalize();
+
+                    toParent = parentRotation.conjugate(new Quaternionf()).mul(built.frame());
+                    toChild = childRotation.conjugate(new Quaternionf()).mul(built.frame());
+                }
+            }
+
+            ragdoll.joints.add(new Joint(part.bone, part.path, parentBone, parentPath, constraint, toParent, toChild));
 
             /* Neighbours share a joint; their shapes meet at it by design and always will. Letting
              * them also collide would have every joint permanently fighting its own limits. A
@@ -424,32 +507,133 @@ public class RagdollRig implements SceneRig
         FormRagdolls.setState(form, ragdoll.state);
 
         ragdoll.dampedSteps = physics.getCollisionSteps();
+        ragdoll.lastDamping = config.damping();
+        ragdoll.lastGravity = config.gravity();
+        ragdoll.lastFriction = config.friction();
+        ragdoll.applyMuscles(config.muscles(), config.muscleDamping());
 
         return ragdoll;
     }
 
     /**
-     * Re-converts the parts' angular damping when the sub-step count changes. The rate handed to
-     * Jolt depends on how many pieces a tick is cut into ({@link PhysicsMath#bodyDamping}), and the
-     * author can change that setting with a film open; the recording is invalidated by the change
-     * either way, so the re-push lands before anything is re-simulated under it.
+     * Pushes any whole-ragdoll knob the author has turned into the live parts and joints. Every
+     * one of these can be changed on a body already in the world; the mass cannot, and takes
+     * effect on the next scene build.
+     *
+     * <p>The damping rate handed to Jolt depends on how many pieces a tick is cut into
+     * ({@link PhysicsMath#bodyDamping}), and the author can change that setting with a film open;
+     * the recording is invalidated by the change either way, so the re-push lands before anything
+     * is re-simulated under it.</p>
      */
-    private void applyDamping(PhysicsWorld physics)
+    private void applySettings(PhysicsWorld physics, FormRagdoll config)
     {
         int steps = physics.getCollisionSteps();
 
-        if (steps == this.dampedSteps)
+        if (steps != this.dampedSteps || config.damping() != this.lastDamping)
+        {
+            this.dampedSteps = steps;
+            this.lastDamping = config.damping();
+
+            float rate = PhysicsMath.bodyDamping(config.damping(), steps);
+
+            for (Part part : this.parts)
+            {
+                part.body().getMotionProperties().setAngularDamping(rate);
+            }
+        }
+
+        if (config.gravity() != this.lastGravity)
+        {
+            this.lastGravity = config.gravity();
+
+            for (Part part : this.parts)
+            {
+                part.body().getMotionProperties().setGravityFactor(config.gravity());
+            }
+        }
+
+        if (config.friction() != this.lastFriction)
+        {
+            this.lastFriction = config.friction();
+
+            for (Joint joint : this.joints)
+            {
+                if (joint.constraint instanceof SwingTwistConstraint cone)
+                {
+                    cone.setMaxFrictionTorque(config.friction());
+                }
+            }
+        }
+
+        if (config.muscles() != this.lastMuscles || config.muscleDamping() != this.lastMuscleDamping)
+        {
+            this.applyMuscles(config.muscles(), config.muscleDamping());
+        }
+    }
+
+    private void applyMuscles(float strength, float damping)
+    {
+        this.lastMuscles = strength;
+        this.lastMuscleDamping = damping;
+
+        for (Joint joint : this.joints)
+        {
+            if (joint.constraint instanceof SwingTwistConstraint cone && joint.toParent != null)
+            {
+                PhysicsJoints.muscle(cone, strength, damping);
+            }
+        }
+    }
+
+    /**
+     * Points every muscle at the animated pose: the child's rotation relative to its parent, as
+     * the keyframes have it this tick, carried into the joint's own space. Run while the parts are
+     * dynamic — a kinematic part is on its keyframes already and a motor would only fight the
+     * drive.
+     *
+     * <p>Only joints whose two ends the pose can place; a joint on a torn bone is left alone, its
+     * target being the last thing the head wants after coming off.</p>
+     */
+    private void aimMuscles(MatrixCache matrices, Matrix4f actorWorld, float strength)
+    {
+        if (strength <= 0F || matrices == null)
         {
             return;
         }
 
-        this.dampedSteps = steps;
-
-        float rate = PhysicsMath.bodyDamping(ANGULAR_DAMPING, steps);
-
-        for (Part part : this.parts)
+        for (Joint joint : this.joints)
         {
-            part.body().getMotionProperties().setAngularDamping(rate);
+            if (joint.toParent == null || !(joint.constraint instanceof SwingTwistConstraint cone) || !cone.getEnabled())
+            {
+                continue;
+            }
+
+            MatrixCacheEntry parentEntry = matrices.get(joint.parentPath);
+            MatrixCacheEntry childEntry = matrices.get(joint.childPath);
+
+            if (parentEntry == null || parentEntry.matrix() == null || childEntry == null || childEntry.matrix() == null)
+            {
+                continue;
+            }
+
+            this.worldMatrix.set(actorWorld).mul(parentEntry.matrix()).getUnnormalizedRotation(this.parentRotation);
+            this.worldMatrix.set(actorWorld).mul(childEntry.matrix()).getUnnormalizedRotation(this.childRotation);
+            this.parentRotation.normalize();
+            this.childRotation.normalize();
+
+            /* target = toParent⁻¹ · (parent⁻¹ · child) · toChild — Jolt's own SetTargetOrientationBS,
+             * which this binding does not expose, written out. */
+            this.target.set(joint.toParent).conjugate()
+                .mul(this.parentRotation.conjugate(new Quaternionf()).mul(this.childRotation))
+                .mul(joint.toChild);
+
+            if (!PhysicsMath.finite(this.target.w))
+            {
+                continue;
+            }
+
+            this.targetQuat.set(this.target.x, this.target.y, this.target.z, this.target.w);
+            cone.setTargetOrientationCs(this.targetQuat);
         }
     }
 
@@ -553,7 +737,10 @@ public class RagdollRig implements SceneRig
         Map<String, Matrix4f> deltas = update.pinned ? update.deltas : null;
 
         this.captureBase(matrices, actorWorld);
-        this.applyDamping(physics);
+
+        FormRagdoll config = FormRagdolls.get(this.form);
+
+        this.applySettings(physics, config);
 
         BodyInterface bodies = physics.getBodies();
 
@@ -596,6 +783,11 @@ public class RagdollRig implements SceneRig
             /* Taken back by the animation after living its own life: nowhere near its keyframes.
              * Steered there over one tick it would rake the whole set on the way. */
             put |= wanted;
+        }
+
+        if (!this.kinematic)
+        {
+            this.aimMuscles(matrices, actorWorld, config.muscles());
         }
 
         for (Part part : this.parts)
@@ -1118,6 +1310,11 @@ public class RagdollRig implements SceneRig
      * ({@code parent} — a fellow part or a kinematic bone). Which end is which is the attachment
      * solver's choice, which is exactly why a tear reads both.
      */
-    private record Joint(String child, String parent, TwoBodyConstraint constraint)
+    /**
+     * @param toParent for a cone with a muscle, the joint's constraint space expressed in the
+     *                 parent's frame as the bodies were built; null when the joint has no muscle
+     * @param toChild  the same for the child
+     */
+    private record Joint(String child, String childPath, String parent, String parentPath, TwoBodyConstraint constraint, Quaternionf toParent, Quaternionf toChild)
     {}
 }

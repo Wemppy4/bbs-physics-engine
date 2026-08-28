@@ -57,6 +57,7 @@ public class UIRagdollSection extends UIBoneSection
     private final UIElement kindRow;
 
     public UITrackpad swing;
+    public UITrackpad swingPlane;
     private final UIElement swingRow;
     public UITrackpad twistMin;
     public UITrackpad twistMax;
@@ -107,9 +108,13 @@ public class UIRagdollSection extends UIBoneSection
         this.kind.tooltip(PhysicsKeys.RAGDOLL_KIND_TOOLTIP);
         this.kindRow = UI.labelRow(PhysicsKeys.RAGDOLL_KIND, this.kind);
 
+        /* The first knob sets both half-angles — a round cone, the common case — and the second
+         * pulls one of them apart from it: an elbow, a knee, a hip. */
         this.swing = this.degrees(0D, 180D, (joint, v) -> joint.withSwing(v));
         this.swing.tooltip(PhysicsKeys.RAGDOLL_SWING_TOOLTIP);
-        this.swingRow = UI.labelRow(PhysicsKeys.RAGDOLL_SWING, this.swing);
+        this.swingPlane = this.degrees(0D, 180D, (joint, v) -> joint.withSwingPlane(v));
+        this.swingPlane.tooltip(PhysicsKeys.RAGDOLL_SWING_PLANE_TOOLTIP);
+        this.swingRow = UI.column(UIConstants.MARGIN, 0, UI.label(PhysicsKeys.RAGDOLL_SWING), UI.row(this.swing, this.swingPlane));
 
         this.twistMin = this.degrees(-180D, 180D, (joint, v) -> joint.withTwist(v, joint.twistMax()));
         this.twistMax = this.degrees(-180D, 180D, (joint, v) -> joint.withTwist(joint.twistMin(), v));
@@ -365,6 +370,7 @@ public class UIRagdollSection extends UIBoneSection
         {
             this.kind.setValue(joint.kind().ordinal());
             this.swing.setValue(joint.swing());
+            this.swingPlane.setValue(joint.swingPlane());
             this.twistMin.setValue(joint.twistMin());
             this.twistMax.setValue(joint.twistMax());
             this.hingeAxis.setValue(joint.hingeAxis());

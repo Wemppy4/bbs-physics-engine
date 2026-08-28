@@ -17,6 +17,12 @@ public final class BodyIO
     private static final String KEY_MASS = "mass";
     private static final String KEY_FRICTION = "friction";
     private static final String KEY_RESTITUTION = "restitution";
+    private static final String KEY_LINEAR_DAMPING = "linear_damping";
+    private static final String KEY_ANGULAR_DAMPING = "angular_damping";
+    private static final String KEY_GRAVITY = "gravity";
+    private static final String KEY_ASLEEP = "asleep";
+    private static final String KEY_LOCK_MOVE = "lock_move";
+    private static final String KEY_LOCK_SPIN = "lock_spin";
 
     private BodyIO()
     {}
@@ -33,10 +39,30 @@ public final class BodyIO
             map.getBool(KEY_PASSIVE),
             map.getFloat(KEY_MASS, FormBody.DEFAULT_MASS),
             map.getFloat(KEY_FRICTION, FormBody.DEFAULT_FRICTION),
-            map.getFloat(KEY_RESTITUTION, FormBody.DEFAULT_RESTITUTION));
+            map.getFloat(KEY_RESTITUTION, FormBody.DEFAULT_RESTITUTION),
+            map.getFloat(KEY_LINEAR_DAMPING, FormBody.DEFAULT_LINEAR_DAMPING),
+            map.getFloat(KEY_ANGULAR_DAMPING, FormBody.DEFAULT_ANGULAR_DAMPING),
+            map.getFloat(KEY_GRAVITY, FormBody.DEFAULT_GRAVITY),
+            map.getBool(KEY_ASLEEP),
+            map.getInt(KEY_LOCK_MOVE, 0),
+            map.getInt(KEY_LOCK_SPIN, 0));
     }
 
+    /** The keys the keyframable numbers used to be stored under, before they became form values. */
+    private static final String[] KNOB_KEYS = {KEY_MASS, KEY_FRICTION, KEY_RESTITUTION, KEY_LINEAR_DAMPING, KEY_ANGULAR_DAMPING, KEY_GRAVITY};
+
+    /** Whole, numbers included — what a preset or the clipboard carries. */
     public static MapType toData(FormBody body)
+    {
+        return toData(body, true);
+    }
+
+    /**
+     * @param knobs whether the keyframable numbers go in. The form's own storage leaves them out:
+     *              they live as values of the form ({@code PhysicsKnobValue}), and a copy in the
+     *              blob would be a second source of truth
+     */
+    public static MapType toData(FormBody body, boolean knobs)
     {
         MapType map = new MapType();
 
@@ -47,11 +73,36 @@ public final class BodyIO
 
         ModifierIO.putEnabled(map, body.enabled());
         ModifierIO.putFlag(map, KEY_PASSIVE, body.passive());
-        ModifierIO.putFloat(map, KEY_MASS, body.mass(), FormBody.DEFAULT_MASS);
-        ModifierIO.putFloat(map, KEY_FRICTION, body.friction(), FormBody.DEFAULT_FRICTION);
-        ModifierIO.putFloat(map, KEY_RESTITUTION, body.restitution(), FormBody.DEFAULT_RESTITUTION);
+
+        if (knobs)
+        {
+            ModifierIO.putFloat(map, KEY_MASS, body.mass(), FormBody.DEFAULT_MASS);
+            ModifierIO.putFloat(map, KEY_FRICTION, body.friction(), FormBody.DEFAULT_FRICTION);
+            ModifierIO.putFloat(map, KEY_RESTITUTION, body.restitution(), FormBody.DEFAULT_RESTITUTION);
+            ModifierIO.putFloat(map, KEY_LINEAR_DAMPING, body.linearDamping(), FormBody.DEFAULT_LINEAR_DAMPING);
+            ModifierIO.putFloat(map, KEY_ANGULAR_DAMPING, body.angularDamping(), FormBody.DEFAULT_ANGULAR_DAMPING);
+            ModifierIO.putFloat(map, KEY_GRAVITY, body.gravity(), FormBody.DEFAULT_GRAVITY);
+        }
+
+        ModifierIO.putFlag(map, KEY_ASLEEP, body.asleep());
+
+        if (body.lockMove() != 0)
+        {
+            map.putInt(KEY_LOCK_MOVE, body.lockMove());
+        }
+
+        if (body.lockSpin() != 0)
+        {
+            map.putInt(KEY_LOCK_SPIN, body.lockSpin());
+        }
 
         return map;
+    }
+
+    /** Whether stored data still carries numbers from before they became form values. */
+    public static boolean hasKnobs(BaseType data)
+    {
+        return ModifierIO.hasAny(data, KNOB_KEYS);
     }
 
     /** Whether stored data says the body is on, without parsing the rest — the per-frame check. */

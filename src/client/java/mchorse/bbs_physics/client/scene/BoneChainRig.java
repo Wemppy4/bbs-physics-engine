@@ -77,7 +77,6 @@ import java.util.Map;
 public class BoneChainRig implements SceneRig
 {
     /** How far a joint lets a strand bend — wide, because the strand's shape is the spring's job. */
-    private static final float CONE_DEGREES = 80F;
     private static final float TWIST_DEGREES = 45F;
 
     /** The shortest a bone may be measured as, so a leaf with no child still gets a body. */
@@ -137,6 +136,8 @@ public class BoneChainRig implements SceneRig
     private float lastStiffness = Float.NaN;
     private float lastDamping = Float.NaN;
     private float lastGravity = Float.NaN;
+    private float lastFalloff = Float.NaN;
+    private float lastBend = Float.NaN;
 
     /** The sub-step count the bones' damping was converted for — part of the rate's arithmetic. */
     private int dampedSteps;
@@ -584,8 +585,9 @@ public class BoneChainRig implements SceneRig
         settings.setTwistAxis2(new Vec3(axis.x, axis.y, axis.z));
         settings.setPlaneAxis1(new Vec3(plane.x, plane.y, plane.z));
         settings.setPlaneAxis2(new Vec3(plane.x, plane.y, plane.z));
-        settings.setNormalHalfConeAngle((float) Math.toRadians(CONE_DEGREES));
-        settings.setPlaneHalfConeAngle((float) Math.toRadians(CONE_DEGREES));
+        /* The bend is the author's: wide for hair, narrow for a braid that must not fold. */
+        settings.setNormalHalfConeAngle((float) Math.toRadians(config.bend()));
+        settings.setPlaneHalfConeAngle((float) Math.toRadians(config.bend()));
         settings.setTwistMinAngle((float) Math.toRadians(-TWIST_DEGREES));
         settings.setTwistMaxAngle((float) Math.toRadians(TWIST_DEGREES));
 
@@ -593,7 +595,7 @@ public class BoneChainRig implements SceneRig
 
         physics.getSystem().addConstraint(constraint);
 
-        PhysicsJoints.tune(constraint, config.stiffness(), config.damping(), index, count);
+        PhysicsJoints.tune(constraint, config.stiffness(), config.damping(), index, count, 1F - config.falloff());
 
         return constraint;
     }
@@ -785,14 +787,29 @@ public class BoneChainRig implements SceneRig
 
         float stiffness = config.stiffness();
         float damping = config.damping();
+        float falloff = config.falloff();
+        float bend = config.bend();
         int steps = physics.getCollisionSteps();
 
-        if (stiffness != this.lastStiffness || damping != this.lastDamping)
+        if (stiffness != this.lastStiffness || damping != this.lastDamping || falloff != this.lastFalloff)
         {
             for (Joint joint : this.joints)
             {
-                PhysicsJoints.tune(joint.constraint(), stiffness, damping, joint.index(), joint.count());
+                PhysicsJoints.tune(joint.constraint(), stiffness, damping, joint.index(), joint.count(), 1F - falloff);
             }
+
+            this.lastFalloff = falloff;
+        }
+
+        if (bend != this.lastBend)
+        {
+            for (Joint joint : this.joints)
+            {
+                joint.constraint().setNormalHalfConeAngle((float) Math.toRadians(bend));
+                joint.constraint().setPlaneHalfConeAngle((float) Math.toRadians(bend));
+            }
+
+            this.lastBend = bend;
         }
 
         /* The knob's larger half: what the bones themselves shed. Pushed here as well as at build

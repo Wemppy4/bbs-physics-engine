@@ -32,16 +32,33 @@ public record FormChain(
     float damping,
     float gravity,
     float mass,
-    boolean selfCollision)
+    boolean selfCollision,
+    float falloff,
+    float bend)
 {
     public static final float DEFAULT_STIFFNESS = 0.15F;
     public static final float DEFAULT_DAMPING = 0.25F;
     public static final float DEFAULT_GRAVITY = 1F;
     public static final float DEFAULT_MASS = 1F;
 
+    /**
+     * How much softer the tip of a strand is than its root: the tip keeps {@code 1 − falloff} of
+     * the root's stiffness. The default is BBS's own chain solver's gradient (the tip at 0.4),
+     * which is what gives a strand a living, whip-like tail rather than a stiff, lifeless one.
+     */
+    public static final float DEFAULT_FALLOFF = 0.6F;
+
+    /**
+     * How far one bone may lean away from the next, in degrees — the cone every joint of a strand
+     * swings in. Wide by default, because a strand's shape is the spring's job; narrow for a braid
+     * or a tail that must not fold in half.
+     */
+    public static final float DEFAULT_BEND = 80F;
+
     public static final FormChain EMPTY = new FormChain(
         false, Collections.emptySet(),
-        DEFAULT_STIFFNESS, DEFAULT_DAMPING, DEFAULT_GRAVITY, DEFAULT_MASS, false);
+        DEFAULT_STIFFNESS, DEFAULT_DAMPING, DEFAULT_GRAVITY, DEFAULT_MASS, false,
+        DEFAULT_FALLOFF, DEFAULT_BEND);
 
     public FormChain
     {
@@ -68,7 +85,7 @@ public record FormChain(
 
     public FormChain withEnabled(boolean enabled)
     {
-        return new FormChain(enabled, this.bones, this.stiffness, this.damping, this.gravity, this.mass, this.selfCollision);
+        return new FormChain(enabled, this.bones, this.stiffness, this.damping, this.gravity, this.mass, this.selfCollision, this.falloff, this.bend);
     }
 
     /** The same setup with one bone taken into the chain, or left out of it. */
@@ -85,37 +102,47 @@ public record FormChain(
             bones.remove(bone);
         }
 
-        return new FormChain(this.enabled, bones, this.stiffness, this.damping, this.gravity, this.mass, this.selfCollision);
+        return new FormChain(this.enabled, bones, this.stiffness, this.damping, this.gravity, this.mass, this.selfCollision, this.falloff, this.bend);
     }
 
     /** The same setup with a whole set of bones claimed — what "take the chains from the model" does. */
     public FormChain withBones(Set<String> bones)
     {
-        return new FormChain(this.enabled, bones, this.stiffness, this.damping, this.gravity, this.mass, this.selfCollision);
+        return new FormChain(this.enabled, bones, this.stiffness, this.damping, this.gravity, this.mass, this.selfCollision, this.falloff, this.bend);
     }
 
     public FormChain withStiffness(float stiffness)
     {
-        return new FormChain(this.enabled, this.bones, stiffness, this.damping, this.gravity, this.mass, this.selfCollision);
+        return new FormChain(this.enabled, this.bones, stiffness, this.damping, this.gravity, this.mass, this.selfCollision, this.falloff, this.bend);
     }
 
     public FormChain withDamping(float damping)
     {
-        return new FormChain(this.enabled, this.bones, this.stiffness, damping, this.gravity, this.mass, this.selfCollision);
+        return new FormChain(this.enabled, this.bones, this.stiffness, damping, this.gravity, this.mass, this.selfCollision, this.falloff, this.bend);
     }
 
     public FormChain withGravity(float gravity)
     {
-        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, gravity, this.mass, this.selfCollision);
+        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, gravity, this.mass, this.selfCollision, this.falloff, this.bend);
     }
 
     public FormChain withMass(float mass)
     {
-        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, this.gravity, mass, this.selfCollision);
+        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, this.gravity, mass, this.selfCollision, this.falloff, this.bend);
+    }
+
+    public FormChain withFalloff(float falloff)
+    {
+        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, this.gravity, this.mass, this.selfCollision, falloff, this.bend);
+    }
+
+    public FormChain withBend(float bend)
+    {
+        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, this.gravity, this.mass, this.selfCollision, this.falloff, bend);
     }
 
     public FormChain withSelfCollision(boolean selfCollision)
     {
-        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, this.gravity, this.mass, selfCollision);
+        return new FormChain(this.enabled, this.bones, this.stiffness, this.damping, this.gravity, this.mass, selfCollision, this.falloff, this.bend);
     }
 }

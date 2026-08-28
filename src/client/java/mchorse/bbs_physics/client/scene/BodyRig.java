@@ -135,6 +135,14 @@ public class BodyRig implements SceneRig
     private float lastMass;
     private float lastFriction;
     private float lastRestitution;
+    private float lastLinearDamping;
+    private float lastAngularDamping;
+    private float lastGravity;
+    private int lastLockMove;
+    private int lastLockSpin;
+
+    /** The sub-step count the damping was converted for — the rate depends on it. */
+    private int dampedSteps;
 
     private BodyRig(Form form, String path, int bodyId, int channel, List<CollisionCollector.Piece> pieces, boolean kinematic, SceneBody debug, FormBody settings, String anchor)
     {
@@ -150,6 +158,29 @@ public class BodyRig implements SceneRig
         this.lastMass = settings.mass();
         this.lastFriction = settings.friction();
         this.lastRestitution = settings.restitution();
+        this.lastLinearDamping = settings.linearDamping();
+        this.lastAngularDamping = settings.angularDamping();
+        this.lastGravity = settings.gravity();
+        this.lastLockMove = settings.lockMove();
+        this.lastLockSpin = settings.lockSpin();
+    }
+
+    /**
+     * Jolt's degrees of freedom for the axes the author froze. A frozen axis is a door, a wheel, a
+     * swing, a puck on a table — without a joint and without the joint's jitter.
+     */
+    private static int allowedDofs(FormBody body)
+    {
+        int dofs = EAllowedDofs.All;
+
+        if ((body.lockMove() & FormBody.AXIS_X) != 0) dofs &= ~EAllowedDofs.TranslationX;
+        if ((body.lockMove() & FormBody.AXIS_Y) != 0) dofs &= ~EAllowedDofs.TranslationY;
+        if ((body.lockMove() & FormBody.AXIS_Z) != 0) dofs &= ~EAllowedDofs.TranslationZ;
+        if ((body.lockSpin() & FormBody.AXIS_X) != 0) dofs &= ~EAllowedDofs.RotationX;
+        if ((body.lockSpin() & FormBody.AXIS_Y) != 0) dofs &= ~EAllowedDofs.RotationY;
+        if ((body.lockSpin() & FormBody.AXIS_Z) != 0) dofs &= ~EAllowedDofs.RotationZ;
+
+        return dofs;
     }
 
     /** Builds the body for a form carrying the rigid body modifier, found at {@code path}. */
@@ -179,6 +210,13 @@ public class BodyRig implements SceneRig
         settings.setFriction(body.friction());
         settings.setRestitution(body.restitution());
 
+        /* Both damping knobs are a share of speed lost per film tick, like every damping number
+         * in the addon, converted to Jolt's per-second rate for the sub-step count in use. */
+        settings.setLinearDamping(PhysicsMath.bodyDamping(body.linearDamping(), physics.getCollisionSteps()));
+        settings.setAngularDamping(PhysicsMath.bodyDamping(body.angularDamping(), physics.getCollisionSteps()));
+        settings.setGravityFactor(body.gravity());
+        settings.setAllowedDofs(allowedDofs(body));
+
         /* Swept collision rather than the default, which only asks where a body is at the end of a
          * step. A film tick is fifty milliseconds — long — so anything thrown or dropped from a
          * height covers more than its own thickness in one step and, tested only at the ends,
@@ -194,7 +232,11 @@ public class BodyRig implements SceneRig
         settings.setMassPropertiesOverride(new MassProperties().setMass(body.mass()));
         settings.setOverrideMassProperties(EOverrideMassProperties.CalculateInertia);
 
-        int id = physics.getBodies().createAndAddBody(settings, EActivation.Activate);
+        /* Asleep until touched, when asked: a stack that starts awake shivers on the spot for a
+         * second while the solver finds its rest, and a body the animation still owns is woken by
+         * the handle anyway. */
+        boolean asleep = body.asleep() && !kinematic;
+        int id = physics.getBodies().createAndAddBody(settings, asleep ? EActivation.DontActivate : EActivation.Activate);
 
         /* An unmarked body is drawn in a colour of its own: it is about to fall through the floor,
          * and the overlay is the only place that can say "nothing was marked up here" before it
@@ -485,11 +527,60 @@ public class BodyRig implements SceneRig
 
         float mass = body.mass();
 
-        if (mass != this.lastMass)
+        /* The frozen axes ride on the same call as the mass — Jolt sets both at once. */
+        if (mass != this.lastMass || body.lockMove() != this.lastLockMove || body.lockSpin() != this.lastLockSpin)
         {
-            this.applyMass(physics, bodies, mass);
+            this.applyMass(physics, bodies, mass, allowedDofs(body));
 
             this.lastMass = mass;
+            this.lastLockMove = body.lockMove();
+            this.lastLockSpin = body.lockSpin();
+        }
+
+        float gravity = body.gravity();
+
+        if (gravity != this.lastGravity)
+        {
+            bodies.setGravityFactor(this.bodyId, gravity);
+
+            this.lastGravity = gravity;
+        }
+
+        int steps = physics.getCollisionSteps();
+
+        if (body.linearDamping() != this.lastLinearDamping || body.angularDamping() != this.lastAngularDamping || steps != this.dampedSteps)
+        {
+            this.applyDamping(physics, body.linearDamping(), body.angularDamping(), steps);
+
+            this.lastLinearDamping = body.linearDamping();
+            this.lastAngularDamping = body.angularDamping();
+            this.dampedSteps = steps;
+        }
+    }
+
+    /** Damping lives on the motion properties, behind the same lock as the mass. */
+    private void applyDamping(PhysicsWorld physics, float linear, float angular, int steps)
+    {
+        BodyLockWrite lock = new BodyLockWrite(physics.getSystem().getBodyLockInterface(), this.bodyId);
+
+        try
+        {
+            if (!lock.succeeded())
+            {
+                return;
+            }
+
+            MotionProperties motion = lock.getBody().getMotionProperties();
+
+            if (motion != null)
+            {
+                motion.setLinearDamping(PhysicsMath.bodyDamping(linear, steps));
+                motion.setAngularDamping(PhysicsMath.bodyDamping(angular, steps));
+            }
+        }
+        finally
+        {
+            lock.releaseLock();
         }
     }
 
@@ -498,7 +589,7 @@ public class BodyRig implements SceneRig
      * has to be reached through a write lock on the body itself. The inertia comes from the body's
      * own shape, scaled to the mass the author asked for, so a long plank tumbles like a plank.
      */
-    private void applyMass(PhysicsWorld physics, BodyInterface bodies, float mass)
+    private void applyMass(PhysicsWorld physics, BodyInterface bodies, float mass, int dofs)
     {
         BodyLockWrite lock = new BodyLockWrite(physics.getSystem().getBodyLockInterface(), this.bodyId);
 
@@ -520,7 +611,7 @@ public class BodyRig implements SceneRig
             MassProperties properties = shape.getMassProperties();
 
             properties.scaleToMass(mass);
-            motion.setMassProperties(EAllowedDofs.All, properties);
+            motion.setMassProperties(dofs, properties);
         }
         finally
         {

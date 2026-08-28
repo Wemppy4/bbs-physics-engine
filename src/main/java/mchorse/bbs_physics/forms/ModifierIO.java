@@ -46,6 +46,25 @@ public final class ModifierIO
     }
 
     /** Writes a number, and only when the author moved it off the default. */
+    /** Whether stored data has any of {@code keys} — how a blob from before the knobs moved out is told. */
+    public static boolean hasAny(BaseType data, String[] keys)
+    {
+        if (!(data instanceof MapType map))
+        {
+            return false;
+        }
+
+        for (String key : keys)
+        {
+            if (map.has(key))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static void putFloat(MapType map, String key, float value, float fallback)
     {
         if (value != fallback)

@@ -1,6 +1,7 @@
 package mchorse.bbs_physics.client.forms;
 
 import mchorse.bbs_mod.forms.forms.Form;
+import mchorse.bbs_mod.l10n.keys.IKey;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
 import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
@@ -9,6 +10,7 @@ import mchorse.bbs_mod.ui.framework.elements.UIElement;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UICirculate;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIIcon;
+import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.framework.elements.utils.UIText;
 import mchorse.bbs_mod.ui.utils.UI;
@@ -22,6 +24,7 @@ import mchorse.bbs_physics.client.ragdoll.UIRagdollSection;
 import mchorse.bbs_physics.collision.FormCollisions;
 import mchorse.bbs_physics.forms.FormBody;
 import mchorse.bbs_physics.forms.PhysicsForms;
+import mchorse.bbs_physics.ragdoll.FormRagdoll;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 
 import java.util.function.UnaryOperator;
@@ -57,6 +60,30 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
     private final UIElement frictionRow;
     private final UITrackpad restitution;
     private final UIElement restitutionRow;
+
+    public UITrackpad linearDamping;
+    public UITrackpad angularDamping;
+    private final UIElement dampingRow;
+    public UITrackpad gravity;
+    private final UIElement gravityRow;
+    public UIToggle asleep;
+    private final UIToggle[] lockMove = new UIToggle[3];
+    private final UIToggle[] lockSpin = new UIToggle[3];
+    private final UIElement lockMoveRow;
+    private final UIElement lockSpinRow;
+
+    public UITrackpad ragdollMass;
+    private final UIElement ragdollMassRow;
+    public UITrackpad ragdollDamping;
+    private final UIElement ragdollDampingRow;
+    public UITrackpad ragdollFriction;
+    private final UIElement ragdollFrictionRow;
+    public UITrackpad ragdollGravity;
+    private final UIElement ragdollGravityRow;
+    public UITrackpad muscles;
+    public UITrackpad muscleDamping;
+    private final UIElement musclesRow;
+    public UIToggle ragdollSelfCollide;
 
     private final UIModifierSection ragdollSection;
     private final UIRagdollSection ragdollBones;
@@ -118,17 +145,82 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.restitution.limit(0D, 1D).increment(0.05D);
         this.restitutionRow = UI.labelRow(PhysicsKeys.RESTITUTION, this.restitution);
 
+        this.linearDamping = new UITrackpad((v) -> this.editBody((body) -> body.withLinearDamping(v.floatValue())));
+        this.linearDamping.limit(0D, 1D).increment(0.01D).values(0.01D, 0.001D, 0.05D);
+        this.linearDamping.tooltip(PhysicsKeys.BODY_LINEAR_DAMPING_TOOLTIP);
+        this.angularDamping = new UITrackpad((v) -> this.editBody((body) -> body.withAngularDamping(v.floatValue())));
+        this.angularDamping.limit(0D, 1D).increment(0.01D).values(0.01D, 0.001D, 0.05D);
+        this.angularDamping.tooltip(PhysicsKeys.BODY_ANGULAR_DAMPING_TOOLTIP);
+        this.dampingRow = UI.column(UIConstants.MARGIN, 0, UI.label(PhysicsKeys.BODY_DAMPING), UI.row(this.linearDamping, this.angularDamping));
+
+        this.gravity = new UITrackpad((v) -> this.editBody((body) -> body.withGravity(v.floatValue())));
+        this.gravity.limit(-2D, 2D).increment(0.05D);
+        this.gravity.tooltip(PhysicsKeys.BODY_GRAVITY_TOOLTIP);
+        this.gravityRow = UI.labelRow(PhysicsKeys.BODY_GRAVITY, this.gravity);
+
+        this.asleep = new UIToggle(PhysicsKeys.BODY_ASLEEP, (b) -> this.editBody((body) -> body.withAsleep(b.getValue())));
+        this.asleep.tooltip(PhysicsKeys.BODY_ASLEEP_TOOLTIP);
+
+        /* One tick per axis, two rows: what the body may not do. A frozen axis is a door, a
+         * wheel, a swing — without a joint. */
+        IKey[] axes = {IKey.constant("X"), IKey.constant("Y"), IKey.constant("Z")};
+        int[] bits = {FormBody.AXIS_X, FormBody.AXIS_Y, FormBody.AXIS_Z};
+
+        for (int i = 0; i < 3; i++)
+        {
+            int bit = bits[i];
+
+            this.lockMove[i] = new UIToggle(axes[i], (b) -> this.editBody((body) -> body.withLockMove(FormBody.toggle(body.lockMove(), bit, b.getValue()))));
+            this.lockSpin[i] = new UIToggle(axes[i], (b) -> this.editBody((body) -> body.withLockSpin(FormBody.toggle(body.lockSpin(), bit, b.getValue()))));
+        }
+
+        this.lockMoveRow = UI.labelRow(PhysicsKeys.BODY_LOCK_MOVE, UI.row(this.lockMove[0], this.lockMove[1], this.lockMove[2]));
+        this.lockMoveRow.tooltip(PhysicsKeys.BODY_LOCK_TOOLTIP);
+        this.lockSpinRow = UI.labelRow(PhysicsKeys.BODY_LOCK_SPIN, UI.row(this.lockSpin[0], this.lockSpin[1], this.lockSpin[2]));
+        this.lockSpinRow.tooltip(PhysicsKeys.BODY_LOCK_TOOLTIP);
+
+        this.ragdollMass = new UITrackpad((v) -> this.editRagdoll((ragdoll) -> ragdoll.withMass(v.floatValue())));
+        this.ragdollMass.limit(0D, 10000D).increment(1D);
+        this.ragdollMass.tooltip(PhysicsKeys.RAGDOLL_MASS_TOOLTIP);
+        this.ragdollMassRow = UI.labelRow(PhysicsKeys.RAGDOLL_MASS, this.ragdollMass);
+
+        this.ragdollDamping = new UITrackpad((v) -> this.editRagdoll((ragdoll) -> ragdoll.withDamping(v.floatValue())));
+        this.ragdollDamping.limit(0D, 1D).increment(0.05D);
+        this.ragdollDamping.tooltip(PhysicsKeys.RAGDOLL_DAMPING_TOOLTIP);
+        this.ragdollDampingRow = UI.labelRow(PhysicsKeys.RAGDOLL_DAMPING, this.ragdollDamping);
+
+        this.ragdollFriction = new UITrackpad((v) -> this.editRagdoll((ragdoll) -> ragdoll.withFriction(v.floatValue())));
+        this.ragdollFriction.limit(0D, 100D).increment(0.5D);
+        this.ragdollFriction.tooltip(PhysicsKeys.RAGDOLL_FRICTION_TOOLTIP);
+        this.ragdollFrictionRow = UI.labelRow(PhysicsKeys.RAGDOLL_FRICTION, this.ragdollFriction);
+
+        this.ragdollGravity = new UITrackpad((v) -> this.editRagdoll((ragdoll) -> ragdoll.withGravity(v.floatValue())));
+        this.ragdollGravity.limit(-2D, 2D).increment(0.05D);
+        this.ragdollGravity.tooltip(PhysicsKeys.BODY_GRAVITY_TOOLTIP);
+        this.ragdollGravityRow = UI.labelRow(PhysicsKeys.BODY_GRAVITY, this.ragdollGravity);
+
+        this.muscles = new UITrackpad((v) -> this.editRagdoll((ragdoll) -> ragdoll.withMuscles(v.floatValue())));
+        this.muscles.limit(0D, 1D).increment(0.05D);
+        this.muscles.tooltip(PhysicsKeys.RAGDOLL_MUSCLES_TOOLTIP);
+        this.muscleDamping = new UITrackpad((v) -> this.editRagdoll((ragdoll) -> ragdoll.withMuscleDamping(v.floatValue())));
+        this.muscleDamping.limit(0D, 1D).increment(0.05D);
+        this.muscleDamping.tooltip(PhysicsKeys.RAGDOLL_MUSCLE_DAMPING_TOOLTIP);
+        this.musclesRow = UI.column(UIConstants.MARGIN, 0, UI.label(PhysicsKeys.RAGDOLL_MUSCLES), UI.row(this.muscles, this.muscleDamping));
+
+        this.ragdollSelfCollide = new UIToggle(PhysicsKeys.RAGDOLL_SELF_COLLIDE, (b) -> this.editRagdoll((ragdoll) -> ragdoll.withSelfCollide(b.getValue())));
+        this.ragdollSelfCollide.tooltip(PhysicsKeys.RAGDOLL_SELF_COLLIDE_TOOLTIP);
+
         this.bodyAuthority = PhysicsFields.authority(this::setAuthority);
         this.bodyAuthorityRow = UI.labelRow(PhysicsKeys.AUTHORITY, this.bodyAuthority);
         this.ragdollAuthority = PhysicsFields.authority(this::setAuthority);
         this.ragdollAuthorityRow = UI.labelRow(PhysicsKeys.AUTHORITY, this.ragdollAuthority);
 
         this.bodySection = new UIModifierSection(PhysicsKeys.BODY_TITLE, "physics.body", () -> this.toggleBody(false));
-        this.bodySection.fields.add(this.typeRow, this.massRow, this.frictionRow, this.restitutionRow, this.bodyAuthorityRow);
+        this.bodySection.fields.add(this.typeRow, this.massRow, this.frictionRow, this.restitutionRow, this.dampingRow, this.gravityRow, this.lockMoveRow, this.lockSpinRow, this.asleep, this.bodyAuthorityRow);
 
         this.ragdollBones = new UIRagdollSection(() -> this.options.resize());
         this.ragdollSection = new UIModifierSection(PhysicsKeys.RAGDOLL_TITLE, "physics.ragdoll", () -> this.toggleRagdoll(false));
-        this.ragdollSection.fields.add(this.ragdollAuthorityRow, this.ragdollBones);
+        this.ragdollSection.fields.add(this.ragdollAuthorityRow, this.ragdollMassRow, this.ragdollDampingRow, this.ragdollFrictionRow, this.ragdollGravityRow, this.musclesRow, this.ragdollSelfCollide, this.ragdollBones);
 
         this.chainAuthority = PhysicsFields.authority(this::setAuthority);
         this.chainAuthorityRow = UI.labelRow(PhysicsKeys.AUTHORITY, this.chainAuthority);
@@ -266,6 +358,16 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         PhysicsForms.setBody(this.form, edit.apply(PhysicsForms.getBody(this.form)));
     }
 
+    private void editRagdoll(UnaryOperator<FormRagdoll> edit)
+    {
+        if (this.syncing || this.form == null)
+        {
+            return;
+        }
+
+        FormRagdolls.set(this.form, edit.apply(FormRagdolls.get(this.form)));
+    }
+
     /* Syncing the UI */
 
     @Override
@@ -316,6 +418,28 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.mass.setValue(body.mass());
         this.friction.setValue(body.friction());
         this.restitution.setValue(body.restitution());
+        this.linearDamping.setValue(body.linearDamping());
+        this.angularDamping.setValue(body.angularDamping());
+        this.gravity.setValue(body.gravity());
+        this.asleep.setValue(body.asleep());
+
+        int[] bits = {FormBody.AXIS_X, FormBody.AXIS_Y, FormBody.AXIS_Z};
+
+        for (int i = 0; i < 3; i++)
+        {
+            this.lockMove[i].setValue((body.lockMove() & bits[i]) != 0);
+            this.lockSpin[i].setValue((body.lockSpin() & bits[i]) != 0);
+        }
+
+        FormRagdoll ragdollConfig = FormRagdolls.get(this.form);
+
+        this.ragdollMass.setValue(ragdollConfig.mass());
+        this.ragdollDamping.setValue(ragdollConfig.damping());
+        this.ragdollFriction.setValue(ragdollConfig.friction());
+        this.ragdollGravity.setValue(ragdollConfig.gravity());
+        this.muscles.setValue(ragdollConfig.muscles());
+        this.muscleDamping.setValue(ragdollConfig.muscleDamping());
+        this.ragdollSelfCollide.setValue(ragdollConfig.selfCollide());
         this.bodyAuthority.setValue(authority);
         this.ragdollAuthority.setValue(authority);
         this.chainAuthority.setValue(authority);

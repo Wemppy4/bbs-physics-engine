@@ -50,6 +50,15 @@ public final class PhysicsJoints
      */
     public static void tune(SwingTwistConstraint constraint, float stiffness, float damping, int index, int count)
     {
+        tune(constraint, stiffness, damping, index, count, TIP_STIFFNESS);
+    }
+
+    /**
+     * The same, with the tip's share of the root's stiffness given rather than assumed — the
+     * hair modifier's "falloff" knob is {@code 1 − tip}.
+     */
+    public static void tune(SwingTwistConstraint constraint, float stiffness, float damping, int index, int count, float tip)
+    {
         EMotorState state = stiffness > 0F ? EMotorState.Position : EMotorState.Off;
 
         constraint.setSwingMotorState(state);
@@ -58,7 +67,7 @@ public final class PhysicsJoints
         if (stiffness > 0F)
         {
             float along = count <= 1 ? 0F : Math.min(Math.max(index, 0), count - 1) / (float) (count - 1);
-            float falloff = 1F - (1F - TIP_STIFFNESS) * along;
+            float falloff = 1F - (1F - Math.min(Math.max(tip, 0F), 1F)) * along;
 
             float frequency = (0.5F + stiffness * (SPRING_TOP_HZ - 0.5F)) * (float) Math.sqrt(falloff);
 
@@ -66,6 +75,35 @@ public final class PhysicsJoints
              * shape without overshooting it. This used to start at 0.1, which is a bell: the strand
              * sprang past the pose, came back past it, and did that for a second and a half after
              * every step the character took. Underdamped springs are half of what "sharp" meant. */
+            float ratio = 0.25F + damping * 0.75F;
+
+            for (MotorSettings motor : new MotorSettings[] {constraint.getSwingMotorSettings(), constraint.getTwistMotorSettings()})
+            {
+                motor.getSpringSettings().setFrequency(frequency);
+                motor.getSpringSettings().setDamping(ratio);
+            }
+        }
+    }
+
+    /**
+     * A ragdoll joint's muscle: the same position motor, pulling towards a target the rig moves
+     * every tick to the animated pose — so the body fights to hold its keyframes with this much
+     * strength, and 0 is the strings cut.
+     *
+     * <p>The spring is what limits the pull, deliberately: a torque cap would make a heavy torso
+     * and a light hand answer the same knob differently, while a frequency answers the same on
+     * both because Jolt scales it by the part's inertia.</p>
+     */
+    public static void muscle(SwingTwistConstraint constraint, float strength, float damping)
+    {
+        EMotorState state = strength > 0F ? EMotorState.Position : EMotorState.Off;
+
+        constraint.setSwingMotorState(state);
+        constraint.setTwistMotorState(state);
+
+        if (strength > 0F)
+        {
+            float frequency = 0.5F + strength * (SPRING_TOP_HZ - 0.5F);
             float ratio = 0.25F + damping * 0.75F;
 
             for (MotorSettings motor : new MotorSettings[] {constraint.getSwingMotorSettings(), constraint.getTwistMotorSettings()})

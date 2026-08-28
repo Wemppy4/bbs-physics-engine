@@ -54,6 +54,8 @@ public class UIChainSection extends UIBoneSection
     public UITrackpad damping;
     public UITrackpad mass;
     public UITrackpad gravity;
+    public UITrackpad falloff;
+    public UITrackpad bend;
     public UIToggle selfCollision;
 
     /** Says where a strand's shape comes from — see the class note on why it comes from there. */
@@ -74,6 +76,18 @@ public class UIChainSection extends UIBoneSection
         this.damping = this.knob(0D, 1D, PhysicsKeys.CHAIN_DAMPING, (v) -> this.edit((chain) -> chain.withDamping(v)));
         this.mass = this.knob(0.01D, 100D, PhysicsKeys.CHAIN_MASS, (v) -> this.edit((chain) -> chain.withMass(v)));
         this.gravity = this.knob(-2D, 2D, PhysicsKeys.BALLOON_GRAVITY, (v) -> this.edit((chain) -> chain.withGravity(v)));
+        this.falloff = this.knob(0D, 1D, PhysicsKeys.CHAIN_FALLOFF, (v) -> this.edit((chain) -> chain.withFalloff(v)));
+
+        /* Degrees, so it steps in fives like the ragdoll's angles do. */
+        this.bend = new UITrackpad((v) ->
+        {
+            if (!this.syncing)
+            {
+                this.edit((chain) -> chain.withBend(v.floatValue()));
+            }
+        });
+        this.bend.limit(5D, 180D).increment(5D).values(1D, 0.5D, 5D);
+        this.bend.tooltip(PhysicsKeys.CHAIN_BEND);
 
         this.selfCollision = new UIToggle(PhysicsKeys.CHAIN_SELF_COLLISION, false, (b) ->
         {
@@ -199,6 +213,8 @@ public class UIChainSection extends UIBoneSection
             this.damping.setValue(this.chain.damping());
             this.mass.setValue(this.chain.mass());
             this.gravity.setValue(this.chain.gravity());
+            this.falloff.setValue(this.chain.falloff());
+            this.bend.setValue(this.chain.bend());
             this.selfCollision.setValue(this.chain.selfCollision());
         }
         finally
@@ -221,6 +237,7 @@ public class UIChainSection extends UIBoneSection
         if (!this.chain.bones().isEmpty())
         {
             this.add(this.stiffness, this.damping);
+            this.add(UI.row(this.falloff, this.bend));
             this.add(UI.row(this.mass, this.gravity));
             this.add(this.selfCollision, this.shapeHint);
         }

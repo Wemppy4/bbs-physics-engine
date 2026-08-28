@@ -33,24 +33,70 @@ public final class PhysicsForms
     private PhysicsForms()
     {}
 
-    /** The body modifier of {@code form}, never null; empty when it has none. */
+    /**
+     * The body modifier of {@code form}, never null; empty when it has none.
+     *
+     * <p>The flags come from the stored blob and the numbers from the form's knob values, which is
+     * where keyframes land — so what this returns on a tick is what the timeline says on that tick,
+     * and every rig that re-reads its modifier per tick follows the keyframes for free.</p>
+     *
+     * <p>A blob written before the numbers moved out still carries them; the first read seeds the
+     * knobs from it and strips them, once, so the two never disagree afterwards.</p>
+     */
     public static FormBody getBody(Form form)
     {
         ValueData value = bodyValue(form);
 
-        return value == null ? FormBody.EMPTY : BodyIO.fromData(value.get());
+        if (value == null || !(form instanceof IPhysicsForm physics))
+        {
+            return FormBody.EMPTY;
+        }
+
+        FormBody body = BodyIO.fromData(value.get());
+
+        if (BodyIO.hasKnobs(value.get()))
+        {
+            for (BodyKnob knob : BodyKnob.values())
+            {
+                physics.bbs_physics$getBodyKnob(knob).set(knob.of(body));
+            }
+
+            MapType stripped = BodyIO.toData(body, false);
+
+            value.set(stripped.isEmpty() ? null : stripped);
+
+            return body;
+        }
+
+        for (BodyKnob knob : BodyKnob.values())
+        {
+            body = knob.into(body, physics.bbs_physics$getBodyKnob(knob).get());
+        }
+
+        return body;
     }
 
     public static void setBody(Form form, FormBody body)
     {
         ValueData value = bodyValue(form);
 
-        if (value == null)
+        if (value == null || !(form instanceof IPhysicsForm physics))
         {
             return;
         }
 
-        MapType map = BodyIO.toData(body);
+        for (BodyKnob knob : BodyKnob.values())
+        {
+            PhysicsKnobValue stored = physics.bbs_physics$getBodyKnob(knob);
+            float wanted = knob.of(body);
+
+            if (stored.getOriginalValue() != wanted)
+            {
+                stored.set(wanted);
+            }
+        }
+
+        MapType map = BodyIO.toData(body, false);
 
         value.set(map.isEmpty() ? null : map);
     }

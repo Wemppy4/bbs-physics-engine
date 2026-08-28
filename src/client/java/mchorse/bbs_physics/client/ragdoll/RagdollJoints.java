@@ -14,6 +14,7 @@ import mchorse.bbs_physics.client.scene.FilmScene;
 import mchorse.bbs_physics.engine.PhysicsMath;
 import mchorse.bbs_physics.ragdoll.RagdollJoint;
 import mchorse.bbs_physics.ragdoll.RagdollJointKind;
+import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -38,11 +39,12 @@ import java.util.Map;
 public final class RagdollJoints
 {
     /**
-     * A light resistance in every joint, in newton-metres. Without any, a free ragdoll's limbs swing
-     * like pendulums in a vacuum and the whole body jitters against its limits; this is the
-     * difference between a body and a wind chime. Not exposed as a setting until someone needs it.
+     * A joint as built: its settings, and — for a cone — the rotation of its constraint space in
+     * the world, which is what a muscle needs to name a target in that space. Null for a hinge or
+     * a weld, which have no muscle.
      */
-    private static final float FRICTION = 3F;
+    public record Built(TwoBodyConstraintSettings settings, Quaternionf frame)
+    {}
 
     private RagdollJoints()
     {}
@@ -58,8 +60,8 @@ public final class RagdollJoints
      * @param formPath   the model form's own path, which bone paths are built from
      * @param scene      the scene, for the origin every point handed to Jolt is measured from
      */
-    public static TwoBodyConstraintSettings build(RagdollJoint joint, String bone, String bonePath, String parentBone, String parentPath,
-        String formPath, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene)
+    public static Built build(RagdollJoint joint, String bone, String bonePath, String parentBone, String parentPath,
+        String formPath, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, float friction)
     {
         MatrixCacheEntry entry = matrices.get(bonePath);
 
@@ -79,9 +81,9 @@ public final class RagdollJoints
 
         return switch (joint.kind())
         {
-            case FIXED -> weld(world, parentPath, matrices, actorWorld);
-            case HINGE -> hinge(joint, world, point);
-            default -> cone(joint, bone, parentBone, pivot, point, formPath, groups, matrices, actorWorld);
+            case FIXED -> new Built(weld(world, parentPath, matrices, actorWorld), null);
+            case HINGE -> new Built(hinge(joint, world, point, friction), null);
+            default -> cone(joint, bone, parentBone, pivot, point, formPath, groups, matrices, actorWorld, friction);
         };
     }
 
@@ -127,7 +129,7 @@ public final class RagdollJoints
      * of a cubic bone carries the Ry(π) flip (§10.1), consistently for every bone, so the author
      * picks the axis that looks right in the preview and it stays right.
      */
-    private static TwoBodyConstraintSettings hinge(RagdollJoint joint, Matrix4f world, RVec3 point)
+    private static TwoBodyConstraintSettings hinge(RagdollJoint joint, Matrix4f world, RVec3 point, float friction)
     {
         HingeConstraintSettings hinge = new HingeConstraintSettings();
         Vector3f axis = boneAxis(world, joint.hingeAxis());
@@ -141,7 +143,7 @@ public final class RagdollJoints
         hinge.setNormalAxis2(new Vec3(normal.x, normal.y, normal.z));
         hinge.setLimitsMin((float) Math.toRadians(joint.hingeMin()));
         hinge.setLimitsMax((float) Math.toRadians(joint.hingeMax()));
-        hinge.setMaxFrictionTorque(FRICTION);
+        hinge.setMaxFrictionTorque(friction);
 
         return hinge;
     }
@@ -150,8 +152,8 @@ public final class RagdollJoints
      * The soft cone every bone gets until it is told otherwise. It leans around the bone's rest
      * direction — see {@link #boneDirection}.
      */
-    private static TwoBodyConstraintSettings cone(RagdollJoint joint, String bone, String parentBone, Vector3f pivot, RVec3 point,
-        String formPath, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld)
+    private static Built cone(RagdollJoint joint, String bone, String parentBone, Vector3f pivot, RVec3 point,
+        String formPath, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld, float friction)
     {
         SwingTwistConstraintSettings cone = new SwingTwistConstraintSettings();
         Vector3f axis = boneDirection(bone, parentBone, pivot, formPath, groups, matrices, actorWorld);
@@ -163,16 +165,25 @@ public final class RagdollJoints
         cone.setTwistAxis2(new Vec3(axis.x, axis.y, axis.z));
         cone.setPlaneAxis1(new Vec3(plane.x, plane.y, plane.z));
         cone.setPlaneAxis2(new Vec3(plane.x, plane.y, plane.z));
+        /* Two half-angles: a round cone when they agree, an ellipse — an elbow, a knee — when
+         * they do not. */
         cone.setNormalHalfConeAngle((float) Math.toRadians(joint.swing()));
-        cone.setPlaneHalfConeAngle((float) Math.toRadians(joint.swing()));
+        cone.setPlaneHalfConeAngle((float) Math.toRadians(joint.swingPlane()));
 
         /* The twist range the author gives is min..max; Jolt wants it symmetric around the rest
          * twist only in sign convention, so it is passed straight through. */
         cone.setTwistMinAngle((float) Math.toRadians(joint.twistMin()));
         cone.setTwistMaxAngle((float) Math.toRadians(joint.twistMax()));
-        cone.setMaxFrictionTorque(FRICTION);
+        cone.setMaxFrictionTorque(friction);
 
-        return cone;
+        /* The constraint's own frame, as Jolt builds it from world-space axes: X the twist axis, Y
+         * the normal (plane × twist), Z the plane axis. A muscle's target is named in this frame
+         * — see RagdollRig — and it has to be built exactly the way Jolt builds its own, or the
+         * target is a rotation of the right amount about the wrong axis. */
+        Vector3f normal = new Vector3f(plane).cross(axis).normalize();
+        Quaternionf frame = new Matrix3f(axis, normal, plane).getNormalizedRotation(new Quaternionf());
+
+        return new Built(cone, frame);
     }
 
     /** One of the bone's local axes (0=X, 1=Y, 2=Z), in world space as the bone stands. */

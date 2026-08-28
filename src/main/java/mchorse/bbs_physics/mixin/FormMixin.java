@@ -1,10 +1,13 @@
 package mchorse.bbs_physics.mixin;
 
 import mchorse.bbs_mod.forms.forms.Form;
+import mchorse.bbs_mod.settings.values.base.BaseValue;
 import mchorse.bbs_mod.settings.values.core.ValueData;
 import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 import mchorse.bbs_physics.collision.FormCollisions;
+import mchorse.bbs_physics.forms.BodyKnob;
 import mchorse.bbs_physics.forms.IPhysicsForm;
+import mchorse.bbs_physics.forms.PhysicsKnobValue;
 import mchorse.bbs_physics.forms.PhysicsAuthorityValue;
 import mchorse.bbs_physics.forms.PhysicsBodyState;
 import mchorse.bbs_physics.forms.PhysicsForms;
@@ -24,7 +27,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * invisible, which in BBS means "not a timeline track": a shape and a switch are descriptions, not
  * things to animate. The handle is deliberately visible, which is exactly what turns it into a
  * track (and it hides itself while the form has no physics — see {@link PhysicsAuthorityValue}).
- * </p>
+ * The modifier's numbers are visible values of the same kind ({@link PhysicsKnobValue}), one per
+ * knob, which is what lets an author keyframe a body's friction or gravity: the blob keeps only
+ * what cannot be animated.</p>
+ *
+ * <p>{@code canPersist} is overridden here — a plain method, which the mixin merges in as an
+ * override of {@code ValueGroup}'s — so that a knob is written to the file only while it means
+ * something: while the modifier is on the form, or while the author has moved it off its default.
+ * Every form in every film would otherwise carry six physics numbers it never uses.</p>
  *
  * <p>All of it on the base {@code Form} rather than per type, because none of it is a property of
  * being a model: a block, an item and a group have a shape too, and any of them can be dropped.
@@ -45,6 +55,9 @@ public class FormMixin implements IPhysicsForm
 
     @Unique
     private PhysicsBodyState bbs_physics$bodyState;
+
+    @Unique
+    private PhysicsKnobValue[] bbs_physics$bodyKnobs;
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void bbs_physics$addPhysics(CallbackInfo info)
@@ -68,6 +81,33 @@ public class FormMixin implements IPhysicsForm
         form.add(collision);
         form.add(body);
         form.add(authority);
+
+        BodyKnob[] knobs = BodyKnob.values();
+
+        this.bbs_physics$bodyKnobs = new PhysicsKnobValue[knobs.length];
+
+        for (BodyKnob knob : knobs)
+        {
+            PhysicsKnobValue value = new PhysicsKnobValue(knob.id, knob.fallback, knob.min, knob.max, PhysicsForms::isBody);
+
+            this.bbs_physics$bodyKnobs[knob.ordinal()] = value;
+            form.add(value);
+        }
+    }
+
+    /**
+     * Overrides {@code ValueGroup.canPersist} for this form — see the class note. Everything that
+     * is not a physics knob is written as before.
+     */
+    protected boolean canPersist(BaseValue value)
+    {
+        return !(value instanceof PhysicsKnobValue knob) || knob.isWorthStoring();
+    }
+
+    @Override
+    public PhysicsKnobValue bbs_physics$getBodyKnob(BodyKnob knob)
+    {
+        return this.bbs_physics$bodyKnobs[knob.ordinal()];
     }
 
     @Override

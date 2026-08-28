@@ -1,6 +1,8 @@
 package mchorse.bbs_physics.forms;
 
 import mchorse.bbs_mod.settings.values.core.ValueData;
+import mchorse.bbs_physics.chain.ChainKnob;
+import mchorse.bbs_physics.ragdoll.RagdollKnob;
 import mchorse.bbs_physics.ragdoll.RagdollState;
 
 /**
@@ -33,4 +35,10 @@ public interface IModelPhysicsForm
     RagdollState bbs_physics$getChainState();
 
     void bbs_physics$setChainState(RagdollState state);
+
+    /** One keyframable number of the hair modifier — see {@link PhysicsKnobValue}. */
+    PhysicsKnobValue bbs_physics$getChainKnob(ChainKnob knob);
+
+    /** One keyframable number of the ragdoll — see {@link PhysicsKnobValue}. */
+    PhysicsKnobValue bbs_physics$getRagdollKnob(RagdollKnob knob);
 }

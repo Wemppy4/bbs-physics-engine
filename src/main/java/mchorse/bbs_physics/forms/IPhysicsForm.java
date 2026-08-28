@@ -25,6 +25,9 @@ public interface IPhysicsForm
 
     ValueFloat bbs_physics$getAuthority();
 
+    /** One keyframable number of the rigid body modifier — see {@link PhysicsKnobValue}. */
+    PhysicsKnobValue bbs_physics$getBodyKnob(BodyKnob knob);
+
     PhysicsBodyState bbs_physics$getBodyState();
 
     void bbs_physics$setBodyState(PhysicsBodyState state);

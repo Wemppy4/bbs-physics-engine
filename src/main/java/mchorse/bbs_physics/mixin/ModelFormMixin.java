@@ -3,9 +3,12 @@ package mchorse.bbs_physics.mixin;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.settings.values.core.ValueData;
+import mchorse.bbs_physics.chain.ChainKnob;
 import mchorse.bbs_physics.chain.FormChains;
-import mchorse.bbs_physics.ragdoll.FormRagdolls;
 import mchorse.bbs_physics.forms.IModelPhysicsForm;
+import mchorse.bbs_physics.forms.PhysicsKnobValue;
+import mchorse.bbs_physics.ragdoll.FormRagdolls;
+import mchorse.bbs_physics.ragdoll.RagdollKnob;
 import mchorse.bbs_physics.ragdoll.RagdollState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -38,6 +41,12 @@ public class ModelFormMixin implements IModelPhysicsForm
     @Unique
     private RagdollState bbs_physics$chainState;
 
+    @Unique
+    private PhysicsKnobValue[] bbs_physics$chainKnobs;
+
+    @Unique
+    private PhysicsKnobValue[] bbs_physics$ragdollKnobs;
+
     @Inject(method = "<init>", at = @At("RETURN"))
     private void bbs_physics$addRagdoll(CallbackInfo info)
     {
@@ -54,6 +63,39 @@ public class ModelFormMixin implements IModelPhysicsForm
 
         form.add(ragdoll);
         form.add(chain);
+
+        /* The keyframable numbers of both modifiers, each hiding while its modifier is off — see
+         * PhysicsKnobValue, and FormMixin for the rule that keeps them out of the file until then. */
+        this.bbs_physics$chainKnobs = new PhysicsKnobValue[ChainKnob.values().length];
+        this.bbs_physics$ragdollKnobs = new PhysicsKnobValue[RagdollKnob.values().length];
+
+        for (ChainKnob knob : ChainKnob.values())
+        {
+            PhysicsKnobValue value = new PhysicsKnobValue(knob.id, knob.fallback, knob.min, knob.max, FormChains::isEnabled);
+
+            this.bbs_physics$chainKnobs[knob.ordinal()] = value;
+            form.add(value);
+        }
+
+        for (RagdollKnob knob : RagdollKnob.values())
+        {
+            PhysicsKnobValue value = new PhysicsKnobValue(knob.id, knob.fallback, knob.min, knob.max, FormRagdolls::isEnabled);
+
+            this.bbs_physics$ragdollKnobs[knob.ordinal()] = value;
+            form.add(value);
+        }
+    }
+
+    @Override
+    public PhysicsKnobValue bbs_physics$getChainKnob(ChainKnob knob)
+    {
+        return this.bbs_physics$chainKnobs[knob.ordinal()];
+    }
+
+    @Override
+    public PhysicsKnobValue bbs_physics$getRagdollKnob(RagdollKnob knob)
+    {
+        return this.bbs_physics$ragdollKnobs[knob.ordinal()];
     }
 
     @Override

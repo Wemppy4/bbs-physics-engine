@@ -45,6 +45,16 @@ public class PhysicsKeys
     public static final IKey MASS = L10n.lang("bbs_physics.forms.body.mass");
     public static final IKey FRICTION = L10n.lang("bbs_physics.forms.body.friction");
     public static final IKey RESTITUTION = L10n.lang("bbs_physics.forms.body.restitution");
+    public static final IKey BODY_DAMPING = L10n.lang("bbs_physics.forms.body.damping");
+    public static final IKey BODY_LINEAR_DAMPING_TOOLTIP = L10n.lang("bbs_physics.forms.body.linear_damping_tooltip");
+    public static final IKey BODY_ANGULAR_DAMPING_TOOLTIP = L10n.lang("bbs_physics.forms.body.angular_damping_tooltip");
+    public static final IKey BODY_GRAVITY = L10n.lang("bbs_physics.forms.body.gravity");
+    public static final IKey BODY_GRAVITY_TOOLTIP = L10n.lang("bbs_physics.forms.body.gravity_tooltip");
+    public static final IKey BODY_ASLEEP = L10n.lang("bbs_physics.forms.body.asleep");
+    public static final IKey BODY_ASLEEP_TOOLTIP = L10n.lang("bbs_physics.forms.body.asleep_tooltip");
+    public static final IKey BODY_LOCK_MOVE = L10n.lang("bbs_physics.forms.body.lock_move");
+    public static final IKey BODY_LOCK_SPIN = L10n.lang("bbs_physics.forms.body.lock_spin");
+    public static final IKey BODY_LOCK_TOOLTIP = L10n.lang("bbs_physics.forms.body.lock_tooltip");
 
     public static final IKey CLOTH_TITLE = L10n.lang("bbs_physics.forms.cloth.title");
     public static final IKey CLOTH_SHEET = L10n.lang("bbs_physics.forms.cloth.sheet");
@@ -99,6 +109,8 @@ public class PhysicsKeys
     public static final IKey CHAIN_SHAPE_HINT = L10n.lang("bbs_physics.forms.chain.shape_hint");
     public static final IKey CHAIN_SELF_COLLISION = L10n.lang("bbs_physics.forms.chain.self_collision");
     public static final IKey CHAIN_SELF_COLLISION_TOOLTIP = L10n.lang("bbs_physics.forms.chain.self_collision_tooltip");
+    public static final IKey CHAIN_FALLOFF = L10n.lang("bbs_physics.forms.chain.falloff");
+    public static final IKey CHAIN_BEND = L10n.lang("bbs_physics.forms.chain.bend");
 
     public static final IKey SCENE_TITLE = L10n.lang("bbs_physics.scene.title");
     public static final IKey SCENE_NONE = L10n.lang("bbs_physics.scene.none");
@@ -209,6 +221,18 @@ public class PhysicsKeys
     public static final IKey RAGDOLL_KIND_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.kind_tooltip");
     public static final IKey RAGDOLL_SWING = L10n.lang("bbs_physics.forms.ragdoll.swing");
     public static final IKey RAGDOLL_SWING_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.swing_tooltip");
+    public static final IKey RAGDOLL_SWING_PLANE_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.swing_plane_tooltip");
+    public static final IKey RAGDOLL_MASS = L10n.lang("bbs_physics.forms.ragdoll.mass");
+    public static final IKey RAGDOLL_MASS_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.mass_tooltip");
+    public static final IKey RAGDOLL_DAMPING = L10n.lang("bbs_physics.forms.ragdoll.damping");
+    public static final IKey RAGDOLL_DAMPING_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.damping_tooltip");
+    public static final IKey RAGDOLL_FRICTION = L10n.lang("bbs_physics.forms.ragdoll.friction");
+    public static final IKey RAGDOLL_FRICTION_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.friction_tooltip");
+    public static final IKey RAGDOLL_MUSCLES = L10n.lang("bbs_physics.forms.ragdoll.muscles");
+    public static final IKey RAGDOLL_MUSCLES_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.muscles_tooltip");
+    public static final IKey RAGDOLL_MUSCLE_DAMPING_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.muscle_damping_tooltip");
+    public static final IKey RAGDOLL_SELF_COLLIDE = L10n.lang("bbs_physics.forms.ragdoll.self_collide");
+    public static final IKey RAGDOLL_SELF_COLLIDE_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.self_collide_tooltip");
     public static final IKey RAGDOLL_TWIST = L10n.lang("bbs_physics.forms.ragdoll.twist");
     public static final IKey RAGDOLL_HINGE_AXIS = L10n.lang("bbs_physics.forms.ragdoll.hinge_axis");
     public static final IKey RAGDOLL_HINGE_AXIS_TOOLTIP = L10n.lang("bbs_physics.forms.ragdoll.hinge_axis_tooltip");

@@ -4,6 +4,7 @@ import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.settings.values.core.ValueData;
 import mchorse.bbs_physics.forms.IModelPhysicsForm;
+import mchorse.bbs_physics.forms.PhysicsKnobValue;
 import mchorse.bbs_physics.ragdoll.RagdollState;
 
 /**
@@ -24,19 +25,58 @@ public final class FormChains
     {
         ValueData value = value(form);
 
-        return value == null ? FormChain.EMPTY : ChainIO.fromData(value.get());
+        if (value == null || !(form instanceof IModelPhysicsForm model))
+        {
+            return FormChain.EMPTY;
+        }
+
+        FormChain chain = ChainIO.fromData(value.get());
+
+        /* The numbers live as knob values of the form, where keyframes reach them — see
+         * PhysicsForms.getBody for the rule and the one-time migration of an older blob. */
+        if (ChainIO.hasKnobs(value.get()))
+        {
+            for (ChainKnob knob : ChainKnob.values())
+            {
+                model.bbs_physics$getChainKnob(knob).set(knob.of(chain));
+            }
+
+            MapType stripped = ChainIO.toData(chain, false);
+
+            value.set(stripped.isEmpty() ? null : stripped);
+
+            return chain;
+        }
+
+        for (ChainKnob knob : ChainKnob.values())
+        {
+            chain = knob.into(chain, model.bbs_physics$getChainKnob(knob).get());
+        }
+
+        return chain;
     }
 
     public static void set(Form form, FormChain chain)
     {
         ValueData value = value(form);
 
-        if (value == null)
+        if (value == null || !(form instanceof IModelPhysicsForm model))
         {
             return;
         }
 
-        MapType map = ChainIO.toData(chain);
+        for (ChainKnob knob : ChainKnob.values())
+        {
+            PhysicsKnobValue stored = model.bbs_physics$getChainKnob(knob);
+            float wanted = knob.of(chain);
+
+            if (stored.getOriginalValue() != wanted)
+            {
+                stored.set(wanted);
+            }
+        }
+
+        MapType map = ChainIO.toData(chain, false);
 
         value.set(map.isEmpty() ? null : map);
     }
