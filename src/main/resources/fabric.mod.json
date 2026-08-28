@@ -2,8 +2,8 @@
     "schemaVersion": 1,
     "id": "bbs_physics",
     "version": "${version}",
-    "name": "BBS Physics Engine",
-    "description": "A physics engine addon for the BBS mod",
+    "name": "BBS Physics Engine (CML)",
+    "description": "A physics engine addon for BBS CML Edition. This build is for BBS CML only — the addon compiles against its API, and will not work on plain BBS.",
     "authors": [
         "Wemppy"
     ],
