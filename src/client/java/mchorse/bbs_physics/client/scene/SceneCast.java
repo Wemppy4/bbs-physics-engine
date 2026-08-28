@@ -89,6 +89,20 @@ public final class SceneCast implements Iterable<SceneCast.Member>
         return this.members.isEmpty() ? null : this.members.get(0).entity;
     }
 
+    /** The actor played from {@code replay}, or null when the cast has none for it. */
+    public Member find(Replay replay)
+    {
+        for (Member member : this.members)
+        {
+            if (member.replay == replay)
+            {
+                return member;
+            }
+        }
+
+        return null;
+    }
+
     /** Takes a copy of where every actor stands, because the simulation is about to move them. */
     public void borrow()
     {

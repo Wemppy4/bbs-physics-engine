@@ -193,6 +193,12 @@ public class FilmScenes
         }
     }
 
+    /** The live scene of this controller, or null when it has none. */
+    public static FilmScene get(BaseFilmController controller)
+    {
+        return controller == null ? null : SCENES.get(controller);
+    }
+
     /**
      * What the simulation of this film is doing, or null when it has none — physics switched off,
      * a controller without a scene, or a film that failed to build one.

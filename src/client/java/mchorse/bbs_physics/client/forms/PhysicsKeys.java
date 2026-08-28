@@ -24,6 +24,16 @@ public class PhysicsKeys
     public static final IKey PHYSICS_REMOVE = L10n.lang("bbs_physics.forms.physics.remove");
     public static final IKey PHYSICS_UNMARKED = L10n.lang("bbs_physics.forms.physics.unmarked");
 
+    public static final IKey BAKE = L10n.lang("bbs_physics.forms.physics.bake");
+    public static final IKey BAKE_TOOLTIP = L10n.lang("bbs_physics.forms.physics.bake_tooltip");
+    public static final IKey BAKE_TITLE = L10n.lang("bbs_physics.forms.physics.bake_title");
+    public static final IKey BAKE_CONFIRM = L10n.lang("bbs_physics.forms.physics.bake_confirm");
+    /** %s keys, %s tracks, %s ticks. */
+    public static final IKey BAKE_DONE = L10n.lang("bbs_physics.forms.physics.bake_done");
+    public static final IKey BAKE_NO_SCENE = L10n.lang("bbs_physics.forms.physics.bake_no_scene");
+    public static final IKey BAKE_NO_ACTOR = L10n.lang("bbs_physics.forms.physics.bake_no_actor");
+    public static final IKey BAKE_FAILED = L10n.lang("bbs_physics.forms.physics.bake_failed");
+
     public static final IKey BODY_MASS_TOOLTIP = L10n.lang("bbs_physics.forms.body.mass_tooltip");
     public static final IKey BODY_TYPE = L10n.lang("bbs_physics.forms.body.type");
     public static final IKey BODY_TYPE_ACTIVE = L10n.lang("bbs_physics.forms.body.type_active");

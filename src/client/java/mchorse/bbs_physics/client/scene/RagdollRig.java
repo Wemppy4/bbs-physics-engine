@@ -1269,6 +1269,21 @@ public class RagdollRig implements SceneRig
     }
 
     /**
+     * Puts the recorded pose for {@code tick} into the model's state, as a jump, and tells the
+     * bake the model has bones to read off — the bake runs the substitution itself.
+     */
+    @Override
+    public void bake(PhysicsCache cache, int tick, PhysicsBake bake)
+    {
+        this.readCache(cache, tick, true);
+
+        if (this.recorded)
+        {
+            bake.bones(this.form, this.formPath);
+        }
+    }
+
+    /**
      * The frame {@link #read} expresses its answer against: the actor's placement times the model
      * form's own frame times the flip — the left-hand side of every bone's cache entry.
      */

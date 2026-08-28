@@ -1,9 +1,21 @@
 package mchorse.bbs_physics.client.forms;
 
+import mchorse.bbs_mod.BBSModClient;
+import mchorse.bbs_mod.film.replays.Replay;
+import mchorse.bbs_mod.forms.FormUtils;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.l10n.keys.IKey;
 import mchorse.bbs_mod.forms.forms.ModelForm;
+import mchorse.bbs_mod.ui.dashboard.UIDashboard;
+import mchorse.bbs_mod.ui.film.UIFilmPanel;
 import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
+import mchorse.bbs_mod.ui.framework.elements.overlay.UIConfirmOverlayPanel;
+import mchorse.bbs_mod.ui.framework.elements.overlay.UIMessageOverlayPanel;
+import mchorse.bbs_mod.ui.framework.elements.overlay.UIOverlay;
+import mchorse.bbs_physics.BBSPhysics;
+import mchorse.bbs_physics.client.scene.FilmScene;
+import mchorse.bbs_physics.client.scene.FilmScenes;
+import mchorse.bbs_physics.client.scene.PhysicsBake;
 import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.framework.elements.UIElement;
@@ -50,6 +62,9 @@ import java.util.function.UnaryOperator;
 public class UIPhysicsFormPanel extends UIFormPanel<Form>
 {
     private final UIButton addModifier;
+
+    /** Blender's "Bake to Keyframes": the recording becomes ordinary keys, see {@link PhysicsBake}. */
+    private final UIButton bake;
 
     private final UIModifierSection bodySection;
     private final UICirculate type;
@@ -112,6 +127,8 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         super(editor);
 
         this.addModifier = new UIButton(PhysicsKeys.PHYSICS_ADD, (b) -> this.openModifierMenu());
+        this.bake = new UIButton(PhysicsKeys.BAKE, (b) -> this.confirmBake());
+        this.bake.tooltip(PhysicsKeys.BAKE_TOOLTIP);
 
         /* Type, as three-way as it needs to be: Blender's Active/Passive, no more. */
         this.type = new UICirculate((b) -> this.editBody((body) -> body.withPassive(b.getValue() == 1)));
@@ -508,7 +525,101 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
             this.options.add(this.chainSection);
         }
 
+        /* Under every modifier, because it takes all of them at once: the form's recording is one
+         * thing, whatever combination of body, ragdoll and hair produced it. */
+        if (body || ragdoll || chain)
+        {
+            this.options.add(this.bake);
+        }
+
         this.options.resize();
+    }
+
+    /* Baking */
+
+    /**
+     * Asks first. The bake is one step of the film's undo history, so it is not the point of no
+     * return it is in Blender — but it overwrites every key on the tracks it touches, and an author
+     * who clicked the wrong form would rather hear that before than after.
+     */
+    private void confirmBake()
+    {
+        if (this.form == null)
+        {
+            return;
+        }
+
+        UIOverlay.addOverlay(this.getContext(), new UIConfirmOverlayPanel(PhysicsKeys.BAKE_TITLE, PhysicsKeys.BAKE_CONFIRM, (confirmed) ->
+        {
+            if (confirmed)
+            {
+                this.bake();
+            }
+        }));
+    }
+
+    /**
+     * Bakes this form's physics into the replay it is played from.
+     *
+     * <p>The form on this panel is the editor's working copy, not the replay's form and not the
+     * actor the scene simulates, so the bake is addressed by the one thing all three share — the
+     * form's path in the tree — and the replay is the one the film editor has selected, which is
+     * the replay this editor was opened for. The keys go straight into the film; the handle on
+     * this copy is set to 1 alongside, so that what the author sees here and what the film holds
+     * agree, and so that finishing the edit keeps it.</p>
+     */
+    private void bake()
+    {
+        UIFilmPanel panel = this.getParent(UIFilmPanel.class);
+
+        if (panel == null)
+        {
+            UIDashboard dashboard = BBSModClient.getDashboardIfCreated();
+
+            panel = dashboard == null ? null : dashboard.getPanel(UIFilmPanel.class);
+        }
+
+        Replay replay = panel == null || panel.replayEditor == null ? null : panel.replayEditor.getReplay();
+        FilmScene scene = panel == null || panel.getController() == null ? null : FilmScenes.get(panel.getController().editorController);
+
+        if (replay == null || scene == null)
+        {
+            this.message(PhysicsKeys.BAKE_NO_SCENE);
+
+            return;
+        }
+
+        PhysicsBake.Result result;
+
+        try
+        {
+            result = scene.bake(replay, FormUtils.getPath(this.form));
+        }
+        catch (Throwable e)
+        {
+            BBSPhysics.LOGGER.error("Baking the physics of '{}' into keyframes failed.", this.form.getDisplayName(), e);
+
+            this.message(PhysicsKeys.BAKE_FAILED);
+
+            return;
+        }
+
+        if (result == null)
+        {
+            this.message(PhysicsKeys.BAKE_NO_ACTOR);
+
+            return;
+        }
+
+        PhysicsForms.setAuthority(this.form, 1F);
+        this.sync();
+
+        this.message(PhysicsKeys.BAKE_DONE.format(result.keys(), result.channels(), result.ticks()));
+    }
+
+    private void message(IKey message)
+    {
+        UIOverlay.addOverlay(this.getContext(), new UIMessageOverlayPanel(PhysicsKeys.BAKE_TITLE, message));
     }
 
     /**

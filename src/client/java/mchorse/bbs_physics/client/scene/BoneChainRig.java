@@ -918,6 +918,22 @@ public class BoneChainRig implements SceneRig
         }
     }
 
+    /**
+     * Puts the recorded strands for {@code tick} into the model's state, as a jump, and tells the
+     * bake the model has bones to read off — the same way the ragdoll does, since the bake runs
+     * the substitution for both at once.
+     */
+    @Override
+    public void bake(PhysicsCache cache, int tick, PhysicsBake bake)
+    {
+        this.readCache(cache, tick, true);
+
+        if (this.recorded)
+        {
+            bake.bones(this.form, this.formPath);
+        }
+    }
+
     /** Hands the renderer the recorded strands for the frame being drawn. */
     @Override
     public void readCache(PhysicsCache cache, int tick, boolean teleport)
