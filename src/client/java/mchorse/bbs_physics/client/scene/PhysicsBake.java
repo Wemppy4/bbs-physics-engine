@@ -13,6 +13,7 @@ import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.settings.values.base.BaseValue;
 import mchorse.bbs_mod.utils.joml.Matrices;
+import mchorse.bbs_mod.utils.keyframes.Keyframe;
 import mchorse.bbs_mod.utils.keyframes.KeyframeChannel;
 import mchorse.bbs_mod.utils.keyframes.factories.IKeyframeFactory;
 import mchorse.bbs_mod.utils.keyframes.factories.KeyframeFactories;
@@ -28,18 +29,22 @@ import mchorse.bbs_physics.ragdoll.RagdollState;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * Turns the recording of one form's physics into ordinary keyframes of its replay — Blender's
  * "Bake to Keyframes", the last open item of Э3 (§9.3 of the concept).
  *
- * <p><b>What is written.</b> A rigid body becomes keys on the form's own {@code transform}: one
- * per tick, holding exactly the position and rotation the renderer was substituting. A ragdoll or a
+ * <p><b>What is written.</b> A rigid body becomes keys on the form's own {@code transform}, on the
+ * ticks the simulation moved it (see {@link Track}), holding exactly the position and rotation the renderer was substituting. A ragdoll or a
  * strand of hair becomes keys on the per-bone pose tracks — the same tracks the author gets when
  * keyframing a bone by hand — holding the local rotation and shift that land each bone where the
  * simulation had it. After that the film plays the same with the simulation switched off, and every
@@ -82,13 +87,37 @@ public final class PhysicsBake
 
     /** The tick being worked out — of the film, and of the replay (which may loop). */
     private int tick;
-    private float local;
+    private int local;
 
     /** Model forms whose bones answered on this tick, with the path each sits at. */
     private final Map<ModelForm, String> models = new LinkedHashMap<>();
 
-    /** Every key worked out so far: a channel's staging copy per track. */
-    private final Map<String, KeyframeChannel> staged = new LinkedHashMap<>();
+    /** Every key worked out so far, per track. */
+    private final Map<String, Track> staged = new LinkedHashMap<>();
+
+    /**
+     * A track's worked-out values, tick by tick, and which of those ticks the simulation actually
+     * had a say on.
+     *
+     * <p>The distinction is what keeps the bake from flooding the film with keys (the first
+     * thing Вемпи saw): a tick the animation owned outright needs no key at all — its value is
+     * the animation's own, which is already on the track — and a tick on which a body lay still
+     * needs no key either, since the keys either side of the still stretch say the same thing.
+     * Only the ticks the simulation moved something on are written, plus one on each side so the
+     * interpolation into and out of the simulated stretch is anchored, and a flat run inside
+     * collapses to its two ends.</p>
+     */
+    private static final class Track
+    {
+        final IKeyframeFactory<?> factory;
+        final TreeMap<Integer, Transform> values = new TreeMap<>();
+        final Set<Integer> simulated = new HashSet<>();
+
+        Track(IKeyframeFactory<?> factory)
+        {
+            this.factory = factory;
+        }
+    }
 
     /** The tracks the replay already has, read for the values the bake composes on top of. */
     private final Map<String, KeyframeChannel> existing = new HashMap<>();
@@ -142,7 +171,7 @@ public final class PhysicsBake
             value.quat.set(rotation).normalize();
         }
 
-        this.stage(this.transformKey(path), KeyframeFactories.TRANSFORM, value);
+        this.stage(this.transformKey(path), KeyframeFactories.TRANSFORM, value, authority < 1F);
         this.baked.add(path);
     }
 
@@ -227,7 +256,7 @@ public final class PhysicsBake
                     this.solve(group, combined.get(group.id), old, bone.getValue(), value);
                 }
 
-                this.stage(key, KeyframeFactories.POSE_TRANSFORM, value);
+                this.stage(key, KeyframeFactories.POSE_TRANSFORM, value, weight > 0F);
             }
 
             this.baked.add(entry.getValue());
@@ -311,8 +340,18 @@ public final class PhysicsBake
 
         BaseValue.edit(this.film, (film) ->
         {
-            for (Map.Entry<String, KeyframeChannel> entry : this.staged.entrySet())
+            for (Map.Entry<String, Track> entry : this.staged.entrySet())
             {
+                Track track = entry.getValue();
+                List<List<Integer>> runs = runs(track);
+
+                if (runs.isEmpty())
+                {
+                    /* The simulation never had a say on this track — the handle stood at 1 the
+                     * whole film — so the author's keys are left exactly as they were. */
+                    continue;
+                }
+
                 KeyframeChannel channel = this.replay.properties.getOrCreate(root, entry.getKey());
 
                 if (channel == null)
@@ -320,12 +359,36 @@ public final class PhysicsBake
                     continue;
                 }
 
-                /* The whole film is baked, so the whole track is the bake's: what was on it before
-                 * is exactly what the bake replaces. */
-                channel.removeAll();
-                channel.copyOver(entry.getValue(), 0);
+                /* The track is rebuilt as one piece: the author's keys outside the simulated
+                 * stretches, the bake's keys inside them. Two notifications rather than one per
+                 * key, which on a long film is thousands. */
+                KeyframeChannel merged = new KeyframeChannel(entry.getKey(), channel.getFactory());
 
-                keys[0] += entry.getValue().getKeyframes().size();
+                for (Object o : channel.getKeyframes())
+                {
+                    Keyframe<?> keyframe = (Keyframe<?>) o;
+
+                    if (!inside(runs, keyframe.getTick()))
+                    {
+                        Keyframe copy = new Keyframe<>(keyframe.getId(), keyframe.getFactory());
+
+                        copy.fromData(keyframe.toData());
+                        merged.add(copy);
+                    }
+                }
+
+                for (List<Integer> run : runs)
+                {
+                    for (int tick : run)
+                    {
+                        merged.insert(tick, track.values.get(tick));
+                        keys[0]++;
+                    }
+                }
+
+                merged.sort();
+                channel.removeAll();
+                channel.copyOver(merged, 0);
             }
 
             for (String path : this.baked)
@@ -357,9 +420,112 @@ public final class PhysicsBake
      * Puts a key on a track's staging copy. The real track is only touched by {@link #write}: a
      * track made here would be a change to the film outside the one edit the bake is meant to be.
      */
-    private void stage(String key, IKeyframeFactory<?> factory, Transform value)
+    private void stage(String key, IKeyframeFactory<?> factory, Transform value, boolean simulated)
     {
-        this.staged.computeIfAbsent(key, (k) -> new KeyframeChannel(k, factory)).insert(this.local, value);
+        Track track = this.staged.computeIfAbsent(key, (k) -> new Track(factory));
+
+        track.values.put(this.local, value);
+
+        if (simulated)
+        {
+            track.simulated.add(this.local);
+        }
+    }
+
+    /**
+     * The keys a track actually gets: the simulated ticks with one anchor on each side, in runs of
+     * consecutive ticks, each run with its flat stretches collapsed to their two ends.
+     */
+    private static List<List<Integer>> runs(Track track)
+    {
+        List<List<Integer>> runs = new ArrayList<>();
+        List<Integer> run = null;
+        int previous = Integer.MIN_VALUE;
+
+        for (int tick : track.values.keySet())
+        {
+            boolean kept = track.simulated.contains(tick) || track.simulated.contains(tick - 1) || track.simulated.contains(tick + 1);
+
+            if (!kept)
+            {
+                continue;
+            }
+
+            if (run == null || tick != previous + 1)
+            {
+                run = new ArrayList<>();
+                runs.add(run);
+            }
+
+            run.add(tick);
+            previous = tick;
+        }
+
+        for (List<Integer> each : runs)
+        {
+            prune(track, each);
+        }
+
+        return runs;
+    }
+
+    /**
+     * Drops the keys inside a flat stretch: a key equal to the last one kept and to the next one
+     * says nothing the two of them do not, and a crate that has come to rest would otherwise get
+     * a key per tick for the rest of the film. Compared against the last <em>kept</em> key rather
+     * than the previous one, so a slow drift cannot slip under the tolerance one tick at a time.
+     */
+    private static void prune(Track track, List<Integer> run)
+    {
+        if (run.size() < 3)
+        {
+            return;
+        }
+
+        List<Integer> kept = new ArrayList<>(run.size());
+        Transform last = track.values.get(run.get(0));
+
+        kept.add(run.get(0));
+
+        for (int i = 1; i < run.size() - 1; i++)
+        {
+            Transform value = track.values.get(run.get(i));
+            Transform next = track.values.get(run.get(i + 1));
+
+            if (same(last, value) && same(value, next))
+            {
+                continue;
+            }
+
+            kept.add(run.get(i));
+            last = value;
+        }
+
+        kept.add(run.get(run.size() - 1));
+        run.clear();
+        run.addAll(kept);
+    }
+
+    /** Whether a tick falls inside any of the stretches the bake is writing. */
+    private static boolean inside(List<List<Integer>> runs, float tick)
+    {
+        for (List<Integer> run : runs)
+        {
+            if (tick >= run.get(0) && tick <= run.get(run.size() - 1))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Whether two transforms draw the same thing, to a tolerance no viewer can see. */
+    private static boolean same(Transform a, Transform b)
+    {
+        return a.translate.distanceSquared(b.translate) < 1e-8F
+            && a.scale.distanceSquared(b.scale) < 1e-8F
+            && Math.abs(a.createRotation().dot(b.createRotation())) > 1F - 1e-6F;
     }
 
     /** The value a bone track holds on the current tick, or null when it holds nothing. */
