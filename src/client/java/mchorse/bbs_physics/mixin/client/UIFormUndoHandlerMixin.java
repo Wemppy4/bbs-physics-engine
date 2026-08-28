@@ -22,9 +22,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * twenty times a second — and one that is already debounced by the undo timer, so dragging a slider
  * for five seconds does not restart the simulation on every pixel.</p>
  *
- * <p>Only the cast is listened for. A camera clip or a subtitle changes nothing physical, and
- * restarting a simulation because the author moved the camera would be visible as the scene
- * twitching for no reason.</p>
+ * <p>Only what the simulation reads is listened for — see {@link mchorse.bbs_physics.client.scene.SceneEdits}.
+ * A camera clip, a label or a colour changes nothing physical, and restarting a simulation for
+ * it would be visible as the bar under the timeline going grey for no reason.</p>
  */
 @Mixin(UIFormUndoHandler.class)
 public class UIFormUndoHandlerMixin
@@ -32,9 +32,6 @@ public class UIFormUndoHandlerMixin
     @Inject(method = "handleValue", at = @At("HEAD"))
     private void bbs_physics$onValueChanged(BaseValue value, CallbackInfo info)
     {
-        if (value != null && value.getPath().toString().contains("replays"))
-        {
-            FilmScenes.onFilmEdited();
-        }
+        FilmScenes.onFilmEdited(value);
     }
 }

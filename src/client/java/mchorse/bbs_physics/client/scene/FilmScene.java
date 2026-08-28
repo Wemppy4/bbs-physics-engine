@@ -116,7 +116,7 @@ public class FilmScene implements AutoCloseable
     /**
      * Whether the film has been edited since this simulation ran, so everything it worked out is a
      * consequence of numbers that are no longer there. Raised from outside (see
-     * {@link FilmScenes#onFilmEdited()}) and answered on the next tick by starting over.
+     * {@link FilmScenes#onFilmEdited}) and answered on the next tick by starting over.
      */
     private boolean stale;
 
@@ -125,6 +125,9 @@ public class FilmScene implements AutoCloseable
 
     /** Whether the recording has hit its ceiling, so the fact is reported once rather than per tick. */
     private boolean full;
+
+    /** The first tick on which something left the world, for the notch on the bar; -1 for none. */
+    private int lostAt = -1;
 
     /** The scene-wide knobs this recording was made under — see {@link #applyWorldSettings()}. */
     private float gravity = PhysicsWorld.EARTH_GRAVITY;
@@ -377,6 +380,9 @@ public class FilmScene implements AutoCloseable
             this.cache.getComputed() - 1,
             this.recordingEnd(this.filmTick),
             this.cache.has(this.filmTick),
+            this.stale || !this.backgroundAllowed(),
+            this.full,
+            this.lostAt,
             this.world.getBodyCount(),
             ghosts,
             outside,
@@ -384,6 +390,31 @@ public class FilmScene implements AutoCloseable
     }
 
     /** Whether a point in scene coordinates lies outside the world that was actually collected. */
+    /** Whether any body or rig is lost to the solver right now — see {@link SceneRig#isLost()}. */
+    private boolean anythingLost()
+    {
+        for (SceneBody body : this.bodies)
+        {
+            if (body.isLost())
+            {
+                return true;
+            }
+        }
+
+        for (SceneActor actor : this.actors)
+        {
+            for (SceneRig rig : actor.getRigs())
+            {
+                if (rig.isLost())
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     private boolean isOutside(Vector3f point)
     {
         return this.window != null && this.window.boxes() > 0 && !this.window.contains(point.x, point.y, point.z);
@@ -567,6 +598,11 @@ public class FilmScene implements AutoCloseable
         }
 
         this.cache.commit(tick);
+
+        if (this.lostAt < 0 && this.anythingLost())
+        {
+            this.lostAt = tick;
+        }
     }
 
     /** Hands every body the recorded frame for {@code tick}, or the news that there is not one. */
@@ -779,6 +815,7 @@ public class FilmScene implements AutoCloseable
             this.timeline.start();
             this.cache.clear();
             this.full = false;
+            this.lostAt = -1;
 
             /* Same as at assembly: frame 0 is never posed by the stepping loop, so a clip sitting on
              * it fires here or not at all. And inside the borrow for the same reason as at assembly

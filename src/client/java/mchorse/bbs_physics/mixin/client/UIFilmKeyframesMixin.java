@@ -55,11 +55,6 @@ public abstract class UIFilmKeyframesMixin
         UIFilmKeyframes self = (UIFilmKeyframes) (Object) this;
         long offset = this.getClipOffset();
 
-        CacheBar.render(
-            context,
-            self.graphArea,
-            self.toGraphX(-offset),
-            self.toGraphX(status.end() - offset),
-            self.toGraphX(status.computed() + 1 - offset));
+        CacheBar.render(context, self.graphArea, status, (tick) -> self.toGraphX(tick - offset));
     }
 }

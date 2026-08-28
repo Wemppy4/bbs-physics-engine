@@ -52,6 +52,6 @@ public abstract class UIClipsMixin
 
         UIClips self = (UIClips) (Object) this;
 
-        CacheBar.render(context, self.area, this.toGraphX(0), this.toGraphX(status.end()), this.toGraphX(status.computed() + 1));
+        CacheBar.render(context, self.area, status, this::toGraphX);
     }
 }

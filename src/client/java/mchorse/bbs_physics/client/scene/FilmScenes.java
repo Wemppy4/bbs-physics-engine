@@ -2,6 +2,7 @@ package mchorse.bbs_physics.client.scene;
 
 import mchorse.bbs_mod.film.BaseFilmController;
 import mchorse.bbs_mod.film.Film;
+import mchorse.bbs_mod.settings.values.base.BaseValue;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.engine.JoltEngine;
@@ -143,23 +144,42 @@ public class FilmScenes
     }
 
     /**
-     * The editor changed something about a film's cast — a keyframe, a form, a track.
+     * The editor changed one value of a film — a keyframe, a form, a track.
      *
-     * <p>Every live scene is told to start over, without checking which film was touched. Being
-     * wrong here costs one re-simulation of a scene that did not need it; being clever about it
-     * would mean matching an edited value's path back to a controller, and a scene that missed its
-     * edit is exactly the bug this exists to fix.</p>
+     * <p>Only the scenes of <em>that</em> film start over, and only when the value is something the
+     * simulation reads (see {@link SceneEdits}): a label, a colour or a shadow changes nothing
+     * physical, and a re-simulation for it was the bar going grey for no reason. A value that
+     * belongs to no film — the model editor, a setting — is not a film edit at all.</p>
      */
-    public static void onFilmEdited()
+    public static void onFilmEdited(BaseValue value)
     {
+        if (value == null)
+        {
+            return;
+        }
+
+        Film film = SceneEdits.filmOf(value);
+
+        if (film == null || !SceneEdits.matters(value.getPath().strings))
+        {
+            return;
+        }
+
         /* An edit is the one thing that can undo whatever made a scene fail — the author deleting
          * the form that threw, most plainly — so it also clears the failures. One retry per edit is
          * paced by a human hand, unlike one per tick. */
         FAILED.clear();
 
-        for (FilmScene scene : SCENES.values())
+        for (Map.Entry<BaseFilmController, FilmScene> entry : SCENES.entrySet())
         {
-            scene.invalidate();
+            Film other = entry.getKey().film;
+
+            /* Identity first, then the id: the editor and its controller normally share the very
+             * same film object, but a controller rebuilt around a reloaded film would not. */
+            if (other == film || other != null && other.getId().equals(film.getId()))
+            {
+                entry.getValue().invalidate();
+            }
         }
     }
 

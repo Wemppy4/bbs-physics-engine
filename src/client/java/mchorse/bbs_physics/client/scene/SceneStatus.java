@@ -1,53 +1,45 @@
 package mchorse.bbs_physics.client.scene;
 
 /**
- * What a scene's recording is doing right now, in the few numbers that tell an author why the
- * picture is not what they expected.
+ * What a film's simulation is doing right now, for the readout and the bar under the timeline.
  *
- * <p>Every field here answers a complaint that is otherwise indistinguishable from any other. An
- * object landing in the wrong place, an object falling through the floor and an edit that seems not
- * to apply each have several possible causes, and from the viewport they look identical — so the
- * only honest way to work on them is to be told which one fired, rather than to guess and patch.
- * That is what this is for, and it is why it comes before the fixes it is meant to guide.</p>
- *
- * <p>The old "the world stands on a different tick than the film" pair of numbers is gone with the
- * checkpoints: the world is a recorder and the film is drawn from the recording, so they cannot
- * disagree. What replaces it is how far the recording reaches, which is the one thing an author now
- * needs to know — and the same fact the cache bar under the timeline will show (Р8.2).</p>
- *
- * @param filmTick where the film's cursor is
- * @param computed the last tick the recording holds, or -1 when it holds nothing yet
- * @param end      the last tick worth recording — the film's length plus a little
- * @param ready    whether the frame being drawn is recorded. When it is not, the picture is plain
- *                 animation (Р8.1), which is correct but is not physics, and an author who does not
- *                 know that reads it as physics having stopped working
- * @param bodies   everything in the world, the blocks included
- * @param ghosts   physics bodies with nothing marked up inside them. These fall through the world
- *                 on purpose, and that is a common reason for "it fell through"
- * @param outside  physics bodies that have left the region the world's blocks were collected in.
- *                 Beyond it there is no ground, which is the other common reason
- * @param lost     bodies the solver has lost outright — their last recorded place was not a place
- *                 at all. Nothing is drawn for them, which from the viewport is identical to their
- *                 never having existed, and that silence is the third reason and the worst of them:
- *                 an author sees a character's colliders simply stop being there
+ * @param filmTick the tick the film is standing on
+ * @param computed the last recorded tick, -1 for none
+ * @param end      the last tick worth recording
+ * @param ready    whether the tick being drawn is recorded
+ * @param waiting  whether the recording is held back on purpose: the film was just edited and the
+ *                 background keeps clear until the author's hand is off the slider
+ * @param full     whether the recording hit its memory ceiling, so it will never reach {@code end}
+ * @param lostAt   the first tick on which something left the world, or -1 when nothing has
+ * @param bodies   how many bodies the world holds, blocks included
+ * @param ghosts   rigs with nothing marked up, which fall through everything
+ * @param outside  rigs past the collected blocks, with no ground under them
+ * @param lost     rigs the solver lost to an impossible push
  */
 public record SceneStatus(
     int filmTick,
     int computed,
     int end,
     boolean ready,
+    boolean waiting,
+    boolean full,
+    int lostAt,
     int bodies,
     int ghosts,
     int outside,
     int lost)
 {
-    /** Whether anything here is worth saying out loud rather than just reporting. */
     public boolean hasWarnings()
     {
         return !this.ready || this.ghosts > 0 || this.outside > 0 || this.lost > 0;
     }
 
-    /** How much of the film is recorded, 0 to 1 — the number the cache bar draws. */
+    /** Whether the recording is being extended right now, as opposed to done or held back. */
+    public boolean computing()
+    {
+        return !this.waiting && !this.full && this.computed < this.end;
+    }
+
     public float progress()
     {
         if (this.end <= 0)
