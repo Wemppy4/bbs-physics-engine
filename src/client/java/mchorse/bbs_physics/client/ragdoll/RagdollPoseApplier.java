@@ -165,7 +165,7 @@ public final class RagdollPoseApplier
 
             matrix.translate(-(translate.x - pivot.x) / 16F, (translate.y - pivot.y) / 16F, (translate.z - pivot.z) / 16F);
             matrix.translate(pivot.x / 16F, pivot.y / 16F, pivot.z / 16F);
-            matrix.rotate(group.evaluatedRotation());
+            matrix.rotate(PhysicsRotations.evaluatedRotation(group));
             matrix.scale(scale.x, scale.y, scale.z);
             matrix.translate(-pivot.x / 16F, -pivot.y / 16F, -pivot.z / 16F);
 
@@ -223,7 +223,7 @@ public final class RagdollPoseApplier
 
             /* Along the shorter arc, so a bone half a turn from its keyframes fades the near way
              * round rather than through the character. */
-            group.orient = group.evaluatedRotation().slerp(this.simulated, this.weight);
+            group.orient = PhysicsRotations.evaluatedRotation(group).slerp(this.simulated, this.weight);
         }
 
         private static float mix(float animated, float simulated, float weight)

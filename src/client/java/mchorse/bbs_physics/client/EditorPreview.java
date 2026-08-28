@@ -1,5 +1,6 @@
 package mchorse.bbs_physics.client;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import mchorse.bbs_mod.forms.FormUtils;
 import mchorse.bbs_mod.forms.entities.IEntity;
 import mchorse.bbs_mod.forms.forms.Form;
@@ -7,10 +8,11 @@ import mchorse.bbs_mod.ui.forms.editors.UIFormEditor;
 import mchorse.bbs_mod.ui.forms.editors.UIForms;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.utils.Area;
-import mchorse.bbs_mod.ui.utils.UIUtils;
 import mchorse.bbs_physics.client.collision.CollisionPreview;
 import mchorse.bbs_physics.client.ragdoll.RagdollPreview;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.math.MatrixStack;
+import org.lwjgl.opengl.GL30;
 
 /**
  * Both overlays — collision shapes and ragdoll joints — drawn into a form viewport.
@@ -33,9 +35,13 @@ import net.minecraft.client.util.math.MatrixStack;
  * has no stencil pass and was never broken — goes down the same path.</p>
  *
  * <p>What is restored afterwards is the viewport that was actually set, read back with
- * {@link UIUtils#currentViewport()} — not the window's size. While a film renders, the window
- * reports the video framebuffer's size instead of the screen's, so putting that back would land
- * everything the UI draws next in a viewport bigger than the window.</p>
+ * read back from GL — not the window's size. While a film renders, the window reports the video
+ * framebuffer's size instead of the screen's, so putting that back would land everything the UI
+ * draws next in a viewport bigger than the window.</p>
+ *
+ * <p>CML has no viewport helpers in its {@code UIUtils}, so both halves are done here: the
+ * rectangle is the same arithmetic BBS's {@code viewportArea} does, and what is put back afterwards
+ * is read out of GL rather than derived.</p>
  */
 public final class EditorPreview
 {
@@ -58,9 +64,10 @@ public final class EditorPreview
         float transition = context.getTransition();
         String selection = selection(form, editor);
 
-        int[] previousViewport = UIUtils.currentViewport();
+        int[] previous = new int[4];
 
-        UIUtils.viewportArea(area);
+        GL30.glGetIntegerv(GL30.GL_VIEWPORT, previous);
+        viewportArea(area);
 
         try
         {
@@ -69,8 +76,21 @@ public final class EditorPreview
         }
         finally
         {
-            UIUtils.restoreViewport(previousViewport);
+            RenderSystem.viewport(previous[0], previous[1], previous[2], previous[3]);
         }
+    }
+
+    /** The GL viewport for a UI area, in framebuffer pixels with the origin at the bottom. */
+    private static void viewportArea(Area area)
+    {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        float scale = (float) mc.getWindow().getScaleFactor();
+
+        RenderSystem.viewport(
+            Math.round(area.x * scale),
+            Math.round(mc.getWindow().getFramebufferHeight() - (area.y + area.h) * scale),
+            Math.round(area.w * scale),
+            Math.round(area.h * scale));
     }
 
     /**

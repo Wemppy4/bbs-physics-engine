@@ -1,5 +1,7 @@
 plugins {
-	id 'fabric-loom' version '1.15-SNAPSHOT'
+	/* Newer than the other branches use, and it has to be: Loom refuses to consume a mod jar built
+	 * by a Loom newer than itself, and CML builds with 1.17. */
+	id 'fabric-loom' version '1.17-SNAPSHOT'
 	id 'maven-publish'
 }
 
@@ -36,7 +38,7 @@ def joltPlatforms = ["Windows64", "Linux64", "Linux_ARM64", "MacOSX64", "MacOSX_
 // quietly go on compiling against the previous remap. `--refresh-dependencies` clears it, but
 // a flag one has to remember is a flag one forgets, and forgetting it here looks like the
 // changes to BBS simply not existing. So the stale remap is dropped by the build itself.
-def bbsArtifact = file("${System.properties['user.home']}/.m2/repository/mchorse/bbs/${bbs_version}/bbs-${bbs_version}.jar")
+def bbsArtifact = file("${System.properties['user.home']}/.m2/repository/mchorse/${bbs_artifact}/${bbs_version}/${bbs_artifact}-${bbs_version}.jar")
 def bbsRemaps = file("${projectDir}/.gradle/loom-cache/remapped_mods/remapped/mchorse")
 
 if (bbsArtifact.isFile() && bbsRemaps.isDirectory()) {
@@ -73,7 +75,7 @@ dependencies {
 	// Transitives are off deliberately: BBS's POM carries Sodium, Iris and the shader
 	// tooling it compiles against, and dragging those into this dev runtime buys nothing
 	// but a slower launch and failure modes that have nothing to do with physics.
-	modImplementation("mchorse:bbs:${project.bbs_version}") {
+	modImplementation("mchorse:${project.bbs_artifact}:${project.bbs_version}") {
 		transitive = false
 	}
 

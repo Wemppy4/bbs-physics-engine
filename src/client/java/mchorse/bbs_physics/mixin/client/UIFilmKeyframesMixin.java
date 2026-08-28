@@ -36,7 +36,9 @@ public abstract class UIFilmKeyframesMixin
     @Shadow
     public abstract long getClipOffset();
 
-    @Inject(method = "renderOverlay", at = @At("TAIL"))
+    /* CML's keyframe editor has no overlay pass, so the bar is drawn with the background — behind
+     * the keyframes rather than over them, which for a strip along the bottom reads the same. */
+    @Inject(method = "renderBackground", at = @At("TAIL"))
     private void bbs_physics$onRenderOverlay(UIContext context, CallbackInfo info)
     {
         if (BBSPhysicsSettings.enabled == null || !BBSPhysicsSettings.enabled.get() || this.editor == null)
@@ -55,6 +57,8 @@ public abstract class UIFilmKeyframesMixin
         UIFilmKeyframes self = (UIFilmKeyframes) (Object) this;
         long offset = this.getClipOffset();
 
-        CacheBar.render(context, self.graphArea, status, (tick) -> self.toGraphX(tick - offset));
+        /* CML's keyframe editor has no separate graph area, so the bar spans the whole element —
+         * it reaches under the track labels on the left as well. */
+        CacheBar.render(context, self.area, status, (tick) -> self.toGraphX(tick - offset));
     }
 }

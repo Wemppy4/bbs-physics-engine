@@ -2,8 +2,9 @@ package mchorse.bbs_physics.client.collision;
 
 import mchorse.bbs_mod.cubic.data.model.Model;
 import mchorse.bbs_mod.cubic.data.model.ModelGroup;
-import mchorse.bbs_mod.cubic.physics.ModelPhysicsConfig;
-import mchorse.bbs_mod.cubic.physics.ModelPhysicsIO;
+import mchorse.bbs_mod.cubic.physics.SpringChainDef;
+import mchorse.bbs_mod.cubic.physics.SpringChainSerializer;
+import mchorse.bbs_mod.cubic.physics.SpringChainsConfig;
 import mchorse.bbs_mod.data.types.BaseType;
 import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
@@ -40,23 +41,25 @@ public final class ChainBones
             return Collections.emptySet();
         }
 
-        BaseType data = modelForm.physics.get();
+        /* The same chains under CML's name for them: spring chains, kept on the form as
+         * `springs` rather than `physics`. */
+        BaseType data = modelForm.springs.get();
 
         if (!(data instanceof MapType map) || map.isEmpty())
         {
             return Collections.emptySet();
         }
 
-        ModelPhysicsConfig config = ModelPhysicsIO.fromData(map);
+        SpringChainsConfig config = SpringChainSerializer.fromData(map);
         Set<String> bones = new HashSet<>();
 
-        for (Map.Entry<String, ModelPhysicsConfig.Bone> entry : config.bones().entrySet())
+        for (Map.Entry<String, SpringChainDef> entry : config.chains().entrySet())
         {
             String start = entry.getKey();
 
             bones.add(start);
 
-            collectChain(model, start, entry.getValue().end(), bones);
+            collectChain(model, start, entry.getValue().endBone(), bones);
         }
 
         return bones;

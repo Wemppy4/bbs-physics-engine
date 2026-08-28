@@ -15,7 +15,6 @@ import mchorse.bbs_mod.ui.framework.elements.overlay.UIOverlay;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.client.scene.FilmScene;
 import mchorse.bbs_physics.client.scene.FilmScenes;
-import mchorse.bbs_physics.client.scene.PhysicsBake;
 import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.framework.elements.UIElement;
@@ -62,9 +61,6 @@ import java.util.function.UnaryOperator;
 public class UIPhysicsFormPanel extends UIFormPanel<Form>
 {
     private final UIButton addModifier;
-
-    /** Blender's "Bake to Keyframes": the recording becomes ordinary keys, see {@link PhysicsBake}. */
-    private final UIButton bake;
 
     private final UIModifierSection bodySection;
     private final UICirculate type;
@@ -127,15 +123,13 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         super(editor);
 
         this.addModifier = new UIButton(PhysicsKeys.PHYSICS_ADD, (b) -> this.openModifierMenu());
-        this.bake = new UIButton(PhysicsKeys.BAKE, (b) -> this.confirmBake());
-        this.bake.tooltip(PhysicsKeys.BAKE_TOOLTIP);
 
         /* Type, as three-way as it needs to be: Blender's Active/Passive, no more. */
         this.type = new UICirculate((b) -> this.editBody((body) -> body.withPassive(b.getValue() == 1)));
         this.type.addLabel(PhysicsKeys.BODY_TYPE_ACTIVE);
         this.type.addLabel(PhysicsKeys.BODY_TYPE_PASSIVE);
         this.type.tooltip(PhysicsKeys.BODY_TYPE_TOOLTIP);
-        this.typeRow = UI.labelRow(PhysicsKeys.BODY_TYPE, this.type);
+        this.typeRow = PhysicsUI.labelRow(PhysicsKeys.BODY_TYPE, this.type);
 
         this.mass = new UITrackpad((v) -> this.editBody((body) -> body.withMass(v.floatValue())));
         this.mass.limit(0.01D, 10000D).increment(1D);
@@ -152,15 +146,15 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         massGroup.row(UIConstants.MARGIN).preferred(0).height(UIConstants.CONTROL_HEIGHT);
         massGroup.add(this.mass, material.w(16));
 
-        this.massRow = UI.labelRow(PhysicsKeys.MASS, UIConstants.VALUE_WIDTH, massGroup);
+        this.massRow = PhysicsUI.labelRow(PhysicsKeys.MASS, PhysicsUI.VALUE_WIDTH, massGroup);
 
         this.friction = new UITrackpad((v) -> this.editBody((body) -> body.withFriction(v.floatValue())));
         this.friction.limit(0D, 1D).increment(0.05D);
-        this.frictionRow = UI.labelRow(PhysicsKeys.FRICTION, this.friction);
+        this.frictionRow = PhysicsUI.labelRow(PhysicsKeys.FRICTION, this.friction);
 
         this.restitution = new UITrackpad((v) -> this.editBody((body) -> body.withRestitution(v.floatValue())));
         this.restitution.limit(0D, 1D).increment(0.05D);
-        this.restitutionRow = UI.labelRow(PhysicsKeys.RESTITUTION, this.restitution);
+        this.restitutionRow = PhysicsUI.labelRow(PhysicsKeys.RESTITUTION, this.restitution);
 
         this.linearDamping = new UITrackpad((v) -> this.editBody((body) -> body.withLinearDamping(v.floatValue())));
         this.linearDamping.limit(0D, 1D).increment(0.01D).values(0.01D, 0.001D, 0.05D);
@@ -173,7 +167,7 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.gravity = new UITrackpad((v) -> this.editBody((body) -> body.withGravity(v.floatValue())));
         this.gravity.limit(-2D, 2D).increment(0.05D);
         this.gravity.tooltip(PhysicsKeys.BODY_GRAVITY_TOOLTIP);
-        this.gravityRow = UI.labelRow(PhysicsKeys.BODY_GRAVITY, this.gravity);
+        this.gravityRow = PhysicsUI.labelRow(PhysicsKeys.BODY_GRAVITY, this.gravity);
 
         this.asleep = new UIToggle(PhysicsKeys.BODY_ASLEEP, (b) -> this.editBody((body) -> body.withAsleep(b.getValue())));
         this.asleep.tooltip(PhysicsKeys.BODY_ASLEEP_TOOLTIP);
@@ -191,30 +185,30 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
             this.lockSpin[i] = new UIToggle(axes[i], (b) -> this.editBody((body) -> body.withLockSpin(FormBody.toggle(body.lockSpin(), bit, b.getValue()))));
         }
 
-        this.lockMoveRow = UI.labelRow(PhysicsKeys.BODY_LOCK_MOVE, UI.row(this.lockMove[0], this.lockMove[1], this.lockMove[2]));
+        this.lockMoveRow = PhysicsUI.labelRow(PhysicsKeys.BODY_LOCK_MOVE, UI.row(this.lockMove[0], this.lockMove[1], this.lockMove[2]));
         this.lockMoveRow.tooltip(PhysicsKeys.BODY_LOCK_TOOLTIP);
-        this.lockSpinRow = UI.labelRow(PhysicsKeys.BODY_LOCK_SPIN, UI.row(this.lockSpin[0], this.lockSpin[1], this.lockSpin[2]));
+        this.lockSpinRow = PhysicsUI.labelRow(PhysicsKeys.BODY_LOCK_SPIN, UI.row(this.lockSpin[0], this.lockSpin[1], this.lockSpin[2]));
         this.lockSpinRow.tooltip(PhysicsKeys.BODY_LOCK_TOOLTIP);
 
         this.ragdollMass = new UITrackpad((v) -> this.editRagdoll((ragdoll) -> ragdoll.withMass(v.floatValue())));
         this.ragdollMass.limit(0D, 10000D).increment(1D);
         this.ragdollMass.tooltip(PhysicsKeys.RAGDOLL_MASS_TOOLTIP);
-        this.ragdollMassRow = UI.labelRow(PhysicsKeys.RAGDOLL_MASS, this.ragdollMass);
+        this.ragdollMassRow = PhysicsUI.labelRow(PhysicsKeys.RAGDOLL_MASS, this.ragdollMass);
 
         this.ragdollDamping = new UITrackpad((v) -> this.editRagdoll((ragdoll) -> ragdoll.withDamping(v.floatValue())));
         this.ragdollDamping.limit(0D, 1D).increment(0.05D);
         this.ragdollDamping.tooltip(PhysicsKeys.RAGDOLL_DAMPING_TOOLTIP);
-        this.ragdollDampingRow = UI.labelRow(PhysicsKeys.RAGDOLL_DAMPING, this.ragdollDamping);
+        this.ragdollDampingRow = PhysicsUI.labelRow(PhysicsKeys.RAGDOLL_DAMPING, this.ragdollDamping);
 
         this.ragdollFriction = new UITrackpad((v) -> this.editRagdoll((ragdoll) -> ragdoll.withFriction(v.floatValue())));
         this.ragdollFriction.limit(0D, 100D).increment(0.5D);
         this.ragdollFriction.tooltip(PhysicsKeys.RAGDOLL_FRICTION_TOOLTIP);
-        this.ragdollFrictionRow = UI.labelRow(PhysicsKeys.RAGDOLL_FRICTION, this.ragdollFriction);
+        this.ragdollFrictionRow = PhysicsUI.labelRow(PhysicsKeys.RAGDOLL_FRICTION, this.ragdollFriction);
 
         this.ragdollGravity = new UITrackpad((v) -> this.editRagdoll((ragdoll) -> ragdoll.withGravity(v.floatValue())));
         this.ragdollGravity.limit(-2D, 2D).increment(0.05D);
         this.ragdollGravity.tooltip(PhysicsKeys.BODY_GRAVITY_TOOLTIP);
-        this.ragdollGravityRow = UI.labelRow(PhysicsKeys.BODY_GRAVITY, this.ragdollGravity);
+        this.ragdollGravityRow = PhysicsUI.labelRow(PhysicsKeys.BODY_GRAVITY, this.ragdollGravity);
 
         this.muscles = new UITrackpad((v) -> this.editRagdoll((ragdoll) -> ragdoll.withMuscles(v.floatValue())));
         this.muscles.limit(0D, 1D).increment(0.05D);
@@ -228,9 +222,9 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.ragdollSelfCollide.tooltip(PhysicsKeys.RAGDOLL_SELF_COLLIDE_TOOLTIP);
 
         this.bodyAuthority = PhysicsFields.authority(this::setAuthority);
-        this.bodyAuthorityRow = UI.labelRow(PhysicsKeys.AUTHORITY, this.bodyAuthority);
+        this.bodyAuthorityRow = PhysicsUI.labelRow(PhysicsKeys.AUTHORITY, this.bodyAuthority);
         this.ragdollAuthority = PhysicsFields.authority(this::setAuthority);
-        this.ragdollAuthorityRow = UI.labelRow(PhysicsKeys.AUTHORITY, this.ragdollAuthority);
+        this.ragdollAuthorityRow = PhysicsUI.labelRow(PhysicsKeys.AUTHORITY, this.ragdollAuthority);
 
         this.bodySection = new UIModifierSection(PhysicsKeys.BODY_TITLE, "physics.body", () -> this.toggleBody(false));
         this.bodySection.fields.add(this.typeRow, this.massRow, this.frictionRow, this.restitutionRow, this.dampingRow, this.gravityRow, this.lockMoveRow, this.lockSpinRow, this.asleep, this.bodyAuthorityRow);
@@ -240,7 +234,7 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.ragdollSection.fields.add(this.ragdollAuthorityRow, this.ragdollMassRow, this.ragdollDampingRow, this.ragdollFrictionRow, this.ragdollGravityRow, this.musclesRow, this.ragdollSelfCollide, this.ragdollBones);
 
         this.chainAuthority = PhysicsFields.authority(this::setAuthority);
-        this.chainAuthorityRow = UI.labelRow(PhysicsKeys.AUTHORITY, this.chainAuthority);
+        this.chainAuthorityRow = PhysicsUI.labelRow(PhysicsKeys.AUTHORITY, this.chainAuthority);
         this.chainBones = new UIChainSection(() -> this.options.resize());
         this.chainSection = new UIModifierSection(PhysicsKeys.CHAIN_MODIFIER_TITLE, "physics.chain", () -> this.toggleChain(false));
         this.chainSection.fields.add(this.chainAuthorityRow, this.chainBones);
@@ -402,7 +396,6 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
      * A body part clicked in the viewport should land in the bone list on screen, instead of
      * bouncing the author into the pose editor.
      */
-    @Override
     public boolean pickBoneInList(String bone)
     {
         if (this.form == null)
@@ -526,101 +519,7 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
             this.options.add(this.chainSection);
         }
 
-        /* Under every modifier, because it takes all of them at once: the form's recording is one
-         * thing, whatever combination of body, ragdoll and hair produced it. */
-        if (body || ragdoll || chain)
-        {
-            this.options.add(this.bake);
-        }
-
         this.options.resize();
-    }
-
-    /* Baking */
-
-    /**
-     * Asks first. The bake is one step of the film's undo history, so it is not the point of no
-     * return it is in Blender — but it overwrites every key on the tracks it touches, and an author
-     * who clicked the wrong form would rather hear that before than after.
-     */
-    private void confirmBake()
-    {
-        if (this.form == null)
-        {
-            return;
-        }
-
-        UIOverlay.addOverlay(this.getContext(), new UIConfirmOverlayPanel(PhysicsKeys.BAKE_TITLE, PhysicsKeys.BAKE_CONFIRM, (confirmed) ->
-        {
-            if (confirmed)
-            {
-                this.bake();
-            }
-        }));
-    }
-
-    /**
-     * Bakes this form's physics into the replay it is played from.
-     *
-     * <p>The form on this panel is the editor's working copy, not the replay's form and not the
-     * actor the scene simulates, so the bake is addressed by the one thing all three share — the
-     * form's path in the tree — and the replay is the one the film editor has selected, which is
-     * the replay this editor was opened for. The keys go straight into the film; the handle on
-     * this copy is set to 1 alongside, so that what the author sees here and what the film holds
-     * agree, and so that finishing the edit keeps it.</p>
-     */
-    private void bake()
-    {
-        UIFilmPanel panel = this.getParent(UIFilmPanel.class);
-
-        if (panel == null)
-        {
-            UIDashboard dashboard = BBSModClient.getDashboardIfCreated();
-
-            panel = dashboard == null ? null : dashboard.getPanel(UIFilmPanel.class);
-        }
-
-        Replay replay = panel == null || panel.replayEditor == null ? null : panel.replayEditor.getReplay();
-        FilmScene scene = panel == null || panel.getController() == null ? null : FilmScenes.get(panel.getController().editorController);
-
-        if (replay == null || scene == null)
-        {
-            this.message(PhysicsKeys.BAKE_NO_SCENE);
-
-            return;
-        }
-
-        PhysicsBake.Result result;
-
-        try
-        {
-            result = scene.bake(replay, FormUtils.getPath(this.form));
-        }
-        catch (Throwable e)
-        {
-            BBSPhysics.LOGGER.error("Baking the physics of '{}' into keyframes failed.", this.form.getDisplayName(), e);
-
-            this.message(PhysicsKeys.BAKE_FAILED);
-
-            return;
-        }
-
-        if (result == null)
-        {
-            this.message(PhysicsKeys.BAKE_NO_ACTOR);
-
-            return;
-        }
-
-        PhysicsForms.setAuthority(this.form, 1F);
-        this.sync();
-
-        this.message(PhysicsKeys.BAKE_DONE.format(result.keys(), result.channels(), result.ticks()));
-    }
-
-    private void message(IKey message)
-    {
-        UIOverlay.addOverlay(this.getContext(), new UIMessageOverlayPanel(PhysicsKeys.BAKE_TITLE, message));
     }
 
     /**
@@ -641,7 +540,6 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         super.render(context);
     }
 
-    @Override
     protected float getDefaultOptionsWidth()
     {
         return 0.3F;

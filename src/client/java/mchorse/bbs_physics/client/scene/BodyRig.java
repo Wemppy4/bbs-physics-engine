@@ -685,16 +685,6 @@ public class BodyRig implements SceneRig
         }
     }
 
-    /** The recorded transform for {@code tick}, reported to the bake instead of the form. */
-    @Override
-    public void bake(PhysicsCache cache, int tick, PhysicsBake bake)
-    {
-        if (cache.read(tick, this.channel, this.position, this.rotation))
-        {
-            bake.body(this.form, this.path, this.position, this.rotation, cache.readAuthority(tick, this.channel));
-        }
-    }
-
     /**
      * An impulse clip's push (Э5). The push itself refuses anything not dynamic, so a body the
      * animation holds takes nothing — kicking the keyframes would move nothing and lie about it.

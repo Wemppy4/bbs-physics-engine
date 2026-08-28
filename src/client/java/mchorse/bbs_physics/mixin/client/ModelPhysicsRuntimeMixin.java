@@ -1,7 +1,7 @@
 package mchorse.bbs_physics.mixin.client;
 
 import mchorse.bbs_mod.cubic.ModelInstance;
-import mchorse.bbs_mod.cubic.physics.ModelPhysicsRuntime;
+import mchorse.bbs_mod.cubic.physics.DynamicBoneOrchestrator;
 import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.entities.IEntity;
 import mchorse.bbs_mod.forms.forms.ModelForm;
@@ -34,7 +34,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
  * drawn. Read the bytecode, do not reason about the source: {@code javap -c} on BBS's own jar says
  * {@code invokevirtual ValueData.get:()Ljava/lang/Object;} and that is the whole answer.</p>
  */
-@Mixin(ModelPhysicsRuntime.class)
+@Mixin(DynamicBoneOrchestrator.class)
 public class ModelPhysicsRuntimeMixin
 {
     @Redirect(
@@ -51,7 +51,7 @@ public class ModelPhysicsRuntimeMixin
 
         /* Only the model's own physics config, and only when there is something to filter out. Any
          * other value this method happens to read passes through untouched. */
-        if (data instanceof MapType map && instance != null && instance.form instanceof ModelForm form && form.physics == value)
+        if (data instanceof MapType map && instance != null && instance.form instanceof ModelForm form && form.springs == value)
         {
             return ChainMute.filter(form, map);
         }

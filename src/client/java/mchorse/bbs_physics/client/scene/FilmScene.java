@@ -672,86 +672,6 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
-     * Bakes the physics of one form of one actor into its replay's keyframes — see
-     * {@link PhysicsBake} for what is written and why.
-     *
-     * <p>The whole film is baked, tick 0 to the end of the camera, and the recording is completed
-     * first, with no time budget: this is the one call where the author is waiting for the answer
-     * rather than looking at a frame, and a film is a few thousand ticks at most. The actors are
-     * borrowed for the length of it and handed back on the cursor's tick, as every walk through
-     * the film does, and the drawn frame is re-read from the recording afterwards, because working
-     * the bake out has stood every rig's state on every tick in turn.</p>
-     *
-     * @param replay   the replay whose keyframes receive the bake
-     * @param formPath where the form sits in the replay's form tree, by the walk's convention
-     * @return what was written, or null when this scene has no actor playing that replay
-     */
-    public PhysicsBake.Result bake(Replay replay, String formPath)
-    {
-        SceneCast.Member member = this.cast.find(replay);
-        SceneActor actor = member == null ? null : this.actorOf(member.entity);
-
-        if (actor == null)
-        {
-            return null;
-        }
-
-        int end = this.film == null ? 0 : this.film.camera.calculateDuration();
-        int last = Math.min(end, this.ensureRecorded(end));
-        PhysicsBake bake = new PhysicsBake(this.film, replay, formPath);
-
-        this.cast.borrow();
-
-        try
-        {
-            for (int tick = 0; tick <= last; tick++)
-            {
-                this.cast.apply(tick);
-
-                Form root = member.entity.getForm();
-
-                if (root == null)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    /* Posed the way the drive poses it: the bones are stood on the animation of
-                     * this tick, which is what the substitution blends the recording against. */
-                    evaluatePose(member.entity, root);
-                }
-                catch (Throwable e)
-                {
-                    /* The same failure the drive tolerates — a model not there yet. That tick is
-                     * skipped rather than baked from a stale pose. */
-                    continue;
-                }
-
-                bake.at(tick);
-
-                for (SceneRig rig : actor.getRigs())
-                {
-                    rig.bake(this.cache, tick, bake);
-                }
-
-                bake.finishTick();
-            }
-        }
-        finally
-        {
-            this.cast.restore(this.filmTick);
-
-            /* Every rig's state now describes the last tick baked; the drawn frame is put back as
-             * a jump, since nothing travelled from there to the cursor. */
-            this.teleport = true;
-            this.distribute(this.filmTick);
-        }
-
-        return bake.write();
-    }
-
-    /**
      * Records the film through {@code end} with no time budget, and answers the last tick actually
      * recorded — short of {@code end} only when the recording ran out of room.
      */
@@ -920,8 +840,11 @@ public class FilmScene implements AutoCloseable
         /* Everything else is a point: the actor itself, a bone of it, with the anchor's own offset —
          * the same resolution the film's anchors go through, at the tick the cast is standing on and
          * at transition 1 (0 is the previous tick — the Э1 lesson). */
+        /* CML's anchor walk has only the one shape — BBS's extra "full matrix" and shared pose
+         * cache are not there. Only the translation is read out below, and that is the same in
+         * either variant. */
         Pair<Matrix4f, Float> matrix = BaseFilmController.getTotalMatrix(
-            this.entities, resolve, new Matrix4f(), 0D, 0D, 0D, 1F, 0, true, null);
+            this.entities, resolve, new Matrix4f(), 0D, 0D, 0D, 1F, 0);
 
         if (matrix.a == null)
         {
@@ -962,7 +885,7 @@ public class FilmScene implements AutoCloseable
         }
 
         Pair<Matrix4f, Float> anchored = BaseFilmController.getTotalMatrix(
-            this.entities, root.anchor.get(), matrix, 0D, 0D, 0D, 1F, 0, false, null);
+            this.entities, root.anchor.get(), matrix, 0D, 0D, 0D, 1F, 0);
 
         return anchored.a == null ? matrix : anchored.a;
     }

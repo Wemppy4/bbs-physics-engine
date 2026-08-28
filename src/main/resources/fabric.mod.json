@@ -22,6 +22,9 @@
         ],
         "bbs-client-addon": [
             "mchorse.bbs_physics.client.BBSPhysicsClientAddon"
+        ],
+        "bbs-addon-client": [
+            "mchorse.bbs_physics.client.BBSPhysicsClientAddon"
         ]
     },
     "mixins": [

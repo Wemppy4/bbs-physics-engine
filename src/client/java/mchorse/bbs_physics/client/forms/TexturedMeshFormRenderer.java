@@ -4,16 +4,15 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import mchorse.bbs_mod.BBSModClient;
 import mchorse.bbs_mod.client.BBSRendering;
 import mchorse.bbs_mod.client.BBSShaders;
-import mchorse.bbs_mod.forms.FormTranslucentQueue;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.renderers.FormRenderer;
 import mchorse.bbs_mod.forms.renderers.FormRenderingContext;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
-import mchorse.bbs_mod.forms.renderers.utils.FormColorBlend;
 import mchorse.bbs_mod.graphics.texture.Texture;
 import mchorse.bbs_mod.resources.Link;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.utils.MatrixStackUtils;
+import mchorse.bbs_mod.utils.MathUtils;
 import mchorse.bbs_mod.utils.colors.Color;
 import mchorse.bbs_mod.utils.colors.Colors;
 import mchorse.bbs_physics.forms.ITexturedForm;
@@ -185,7 +184,7 @@ public abstract class TexturedMeshFormRenderer<T extends Form & ITexturedForm> e
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         MatrixStack.Entry entry = matrices.peek();
 
-        FormColorBlend.blend(color, this.form.getColor().get(), this.form.additiveColor.get());
+        blend(color, this.form.getColor().get());
 
         GameRenderer gameRenderer = MinecraftClient.getInstance().gameRenderer;
 
@@ -211,47 +210,41 @@ public abstract class TexturedMeshFormRenderer<T extends Form & ITexturedForm> e
         RenderSystem.defaultBlendFunc();
         RenderSystem.enableBlend();
 
-        boolean translucent = texture.hasTranslucency() || color.a < 1F || linear || mipmap;
-
         BuiltBuffer built = builder.endNullable();
 
         if (built != null)
         {
-            if (defer && translucent && FormTranslucentQueue.isActive())
-            {
-                /* The same end-of-frame deferral the picture form does, for the same reasons: correct
-                 * blending against other translucent forms, no occlusion of what is behind. The plane
-                 * normal a flat form passes stays null here: a soft form is a solid body, and its sort
-                 * key is the distance to its origin rather than to a quad's plane. */
-                VertexBuffer buffer = new VertexBuffer(VertexBuffer.Usage.STATIC);
-
-                buffer.bind();
-                buffer.upload(built);
-                VertexBuffer.unbind();
-
-                Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewMatrix());
-                Vector3f origin = modelView.transformPosition(matrix.getTranslation(new Vector3f()));
-
-                FormTranslucentQueue.add(new FormTranslucentQueue.VertexBufferCommand(
-                    buffer, () -> finalShader, texture, modelView, null, origin, null, true,
-                    () ->
-                    {
-                        texture.bind();
-                        texture.setFilterMipmap(linear, mipmap);
-                    },
-                    () -> texture.setFilterMipmap(false, false)
-                ));
-            }
-            else
-            {
-                BufferRenderer.drawWithGlobalProgram(built);
-            }
+            /* Drawn where it stands. CML has no end-of-frame translucent queue to defer into, so a
+             * see-through cloth blends against whatever is already in the buffer rather than being
+             * sorted against the other translucent forms of the scene — visible only when two of
+             * them overlap. */
+            BufferRenderer.drawWithGlobalProgram(built);
         }
 
         texture.setFilterMipmap(false, false);
 
         gameRenderer.getLightmapTextureManager().disable();
         gameRenderer.getOverlayTexture().teardownOverlayColor();
+    }
+
+    /**
+     * Folds the form's own colour into the one the scene handed down.
+     *
+     * <p>BBS does this through {@code FormColorBlend}, which CML has no copy of; this is its
+     * multiply branch, the one every form without the additive switch takes — and CML's form has no
+     * additive switch to take the other one.</p>
+     */
+    private static void blend(Color base, Color overlay)
+    {
+        if (base == null || overlay == null)
+        {
+            return;
+        }
+
+        base.r *= MathUtils.clamp(overlay.r, 0F, 1F);
+        base.g *= MathUtils.clamp(overlay.g, 0F, 1F);
+        base.b *= MathUtils.clamp(overlay.b, 0F, 1F);
+        base.a *= MathUtils.clamp(overlay.a, 0F, 1F);
     }
 
     /**

@@ -1,6 +1,6 @@
 package mchorse.bbs_physics.mixin.client;
 
-import mchorse.bbs_mod.cubic.render.ModelPivotFrames;
+import mchorse.bbs_mod.cubic.render.BoneFrameCollector;
 import mchorse.bbs_physics.client.ragdoll.RagdollPoseApplier;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -16,15 +16,19 @@ import org.spongepowered.asm.mixin.injection.ModifyArg;
  * charge (the flag the pose applier raises), the walk is asked to fold offsets in — which the
  * walk's own contract endorses for ancestor offsets, and ancestors are the only place a ragdoll
  * writes them.</p>
+ *
+ * <p>The walk is called {@code BoneFrameCollector} on CML — same three overloads, same arguments,
+ * same delegation of the four-argument one into the five-argument one, so the hook sits in exactly
+ * the same place.</p>
  */
-@Mixin(ModelPivotFrames.class)
+@Mixin(BoneFrameCollector.class)
 public class ModelPivotFramesMixin
 {
     @ModifyArg(
         method = "collect(Lmchorse/bbs_mod/cubic/IModel;Ljava/util/Set;Ljava/util/Map;Lorg/joml/Matrix4f;)V",
         at = @At(
             value = "INVOKE",
-            target = "Lmchorse/bbs_mod/cubic/render/ModelPivotFrames;collect(Lmchorse/bbs_mod/cubic/IModel;Ljava/util/Set;Ljava/util/Map;Lorg/joml/Matrix4f;Z)V"
+            target = "Lmchorse/bbs_mod/cubic/render/BoneFrameCollector;collect(Lmchorse/bbs_mod/cubic/IModel;Ljava/util/Set;Ljava/util/Map;Lorg/joml/Matrix4f;Z)V"
         ),
         index = 4
     )

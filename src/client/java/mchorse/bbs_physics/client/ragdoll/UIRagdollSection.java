@@ -15,12 +15,14 @@ import mchorse.bbs_mod.ui.utils.presets.UIDataContextMenu;
 import mchorse.bbs_mod.utils.colors.Colors;
 import mchorse.bbs_physics.client.collision.PhysicsPresets;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
+import mchorse.bbs_physics.client.forms.PhysicsModels;
 import mchorse.bbs_physics.client.forms.UIBoneSection;
 import mchorse.bbs_physics.ragdoll.FormRagdoll;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 import mchorse.bbs_physics.ragdoll.RagdollIO;
 import mchorse.bbs_physics.ragdoll.RagdollJoint;
 import mchorse.bbs_physics.ragdoll.RagdollJointKind;
+import mchorse.bbs_physics.client.forms.PhysicsUI;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -106,7 +108,7 @@ public class UIRagdollSection extends UIBoneSection
         }
 
         this.kind.tooltip(PhysicsKeys.RAGDOLL_KIND_TOOLTIP);
-        this.kindRow = UI.labelRow(PhysicsKeys.RAGDOLL_KIND, this.kind);
+        this.kindRow = PhysicsUI.labelRow(PhysicsKeys.RAGDOLL_KIND, this.kind);
 
         /* The first knob sets both half-angles — a round cone, the common case — and the second
          * pulls one of them apart from it: an elbow, a knee, a hip. */
@@ -131,7 +133,7 @@ public class UIRagdollSection extends UIBoneSection
         this.hingeAxis.addLabel(IKey.constant("Y"));
         this.hingeAxis.addLabel(IKey.constant("Z"));
         this.hingeAxis.tooltip(PhysicsKeys.RAGDOLL_HINGE_AXIS_TOOLTIP);
-        this.hingeAxisRow = UI.labelRow(PhysicsKeys.RAGDOLL_HINGE_AXIS, this.hingeAxis);
+        this.hingeAxisRow = PhysicsUI.labelRow(PhysicsKeys.RAGDOLL_HINGE_AXIS, this.hingeAxis);
 
         this.hingeMin = this.degrees(-180D, 180D, (joint, v) -> joint.withHinge(v, joint.hingeMax()));
         this.hingeMax = this.degrees(-180D, 180D, (joint, v) -> joint.withHinge(joint.hingeMin(), v));
@@ -139,7 +141,7 @@ public class UIRagdollSection extends UIBoneSection
 
         this.attachTo = new UIButton(PhysicsKeys.RAGDOLL_ATTACH_AUTO, (b) -> this.openAttachMenu());
         this.attachTo.tooltip(PhysicsKeys.RAGDOLL_ATTACH_TOOLTIP);
-        this.attachRow = UI.labelRow(PhysicsKeys.RAGDOLL_ATTACH, this.attachTo);
+        this.attachRow = PhysicsUI.labelRow(PhysicsKeys.RAGDOLL_ATTACH, this.attachTo);
 
         this.resetBone = new UIButton(PhysicsKeys.RAGDOLL_RESET_BONE, (b) ->
         {
@@ -343,7 +345,7 @@ public class UIRagdollSection extends UIBoneSection
 
         if (this.model != null)
         {
-            this.presetGroup = this.model.getPoseGroup();
+            this.presetGroup = PhysicsModels.poseGroup(this.model);
         }
 
         this.updateLabels();

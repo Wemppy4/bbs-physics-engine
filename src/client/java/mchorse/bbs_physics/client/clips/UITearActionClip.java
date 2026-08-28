@@ -10,7 +10,9 @@ import mchorse.bbs_mod.ui.film.IUIClipsDelegate;
 import mchorse.bbs_mod.ui.film.clips.actions.UIActionClip;
 import mchorse.bbs_mod.ui.film.clips.modules.UIPointModule;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
-import mchorse.bbs_mod.ui.utils.bones.UIBonePicker;
+import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
+import mchorse.bbs_mod.ui.framework.elements.overlay.UIListOverlayPanel;
+import mchorse.bbs_mod.ui.framework.elements.overlay.UIOverlay;
 import mchorse.bbs_physics.actions.TearActionClip;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
 import mchorse.bbs_physics.collision.FormCollisions;
@@ -30,7 +32,10 @@ import java.util.List;
  */
 public class UITearActionClip extends UIActionClip<TearActionClip>
 {
-    public UIBonePicker bone;
+    /** The row that stands for "no bone" in the picker overlay. */
+    private static final String NONE = "-";
+
+    public UIButton bone;
     public UITrackpad strength;
     public UIPointModule direction;
 
@@ -47,12 +52,7 @@ public class UITearActionClip extends UIActionClip<TearActionClip>
         /* BBS's own bone picker — the button the IK and body-part editors use — filled with the
          * ragdoll parts of this clip's actor. Nothing to type: a bone that is not on the list
          * could not be torn anyway. */
-        this.bone = new UIBonePicker((name) ->
-        {
-            this.editor.editMultiple(this.clip.bone, (bone) -> bone.set(name));
-            this.label(name);
-        });
-        this.bone.menu((picker) -> picker.list(this.candidates()).none().set(this.clip.bone.get()));
+        this.bone = new UIButton(PhysicsKeys.CLIP_BONE_NONE, (b) -> this.pickBone());
         this.bone.tooltip(PhysicsKeys.CLIP_BONE_TOOLTIP);
 
         this.strength = new UITrackpad((v) -> this.editor.editMultiple(this.clip.strength, (strength) -> strength.set(v.floatValue())));
@@ -84,7 +84,38 @@ public class UITearActionClip extends UIActionClip<TearActionClip>
     /** The button reads the chosen bone, or says that none is. */
     private void label(String bone)
     {
-        this.bone.setLabel(bone == null || bone.isEmpty() ? PhysicsKeys.CLIP_BONE_NONE : IKey.raw(bone));
+        this.bone.label(bone == null || bone.isEmpty() ? PhysicsKeys.CLIP_BONE_NONE : IKey.raw(bone));
+    }
+
+    /**
+     * The list of bones this clip could tear, as an overlay.
+     *
+     * <p>BBS has a bone picker widget for exactly this; CML has none, so the button opens the plain
+     * list overlay instead. The first row clears the choice — the picker's "none" entry, spelled out
+     * as a row because this overlay has no notion of one.</p>
+     */
+    private void pickBone()
+    {
+        List<String> values = new ArrayList<>();
+
+        values.add(NONE);
+        values.addAll(this.candidates());
+
+        UIListOverlayPanel panel = new UIListOverlayPanel(PhysicsKeys.CLIP_BONE, (picked) ->
+        {
+            String name = NONE.equals(picked) ? "" : picked;
+
+            this.editor.editMultiple(this.clip.bone, (bone) -> bone.set(name));
+            this.label(name);
+        });
+
+        panel.addValues(values);
+
+        String current = this.clip.bone.get();
+
+        panel.setValue(current == null || current.isEmpty() ? NONE : current);
+
+        UIOverlay.addOverlay(this.getContext(), panel);
     }
 
     /**

@@ -38,7 +38,7 @@ public class UIModifierSection extends UISection
         super(title);
 
         this.setExpanded(FOLDS.getOrDefault(id, true));
-        this.onToggle((s) -> FOLDS.put(id, s.isExpanded()));
+        this.onToggle((expanded) -> FOLDS.put(id, expanded));
 
         this.remove = new UIIcon(Icons.CLOSE, (b) -> action.run());
         this.remove.tooltip(PhysicsKeys.PHYSICS_REMOVE);

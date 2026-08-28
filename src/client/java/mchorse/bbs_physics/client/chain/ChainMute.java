@@ -28,13 +28,16 @@ import java.util.WeakHashMap;
  * it is claimed, because a strand half-owned is the same fight as a strand wholly owned.</p>
  *
  * <p>The filtered map is cached per source map and rebuilt only when the claimed set changes:
- * {@code ModelPhysicsCache} keys its compiled chains by the map instance, so handing it a fresh
+ * {@code SpringChainCompiler} keys its compiled chains by the map instance, so handing it a fresh
  * copy every frame would recompile every chain of every model every frame.</p>
  */
 public final class ChainMute
 {
-    private static final String KEY_BONES = "bones";
-    private static final String KEY_END = "end";
+    /* CML calls the same thing spring chains, and stores it under its own keys: the map of chains
+     * is "chains" rather than "bones", and a chain's far end is "end_bone" rather than "end". The
+     * shape is the same — start bone → chain — so nothing else about the filtering changes. */
+    private static final String KEY_BONES = "chains";
+    private static final String KEY_END = "end_bone";
 
     /** Source map → what we last handed on, and the claim it was filtered for. */
     private static final Map<MapType, Filtered> CACHE = new WeakHashMap<>();

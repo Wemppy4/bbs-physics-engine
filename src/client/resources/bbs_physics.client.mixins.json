@@ -12,12 +12,10 @@
         "UIClipsMixin",
         "UIFilmControllerMixin",
         "UIFilmKeyframesMixin",
-        "UIFormEditorMixin",
         "UIFormMixin",
         "UIFormRendererMixin",
         "UIFormUndoHandlerMixin",
         "UIPickableFormRendererMixin",
-        "UISelectionScreenMixin",
         "WorldFilmControllerMixin"
     ],
     "injectors": {

@@ -70,7 +70,7 @@ public class FormMixin implements IPhysicsForm
 
         ValueFloat authority = new PhysicsAuthorityValue(PhysicsForms.AUTHORITY_KEY);
 
-        authority.slider();
+        /* No slider hint on CML — see PhysicsKnobValue. */
 
         this.bbs_physics$collision = collision;
         this.bbs_physics$body = body;

@@ -7,6 +7,7 @@ import mchorse.bbs_mod.events.Subscribe;
 import mchorse.bbs_mod.events.register.RegisterSettingsEvent;
 import mchorse.bbs_mod.events.register.RegisterSourcePacksEvent;
 import mchorse.bbs_mod.resources.Link;
+import mchorse.bbs_mod.resources.packs.InternalAssetsSourcePack;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_physics.actions.ImpulseActionClip;
 import mchorse.bbs_physics.actions.TearActionClip;
@@ -37,7 +38,12 @@ public class BBSPhysicsAddon implements BBSAddonMod
     @Subscribe
     public void onRegisterSourcePacks(RegisterSourcePacksEvent event)
     {
-        event.registerAddon(BBSPhysics.ASSETS, BBSPhysicsAddon.class);
+        /* CML's event hands over the provider and nothing else, so the source is built here —
+         * the same one BBS's own registerAddon() builds: our files are read out of
+         * assets/bbs_physics/assets in this jar, found through a class of ours so that listing a
+         * folder starts from the right jar. */
+        event.provider.register(new InternalAssetsSourcePack(
+            BBSPhysics.ASSETS, "assets/" + BBSPhysics.ASSETS + "/assets", BBSPhysicsAddon.class));
     }
 
     /**

@@ -4,7 +4,6 @@ import mchorse.bbs_mod.settings.SettingsBuilder;
 import mchorse.bbs_mod.settings.values.numeric.ValueBoolean;
 import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 import mchorse.bbs_mod.settings.values.numeric.ValueInt;
-import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_physics.engine.PhysicsWorld;
 
 /**
@@ -93,7 +92,8 @@ public class BBSPhysicsSettings
 
     public static void register(SettingsBuilder builder)
     {
-        builder.category("general", Icons.PHYSICS);
+        /* CML's settings categories carry no icon. */
+        builder.category("general");
 
         enabled = builder.getBoolean("enabled", true);
         debug = builder.getBoolean("debug", false);

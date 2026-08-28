@@ -51,15 +51,6 @@ public interface SceneRig
     {}
 
     /**
-     * Hands the bake the recorded answer for {@code tick}, in the terms the renderer would have
-     * substituted it — the same numbers {@link #readCache} hands the form, reported to the bake
-     * instead so they can become keyframes (§9.3). Optional: a rig with nothing recorded, or with
-     * an answer that has no keyframe to become (a sheet of cloth), bakes to nothing.
-     */
-    default void bake(PhysicsCache cache, int tick, PhysicsBake bake)
-    {}
-
-    /**
      * Lets go of the form, so it goes back to being drawn from its keyframes. Called when the scene
      * closes: the bodies behind this rig are about to stop existing. Optional — a rig that never
      * took a form's runtime slot has nothing to hand back.

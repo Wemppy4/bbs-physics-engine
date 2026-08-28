@@ -49,6 +49,6 @@ public class UIFormMixin
         }
 
         editor.registerPanel(new UICollisionFormPanel(editor), PhysicsKeys.COLLISION_TITLE, Icons.SHAPES);
-        editor.registerPanel(new UIPhysicsFormPanel(editor), PhysicsKeys.PHYSICS_TITLE, Icons.PHYSICS);
+        editor.registerPanel(new UIPhysicsFormPanel(editor), PhysicsKeys.PHYSICS_TITLE, Icons.SPHERE);
     }
 }

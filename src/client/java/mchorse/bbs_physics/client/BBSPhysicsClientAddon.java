@@ -47,7 +47,8 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
     @Subscribe
     public void onRegisterClientSettings(RegisterClientSettingsEvent event)
     {
-        event.register(Icons.PHYSICS, BBSPhysics.MOD_ID, BBSPhysicsSettings::register);
+        /* No physics icon in CML's set; the sphere is the nearest thing it ships. */
+        event.register(Icons.SPHERE, BBSPhysics.MOD_ID, BBSPhysicsSettings::register);
 
         /* How cloth is drawn and how it is edited. Both registries are static maps keyed by the
          * form's class, so an addon's form is as first-class as BBS's own. Done from an event

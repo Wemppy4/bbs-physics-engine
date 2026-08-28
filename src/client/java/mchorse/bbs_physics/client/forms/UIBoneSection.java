@@ -10,9 +10,7 @@ import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.framework.elements.UIElement;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
-import mchorse.bbs_mod.ui.utils.PickedBone;
 import mchorse.bbs_mod.ui.utils.UIConstants;
-import mchorse.bbs_mod.ui.utils.bones.UIBoneTreeList;
 import mchorse.bbs_mod.utils.colors.Colors;
 import mchorse.bbs_physics.collision.CollisionMode;
 import mchorse.bbs_physics.collision.FormCollision;
@@ -56,7 +54,7 @@ public abstract class UIBoneSection extends UIElement
     protected static final int TICK_RIGHT = 20;
     protected static final int TICK_SIZE = 7;
 
-    public final UIBoneTreeList bones;
+    public final PhysicsBoneList bones;
     public final UISearchList<String> bonesSearch;
 
     /**
@@ -192,7 +190,8 @@ public abstract class UIBoneSection extends UIElement
             return;
         }
 
-        this.bones.fillBones(this.model.model, this.model.getDisabledBones());
+        /* CML has no notion of a bone being disabled on the instance, so nothing is hidden. */
+        this.bones.fillBones(this.model.model, null);
         this.bones.filter(this.bonesSearch.search.getText());
 
         /* Filling the list drops its selection, so whatever bone was showing is no longer standing

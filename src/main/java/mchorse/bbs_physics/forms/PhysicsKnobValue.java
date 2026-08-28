@@ -35,7 +35,8 @@ public class PhysicsKnobValue extends ValueFloat
         this.fallback = fallback;
         this.shown = shown;
 
-        this.slider();
+        /* CML has no slider hint on a numeric value, so a knob is edited as a number field there.
+         * It is a display choice only — the range and the reading are the same either way. */
     }
 
     public float getFallback()

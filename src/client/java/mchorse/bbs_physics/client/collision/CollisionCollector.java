@@ -165,7 +165,7 @@ public final class CollisionCollector
             {
                 Link texture = modelForm.texture.get();
 
-                alpha = TextureAlpha.of(texture == null ? instance.getTexture() : texture);
+                alpha = TextureAlpha.of(texture == null ? instance.texture : texture);
                 alphaResolved = true;
             }
 

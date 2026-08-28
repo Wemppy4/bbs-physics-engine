@@ -29,10 +29,8 @@ import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UIStringList;
 import mchorse.bbs_mod.ui.framework.elements.utils.UILabel;
 import mchorse.bbs_mod.ui.framework.elements.utils.UIText;
-import mchorse.bbs_mod.ui.utils.PickedBone;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
-import mchorse.bbs_mod.ui.utils.bones.UIBoneTreeList;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import mchorse.bbs_mod.ui.utils.presets.UIDataContextMenu;
 import mchorse.bbs_mod.utils.MathUtils;
@@ -42,6 +40,9 @@ import mchorse.bbs_mod.utils.pose.Transform;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.client.forms.PhysicsColors;
 import mchorse.bbs_physics.client.forms.PhysicsKeys;
+import mchorse.bbs_physics.client.forms.PhysicsBoneList;
+import mchorse.bbs_physics.client.forms.PhysicsModels;
+import mchorse.bbs_physics.client.forms.PickedBone;
 import mchorse.bbs_physics.client.forms.UIPhysicsBoneList;
 import mchorse.bbs_physics.collision.CollisionIO;
 import mchorse.bbs_physics.collision.CollisionKind;
@@ -51,6 +52,7 @@ import mchorse.bbs_physics.collision.CollisionSlot;
 import mchorse.bbs_physics.collision.CollisionThickness;
 import mchorse.bbs_physics.collision.FormCollision;
 import mchorse.bbs_physics.collision.FormCollisions;
+import mchorse.bbs_physics.client.forms.PhysicsUI;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -101,7 +103,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
     public UIToggle preview;
 
-    public UIBoneTreeList bones;
+    public PhysicsBoneList bones;
     public UISearchList<String> bonesSearch;
 
     /** Which bone the rows below are showing, and how many more they are writing into. */
@@ -141,6 +143,9 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
     /** Marked-up = solid, no modifier needed: the answer to "where is the obstacle modifier". */
     private final UIText solid;
+
+    /** Which sections were left folded, for as long as the game runs. */
+    private static final java.util.Map<String, Boolean> FOLDS = new java.util.HashMap<>();
 
     private final UISection primitives;
 
@@ -212,7 +217,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_PIXELS);
         this.mode.addLabel(PhysicsKeys.COLLISION_MODE_SHAPES);
         this.mode.tooltip(PhysicsKeys.COLLISION_MODE_TOOLTIP);
-        this.modeRow = UI.labelRow(PhysicsKeys.COLLISION_MODE, this.mode);
+        this.modeRow = PhysicsUI.labelRow(PhysicsKeys.COLLISION_MODE, this.mode);
 
         this.thickness = new UICirculate((b) ->
         {
@@ -242,7 +247,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         });
         this.plate.limit(CollisionSlot.MIN_PLATE, CollisionSlot.MAX_PLATE).increment(0.25D).values(0.0625D, 0.0625D, 0.5D);
         this.plate.tooltip(PhysicsKeys.COLLISION_PLATE_TOOLTIP);
-        this.thicknessRow = UI.labelRow(PhysicsKeys.COLLISION_THICKNESS, UI.row(this.thickness, this.plate));
+        this.thicknessRow = PhysicsUI.labelRow(PhysicsKeys.COLLISION_THICKNESS, UI.row(this.thickness, this.plate));
 
         this.shapes = new UIStringList((l) -> this.updateLabels());
         this.shapes.background();
@@ -271,22 +276,14 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             this.kind.addLabel(PhysicsKeys.kind(value));
         }
 
-        this.placement = new UIPropTransform().callbacks(() -> {}, this::commitPlacement).barBackground();
-        this.placement.enableHotkeys();
-
-        /* The keyboard half of the gizmo (grab/rotate/scale) builds its drag the same way the mouse
-         * half does, through the editor — otherwise the hotkeys move nothing. */
-        this.placement.hotkeyDrag(() ->
-        {
-            UIFormEditor formEditor = this.getParent(UIFormEditor.class);
-
-            return formEditor == null ? null : formEditor.buildHotkeyDrag(this.placement);
-        });
+        /* No bar background and no keyboard half of the gizmo on CML: its transform widget has
+         * neither, and its form editor cannot build a hotkey drag. The mouse gizmo still works. */
+        this.placement = new UIPropTransform().callbacks(() -> {}, this::commitPlacement);
 
         this.autoThreshold = new UITrackpad((v) -> threshold = v.floatValue());
         this.autoThreshold.limit(0D, 8D).increment(PIXEL).values(PIXEL, PIXEL, PIXEL * 4);
         this.autoThreshold.tooltip(PhysicsKeys.COLLISION_AUTO_THRESHOLD_TOOLTIP);
-        this.thresholdRow = UI.labelRow(PhysicsKeys.COLLISION_AUTO_THRESHOLD, this.autoThreshold);
+        this.thresholdRow = PhysicsUI.labelRow(PhysicsKeys.COLLISION_AUTO_THRESHOLD, this.autoThreshold);
 
         this.autoMark = new UIButton(PhysicsKeys.COLLISION_AUTO_MARK, (b) -> this.autoMark());
         this.autoMark.tooltip(PhysicsKeys.COLLISION_AUTO_MARK_TOOLTIP);
@@ -298,12 +295,17 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         /* Folded, and below the automatic pass: automation is the answer for the common case, hand
          * placement is the correction. One level of folding and no deeper — a panel with sections
          * inside sections is a panel nobody can find anything in. */
-        this.primitives = this.section(PhysicsKeys.COLLISION_SHAPES, "collision.shapes", false);
+        /* CML's form panel has no collapsible-section helper with a remembered fold, so the
+         * section is built here; the fold is remembered for the session in FOLDS below. */
+        this.primitives = new UISection(PhysicsKeys.COLLISION_SHAPES);
+
+        this.primitives.setExpanded(FOLDS.getOrDefault("collision.shapes", false));
+        this.primitives.onToggle((expanded) -> FOLDS.put("collision.shapes", expanded));
 
         this.primitives.fields.add(
             this.shapes,
             UI.row(this.addShape, this.removeShape),
-            UI.labelRow(PhysicsKeys.COLLISION_SHAPE_KIND, this.kind),
+            PhysicsUI.labelRow(PhysicsKeys.COLLISION_SHAPE_KIND, this.kind),
             this.placement
         );
     }
@@ -502,7 +504,8 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             return null;
         }
 
-        Vector3f euler = this.placementTransform.getEulerRotation(new Vector3f());
+        /* CML's transform is Euler outright, so its own angles are the answer. */
+        Vector3f euler = new Vector3f(this.placementTransform.rotate);
 
         return new CollisionShape(
             shape.kind(),
@@ -600,7 +603,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         }
 
         Set<String> chains = ChainBones.of(this.form, model instanceof Model cubic ? cubic : null);
-        Vector3f scale = this.model.getScale();
+        Vector3f scale = PhysicsModels.scale(this.model);
         FormCollision collision = this.collision;
 
         for (String bone : this.bones.getList())
@@ -686,9 +689,10 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
         if (this.model != null && this.model.model != null)
         {
-            this.presetGroup = this.model.getPoseGroup();
+            this.presetGroup = PhysicsModels.poseGroup(this.model);
 
-            this.bones.fillBones(this.model.model, this.model.getDisabledBones());
+            /* CML has no notion of a bone being disabled on the instance, so nothing is hidden. */
+            this.bones.fillBones(this.model.model, null);
             this.bones.filter(this.bonesSearch.search.getText());
 
             if (!this.pickBoneInList(PickedBone.get()) && !this.bones.getList().isEmpty())
@@ -712,7 +716,6 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         this.updateLabels();
     }
 
-    @Override
     public boolean pickBoneInList(String bone)
     {
         if (this.model == null || bone == null || bone.isEmpty() || !this.bones.getList().contains(bone))
@@ -861,7 +864,6 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
         Vector3f rotation = shape.rotation();
 
-        this.placementTransform.rotationMode = Transform.RotationMode.EULER;
         this.placementTransform.translate.set(shape.offset());
         this.placementTransform.scale.set(shape.size());
         this.placementTransform.rotate.set(MathUtils.toRad(rotation.x), MathUtils.toRad(rotation.y), MathUtils.toRad(rotation.z));
@@ -920,7 +922,6 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         context.batcher.box(x, mid, x + 4, mid + 4, Colors.A100 | PhysicsColors.markup(mode));
     }
 
-    @Override
     protected float getDefaultOptionsWidth()
     {
         return 0.3F;
