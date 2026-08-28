@@ -319,6 +319,12 @@ public class FilmScene implements AutoCloseable
         return this.filmTick;
     }
 
+    /** How many blocks the world collision around this scene was built from. */
+    public int getWorldBoxes()
+    {
+        return this.window == null ? 0 : this.window.boxes();
+    }
+
     public double getOriginX()
     {
         return this.originX;

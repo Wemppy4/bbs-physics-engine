@@ -259,7 +259,7 @@ public final class WorldCollider
 
         int[] first = accepted.get(0);
 
-        BBSPhysics.LOGGER.info("World collision built from {} boxes in {} area(s), the first around ({}, {}, {}).",
+        BBSPhysics.LOGGER.debug("World collision built from {} boxes in {} area(s), the first around ({}, {}, {}).",
             boxes, accepted.size(), first[0], first[1], first[2]);
 
         return new Window(radius, below, above, boxes, areas);
