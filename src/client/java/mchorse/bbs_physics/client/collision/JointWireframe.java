@@ -1,11 +1,8 @@
 package mchorse.bbs_physics.client.collision;
 
-import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
@@ -41,9 +38,6 @@ public final class JointWireframe
 
         Matrix4f matrix = stack.peek().getPositionMatrix();
 
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-        RenderSystem.lineWidth(CollisionWireframe.lineWidth());
-
         BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
 
         line(builder, matrix, pivot.x - MARK, pivot.y, pivot.z, pivot.x + MARK, pivot.y, pivot.z, red, green, blue, alpha);
@@ -55,8 +49,7 @@ public final class JointWireframe
             line(builder, matrix, pivot.x, pivot.y, pivot.z, parent.x, parent.y, parent.z, red, green, blue, alpha);
         }
 
-        BufferRenderer.drawWithGlobalProgram(builder.end());
-        RenderSystem.lineWidth(1F);
+        WireframeLayers.flushLines(builder);
     }
 
     private static void line(BufferBuilder builder, Matrix4f matrix, float x1, float y1, float z1, float x2, float y2, float z2, float red, float green, float blue, float alpha)

@@ -1,6 +1,5 @@
 package mchorse.bbs_physics.client.collision;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import mchorse.bbs_mod.forms.FormUtilsClient;
 import mchorse.bbs_mod.forms.entities.IEntity;
 import mchorse.bbs_mod.forms.forms.Form;
@@ -60,7 +59,8 @@ public final class CollisionPreview
             return;
         }
 
-        RenderSystem.disableDepthTest();
+        /* Through the model, so the shapes inside it can be seen — see WireframeLayers. */
+        boolean depthTest = WireframeLayers.setDepthTest(false);
 
         try
         {
@@ -107,7 +107,7 @@ public final class CollisionPreview
         }
         finally
         {
-            RenderSystem.enableDepthTest();
+            WireframeLayers.setDepthTest(depthTest);
         }
     }
 

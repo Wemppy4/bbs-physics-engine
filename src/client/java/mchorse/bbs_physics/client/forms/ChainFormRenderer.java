@@ -1,13 +1,15 @@
 package mchorse.bbs_physics.client.forms;
 
+import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import mchorse.bbs_mod.BBSModClient;
 import mchorse.bbs_mod.client.BBSShaders;
+import mchorse.bbs_mod.client.render.picker.BBSPickerRenderer;
 import mchorse.bbs_mod.forms.FormUtilsClient;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.renderers.FormRenderer;
 import mchorse.bbs_mod.forms.renderers.FormRenderingContext;
-import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.graphics.texture.Texture;
 import mchorse.bbs_mod.resources.Link;
 import mchorse.bbs_mod.ui.framework.UIContext;
@@ -15,22 +17,18 @@ import mchorse.bbs_mod.utils.MatrixStackUtils;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.chain.ChainForm;
 import mchorse.bbs_physics.chain.ChainState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.ShaderProgram;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.GameRenderer;
+import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.LightmapTextureManager;
 import net.minecraft.client.render.OverlayTexture;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
-import java.util.function.Supplier;
 
 /**
  * Draws a chain: each segment where the simulation has it when a scene has claimed the form, and
@@ -77,16 +75,26 @@ public class ChainFormRenderer extends FormRenderer<ChainForm>
         super(form);
     }
 
+    /**
+     * The palette's little preview, drawn off-screen: since 1.21.6 a list cell is recorded first and
+     * composited after, so a 3D form submits itself as a special element and BBS calls back into
+     * {@link #renderUIPreview} inside the off-screen pass.
+     */
     @Override
     protected void renderInUI(UIContext context, int x1, int y1, int x2, int y2)
     {
-        MatrixStack stack = context.batcher.getContext().getMatrices();
+        this.submitUIPreview(context, x1, y1, x2, y2);
+    }
+
+    @Override
+    public void renderUIPreview(MatrixStack stack, float angle, float transition, int x1, int y1, int x2, int y2)
+    {
+        Matrix4f uiMatrix = getUIPreviewMatrix(angle, y1, y2);
+
+        this.applyTransforms(uiMatrix, transition);
 
         stack.push();
 
-        Matrix4f uiMatrix = ModelFormRenderer.getUIMatrix(context, x1, y1, x2, y2);
-
-        this.applyTransforms(uiMatrix, context.getTransition());
         MatrixStackUtils.multiply(stack, uiMatrix);
         stack.translate(0F, 1F, 0F);
         stack.scale(1.5F, 1.5F, 1.5F);
@@ -246,21 +254,30 @@ public class ChainFormRenderer extends FormRenderer<ChainForm>
 
         Texture texture = BBSModClient.getTextures().getTexture(ROPE);
 
-        Supplier<ShaderProgram> shader = context == null
-            ? GameRenderer::getRenderTypeEntityTranslucentProgram
-            : this.getShader(context, GameRenderer::getRenderTypeEntityTranslucentProgram, BBSShaders::getPickerBillboardProgram);
-
-        GameRenderer gameRenderer = MinecraftClient.getInstance().gameRenderer;
-
-        gameRenderer.getLightmapTextureManager().enable();
-        gameRenderer.getOverlayTexture().setupOverlayColor();
-
-        ShaderProgram finalShader = shader.get();
-
+        /* The lightmap, the overlay, the blend function and the shader were global state around the
+         * draw; they belong to the layer now. The layer is resolved from the last bound texture, so
+         * the bind has to come first. */
         BBSModClient.getTextures().bindTexture(texture);
-        RenderSystem.setShader(() -> finalShader);
-
         texture.bind();
+
+        boolean picking = context != null && context.isPicking();
+        RenderPipeline picker = null;
+        RenderLayer layer = null;
+
+        if (picking)
+        {
+            this.setupTarget(context);
+
+            picker = BBSShaders.getPickerBillboardProgram();
+
+            BBSPickerRenderer.setSampler0(texture);
+        }
+        else
+        {
+            /* Culled, because the strips below are emitted from both sides — which is what the draw
+             * used to get from the global GL state vanilla keeps culling on. */
+            layer = BBSShaders.getBoundCulledModelLayer();
+        }
 
         Matrix4f matrix = stack.peek().getPositionMatrix();
         MatrixStack.Entry entry = stack.peek();
@@ -271,13 +288,20 @@ public class ChainFormRenderer extends FormRenderer<ChainForm>
         this.strip(builder, matrix, entry, overlay, light, width, segmentLength, true);
         this.strip(builder, matrix, entry, overlay, light, width, segmentLength, false);
 
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.enableBlend();
+        BuiltBuffer built = builder.endNullable();
 
-        BufferRenderer.drawWithGlobalProgram(builder.end());
-
-        gameRenderer.getLightmapTextureManager().disable();
-        gameRenderer.getOverlayTexture().teardownOverlayColor();
+        if (built != null)
+        {
+            if (picker != null)
+            {
+                /* The camera already sits in the vertices, so the pass wants the model view only. */
+                BBSPickerRenderer.draw(picker, built, RenderSystem.getModelViewMatrix());
+            }
+            else
+            {
+                layer.draw(built);
+            }
+        }
     }
 
     private void strip(BufferBuilder builder, Matrix4f matrix, MatrixStack.Entry entry, int overlay, int light, float width, float length, boolean acrossX)

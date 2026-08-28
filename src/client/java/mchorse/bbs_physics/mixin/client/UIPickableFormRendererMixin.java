@@ -4,7 +4,9 @@ import mchorse.bbs_mod.ui.forms.editors.UIFormEditor;
 import mchorse.bbs_mod.ui.forms.editors.utils.UIPickableFormRenderer;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_physics.client.EditorPreview;
+import net.minecraft.client.util.math.MatrixStack;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -18,13 +20,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * injection into the parent never runs here. Since it never calls its parent either, the two
  * mixins can never both fire for the same viewport.</p>
  *
- * <p>Injected at the tail, which is after the stencil pass — and that pass leaves the GL viewport
- * pointing at the whole window rather than at the preview. {@link EditorPreview} puts it back; the
- * reason it has to is written out there.</p>
+ * <p>Injected at the tail, which is after the gizmo and its picking pass — both of which now go
+ * to framebuffers of their own and leave nothing behind for the overlay to undo.</p>
  */
 @Mixin(UIPickableFormRenderer.class)
-public class UIPickableFormRendererMixin
+public abstract class UIPickableFormRendererMixin
 {
+    /** See {@link UIFormRendererMixin#createCameraStack()}. */
+    @Shadow
+    protected abstract MatrixStack createCameraStack();
+
     @Inject(method = "renderUserModel", at = @At("TAIL"))
     private void bbs_physics$drawCollision(UIContext context, CallbackInfo info)
     {
@@ -37,6 +42,6 @@ public class UIPickableFormRendererMixin
          * The editor comes along so the overlay can draw the selected body part alone — found by
          * walking up the UI tree, because this viewport is a child of it and nothing else knows
          * which entry the author is standing on. */
-        EditorPreview.render(renderer.form, renderer.getTargetEntity(), renderer.area, context, renderer.getParent(UIFormEditor.class));
+        EditorPreview.render(renderer.form, renderer.getTargetEntity(), this.createCameraStack(), context, renderer.getParent(UIFormEditor.class));
     }
 }

@@ -3,17 +3,14 @@ package mchorse.bbs_physics.client.collision;
 import mchorse.bbs_mod.graphics.Draw;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.collision.CollisionKind;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
-import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.Tessellator;
-import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 
 /**
  * Draws a collision shape as an outline, centred on the current stack frame.
@@ -102,8 +99,6 @@ public final class CollisionWireframe
         float y2 = half.y;
         float z2 = half.z;
 
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-
         BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
 
         /* Four uprights, then the two rings that cap them. Each bar is grown by t on every side, so
@@ -121,7 +116,7 @@ public final class CollisionWireframe
             Draw.fillBox(builder, stack, x2 - t, y - t, z1 - t, x2 + t, y + t, z2 + t, red, green, blue, alpha);
         }
 
-        BufferRenderer.drawWithGlobalProgram(builder.end());
+        WireframeLayers.flushTriangles(builder);
     }
 
     /**
@@ -163,8 +158,6 @@ public final class CollisionWireframe
         float hv = half.get(v);
         float at = Math.signum(surface) * half.get(axis);
 
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-
         BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
 
         /* Two bars along u at ±hv, two along v at ±hu, each grown by t in the plane so the corners
@@ -174,7 +167,7 @@ public final class CollisionWireframe
         bar(builder, stack, axis, u, v, -hu - t, -hu + t, -hv - t, hv + t, at, red, green, blue, alpha);
         bar(builder, stack, axis, u, v, hu - t, hu + t, -hv - t, hv + t, at, red, green, blue, alpha);
 
-        BufferRenderer.drawWithGlobalProgram(builder.end());
+        WireframeLayers.flushTriangles(builder);
     }
 
     /** A box given by its extents along the plate's two in-plane axes, {@code at} along the third. */
@@ -311,32 +304,22 @@ public final class CollisionWireframe
         builder.vertex(matrix, x2, y2, z2).color(red, green, blue, alpha);
     }
 
+    /**
+     * A buffer for the round outlines.
+     *
+     * <p>The width setting reaches the boxes only, on this branch. A hardware line's width used to
+     * be global GL state that could be turned up before the draw; since 1.21.5 it belongs to the
+     * pipeline, and the position-colour line pipeline both BBS and this overlay draw through is
+     * built at width one. Boxes are bars of geometry, so they still thicken — see
+     * {@link #thickness(Vector3f)}.</p>
+     */
     private static BufferBuilder begin()
     {
-        RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-        RenderSystem.lineWidth(lineWidth());
-
         return Tessellator.getInstance().begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
     }
 
     private static void end(BufferBuilder builder)
     {
-        BufferRenderer.drawWithGlobalProgram(builder.end());
-        RenderSystem.lineWidth(1F);
-    }
-
-    /**
-     * The GL line width the round outlines are drawn with.
-     *
-     * <p>Only ever one or more: a hardware line cannot be thinner than a pixel, so the setting can
-     * make these heavier but not finer — which is why the boxes are bars of geometry instead. Kept
-     * on the same setting anyway, so that turning it up thickens the whole overlay rather than half
-     * of it.</p>
-     */
-    static float lineWidth()
-    {
-        float scale = BBSPhysicsSettings.debugLineWidth == null ? 1F : BBSPhysicsSettings.debugLineWidth.get();
-
-        return Math.max(1F, scale);
+        WireframeLayers.flushLines(builder);
     }
 }

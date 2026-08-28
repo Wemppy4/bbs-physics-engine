@@ -130,7 +130,7 @@ public final class WorldCollider
             }
 
             int minY = Math.max(baseY - below, world.getBottomY());
-            int maxY = Math.min(baseY + above, world.getTopY() - 1);
+            int maxY = Math.min(baseY + above, world.getTopYInclusive());
 
             if (minY <= maxY)
             {

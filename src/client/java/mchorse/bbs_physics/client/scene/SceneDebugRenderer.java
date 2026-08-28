@@ -7,7 +7,8 @@ import mchorse.bbs_physics.actions.ImpulseActionClip;
 import mchorse.bbs_physics.client.collision.CollisionWireframe;
 import mchorse.bbs_physics.client.collision.JointWireframe;
 import mchorse.bbs_physics.collision.CollisionKind;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Quaternionf;
@@ -46,22 +47,24 @@ public final class SceneDebugRenderer
 
     public static void render(FilmScene scene, WorldRenderContext context)
     {
-        Camera camera = context.camera();
+        /* The camera left the world render context on this branch — it lives on the extraction
+         * pass now, which this hook is not. The game renderer's own is the same one. */
+        Camera camera = MinecraftClient.getInstance().gameRenderer.getCamera();
 
-        if (camera == null || context.matrixStack() == null)
+        if (camera == null || context.matrices() == null)
         {
             return;
         }
 
-        MatrixStack stack = context.matrixStack();
-        float transition = context.tickCounter().getTickDelta(false);
+        MatrixStack stack = context.matrices();
+        float transition = MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(false);
 
         /* Everything is drawn relative to the camera, as the world pass expects: the scene's
          * origin brings simulation coordinates back into the world, the camera position takes them
          * into the render's frame. */
-        double x = scene.getOriginX() - camera.getPos().x;
-        double y = scene.getOriginY() - camera.getPos().y;
-        double z = scene.getOriginZ() - camera.getPos().z;
+        double x = scene.getOriginX() - camera.getCameraPos().x;
+        double y = scene.getOriginY() - camera.getCameraPos().y;
+        double z = scene.getOriginZ() - camera.getCameraPos().z;
 
         for (SceneBody body : scene.getBodies())
         {
@@ -142,9 +145,9 @@ public final class SceneDebugRenderer
 
                 stack.push();
                 stack.translate(
-                    point.x - camera.getPos().x,
-                    point.y - camera.getPos().y,
-                    point.z - camera.getPos().z);
+                    point.x - camera.getCameraPos().x,
+                    point.y - camera.getCameraPos().y,
+                    point.z - camera.getCameraPos().z);
 
                 /* The cross at the point — and, for a directed push, the arrow of its shove, drawn
                  * out to the reach so the pair reads as "from here, this way, this far". */

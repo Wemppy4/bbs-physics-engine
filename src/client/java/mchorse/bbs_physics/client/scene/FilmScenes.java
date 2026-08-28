@@ -6,7 +6,7 @@ import mchorse.bbs_mod.settings.values.base.BaseValue;
 import mchorse.bbs_physics.BBSPhysics;
 import mchorse.bbs_physics.BBSPhysicsSettings;
 import mchorse.bbs_physics.engine.JoltEngine;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 
 import java.util.Collections;
 import java.util.IdentityHashMap;

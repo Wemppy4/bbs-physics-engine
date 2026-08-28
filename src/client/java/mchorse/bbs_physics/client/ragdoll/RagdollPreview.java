@@ -1,6 +1,5 @@
 package mchorse.bbs_physics.client.ragdoll;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import mchorse.bbs_mod.cubic.ModelInstance;
 import mchorse.bbs_mod.cubic.data.model.Model;
 import mchorse.bbs_mod.forms.FormUtils;
@@ -16,6 +15,7 @@ import mchorse.bbs_physics.chain.FormChain;
 import mchorse.bbs_physics.chain.FormChains;
 import mchorse.bbs_physics.client.collision.CollisionCollector;
 import mchorse.bbs_physics.client.collision.JointWireframe;
+import mchorse.bbs_physics.client.collision.WireframeLayers;
 import mchorse.bbs_physics.ragdoll.FormRagdoll;
 import mchorse.bbs_physics.ragdoll.FormRagdolls;
 import mchorse.bbs_physics.ragdoll.RagdollJoint;
@@ -132,7 +132,8 @@ public final class RagdollPreview
             Matrix4f identity = new Matrix4f();
             Map<String, String> attachment = RagdollAttachment.resolve(config, candidates, model, matrices, identity);
 
-            RenderSystem.disableDepthTest();
+            /* Through the model, so the joints inside it can be seen — see WireframeLayers. */
+            boolean depthTest = WireframeLayers.setDepthTest(false);
 
             try
             {
@@ -157,7 +158,7 @@ public final class RagdollPreview
             }
             finally
             {
-                RenderSystem.enableDepthTest();
+                WireframeLayers.setDepthTest(depthTest);
             }
         }
         catch (Throwable e)
