@@ -35,6 +35,29 @@ public final class PhysicsMath
     }
 
     /**
+     * The handle's <b>grip</b> — how hard the pull holds a body — as against the handle itself,
+     * which is how much of the drawn frame the animation still owns.
+     *
+     * <p>The two were one number, and that is what made a fade read as a switch. The pull is a
+     * deadbeat one: at strength s it takes the fraction s out of the gap between body and pose
+     * <em>every tick</em>, so even a bare half puts a body back on its keyframes within three ticks
+     * and looks exactly as held as a full handle does. The whole visible life of a fade was crammed
+     * into its last few percent — and all the way down that slope the pull was scrubbing off the
+     * very speed the animation had given the body, so a thing let go slowly was let go with
+     * nothing. Both halves of "the fade still snaps, and then it hangs in the air".</p>
+     *
+     * <p>Squared, the grip falls away well ahead of the handle: three quarters of the way down it is
+     * a little over a half, halfway down a quarter. What holds the object at that point is the drawn
+     * blend instead ({@code PhysicsBodyState.getWeight}), which costs a body no momentum at all. The
+     * two ends are untouched — 1 holds outright, 0 lets go — so nothing keyed as a hard release
+     * changes.</p>
+     */
+    public static float grip(float authority)
+    {
+        return authority * authority;
+    }
+
+    /**
      * The hardest a knob at its very top may bite: nineteen twentieths of a body's speed gone in one
      * tick. Not 1, because both conversions below take a logarithm and "all of it" has no answer —
      * and because a body that keeps a twentieth of its motion already reads as stopped.

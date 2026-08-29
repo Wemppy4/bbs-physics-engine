@@ -44,11 +44,15 @@ public final class BodyDrive
      * a few ticks instead of a body raking the set; kept safely under the runaway diagnostics'
      * hundred, so a capped pull can never trip them by itself. The fastest swing a film plausibly
      * animates is an order of magnitude below the cap, so ordinary drives never feel it.
+     *
+     * <p>Read by {@link SwingWindow} too, which caps a release for the same reason and must cap it
+     * at the same number: two guards on the same quantity that disagree are one guard and one bug.
+     * </p>
      */
-    private static final float MAX_PULL_SPEED = 60F;
+    static final float MAX_PULL_SPEED = 60F;
 
     /** The same cap for the turn: about three revolutions per second, under the runaway line. */
-    private static final float MAX_PULL_SPIN = 20F;
+    static final float MAX_PULL_SPIN = 20F;
 
     /* Where the body actually is, against the target — the difference is what it is given. */
     private final RVec3 currentPosition = new RVec3();

@@ -61,6 +61,17 @@ public final class RagdollPoseApplier
         evaluating = value;
     }
 
+    /**
+     * Whether the walk running right now is the simulation's own — the one that asks where the
+     * <em>animation</em> has everything, because that is the target every rig pulls towards. Read
+     * by the body substitution too ({@code FormRendererMixin}): a form carrying the rigid body
+     * modifier must answer that walk with its keyframes, not with where the body already is.
+     */
+    public static boolean isEvaluating()
+    {
+        return evaluating;
+    }
+
     public static boolean isChainStretch()
     {
         return chainStretch;
