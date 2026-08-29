@@ -688,7 +688,15 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         {
             this.presetGroup = this.model.getPoseGroup();
 
-            this.bones.fillBones(this.model.model, this.model.getDisabledBones());
+            /* Every bone, the ones the model marks as disabled included. That list is a posing
+             * filter -- "do not let the animator crank this bone" -- and on the standard player it
+             * hides `torso`, the only bone in the chest that owns any cubes, because a picking
+             * override sends clicks on the chest to `low_body` instead. Collision markup asks a
+             * different question: a bone is listed here to be measured, and a bone that draws
+             * something can carry a body no matter who is allowed to pose it. Hiding it left the
+             * chest impossible to mark up, and with it the ragdoll's torso, unless the author went
+             * and edited the model's config by hand. BBS's own tabs keep hiding them. */
+            this.bones.fillBones(this.model.model, null);
             this.bones.filter(this.bonesSearch.search.getText());
 
             if (!this.pickBoneInList(PickedBone.get()) && !this.bones.getList().isEmpty())
