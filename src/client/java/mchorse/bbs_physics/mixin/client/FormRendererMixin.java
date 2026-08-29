@@ -97,10 +97,15 @@ public abstract class FormRendererMixin
 
         Transform transform = this.createTransform();
         Vector3f position = state.getPosition(transition, new Vector3f());
+        Matrix4f animated = weight < 1F && !origin ? bbs_physics$animated(transform) : null;
 
         if (weight < 1F)
         {
-            transform.translate.lerp(position, weight, position);
+            /* The origin pass applies the bare translate, everything else the whole transform —
+             * which turns around a pivot here, so the animated place has to be read off the
+             * matrix rather than off the translate. */
+            (origin ? new Vector3f(transform.translate) : animated.getTranslation(new Vector3f()))
+                .lerp(position, weight, position);
         }
 
         stack.translate(position.x, position.y, position.z);
@@ -111,7 +116,7 @@ public abstract class FormRendererMixin
 
             if (weight < 1F)
             {
-                transform.createRotation().slerp(rotation, weight, rotation);
+                animated.getUnnormalizedRotation(new Quaternionf()).slerp(rotation, weight, rotation);
             }
 
             stack.multiply(rotation);
@@ -144,8 +149,10 @@ public abstract class FormRendererMixin
 
         if (weight < 1F)
         {
-            transform.translate.lerp(position, weight, position);
-            transform.createRotation().slerp(rotation, weight, rotation);
+            Matrix4f animated = bbs_physics$animated(transform);
+
+            animated.getTranslation(new Vector3f()).lerp(position, weight, position);
+            animated.getUnnormalizedRotation(new Quaternionf()).slerp(rotation, weight, rotation);
         }
 
         matrix.translate(position);
@@ -153,6 +160,24 @@ public abstract class FormRendererMixin
         matrix.scale(transform.scale.x, transform.scale.y, transform.scale.z);
 
         info.cancel();
+    }
+
+    /**
+     * Where the animation puts this form, as a matrix of its own.
+     *
+     * <p>Read through {@code createMatrix} rather than off {@code translate} and a rotation of its
+     * own, because this BBS turns a form around a <b>pivot</b>: where it ends up is the translate
+     * plus whatever the turn does to that pivot, and blending against the bare translate would drag
+     * a pivoted form sideways on its way out of the animation. The rotation is read off the same
+     * matrix, unnormalized for the reason it always is — the transform may carry scale, and JOML's
+     * normalized variant assumes it does not.</p>
+     *
+     * <p>Copied on the spot: {@code createMatrix} hands out a shared scratch matrix, and the next
+     * form to be drawn overwrites it.</p>
+     */
+    private static Matrix4f bbs_physics$animated(Transform transform)
+    {
+        return new Matrix4f(transform.createMatrix());
     }
 
     /**
