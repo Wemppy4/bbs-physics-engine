@@ -192,7 +192,10 @@ public abstract class UIBoneSection extends UIElement
             return;
         }
 
-        this.bones.fillBones(this.model.model, this.model.getDisabledBones());
+        /* Disabled bones are listed here as well -- see the note in UICollisionFormPanel. On the
+         * standard player the chest is one of them, and a modifier cannot claim a bone the list
+         * never offers. */
+        this.bones.fillBones(this.model.model, null);
         this.bones.filter(this.bonesSearch.search.getText());
 
         /* Filling the list drops its selection, so whatever bone was showing is no longer standing

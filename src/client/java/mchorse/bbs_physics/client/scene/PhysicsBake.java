@@ -12,6 +12,7 @@ import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.settings.values.base.BaseValue;
+import mchorse.bbs_mod.utils.MathUtils;
 import mchorse.bbs_mod.utils.joml.Matrices;
 import mchorse.bbs_mod.utils.keyframes.Keyframe;
 import mchorse.bbs_mod.utils.keyframes.KeyframeChannel;
@@ -156,19 +157,24 @@ public final class PhysicsBake
         Transform animated = form.transform.get();
         Transform value = new Transform();
 
-        if (authority >= 1F)
+        float weight = MathUtils.clamp(1F - authority, 0F, 1F);
+
+        if (weight <= 0F)
         {
             /* The renderer draws the keyframes outright on a tick the animation owns (it never
-             * substitutes a kinematic body), so the key is the animation's own value — not the
-             * body's driven pose, which merely chases it. */
+             * substitutes a body at a full handle), so the key is the animation's own value — not
+             * the body's driven pose, which merely chases it. */
             value.copy(animated);
         }
         else
         {
-            value.translate.set(position);
+            /* Half a handle draws half the way to the body, so half the way is what is frozen —
+             * the renderer's own blend, run again here (§4). Baking the body's raw answer instead
+             * would put the object where the viewport never had it. */
+            value.translate.set(animated.translate).lerp(position, weight);
             value.scale.set(animated.scale);
             value.rotationMode = Transform.RotationMode.QUATERNION;
-            value.quat.set(rotation).normalize();
+            value.quat.set(animated.createRotation()).slerp(new Quaternionf(rotation).normalize(), weight);
         }
 
         this.stage(this.transformKey(path), KeyframeFactories.TRANSFORM, value, authority < 1F);

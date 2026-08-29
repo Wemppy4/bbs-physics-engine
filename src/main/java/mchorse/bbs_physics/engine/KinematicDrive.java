@@ -48,8 +48,12 @@ public final class KinematicDrive
     /**
      * Steers the body to the target over the coming tick, or places it there outright when the
      * distance is a cut rather than a motion.
+     *
+     * @return whether the target was a cut and the body was placed. A caller that measures the
+     *         animation's own motion has to know: the gap either side of a cut is not a speed, and
+     *         reading it as one is how a keyed teleport turns into a throw ({@link SwingWindow})
      */
-    public void move(BodyInterface bodies, int id, RVec3 target, Quat rotation)
+    public boolean move(BodyInterface bodies, int id, RVec3 target, Quat rotation)
     {
         bodies.getPositionAndRotation(id, this.currentPosition, this.currentRotation);
 
@@ -78,6 +82,8 @@ public final class KinematicDrive
         {
             bodies.moveKinematic(id, target, rotation, PhysicsWorld.TICK);
         }
+
+        return cut;
     }
 
     /**
