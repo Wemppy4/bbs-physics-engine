@@ -1,5 +1,6 @@
 package mchorse.bbs_physics.forms;
 
+import mchorse.bbs_mod.utils.MathUtils;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -21,6 +22,18 @@ public class PhysicsBodyState
 
     private final Quaternionf previousRotation = new Quaternionf();
     private final Quaternionf rotation = new Quaternionf();
+
+    /**
+     * The authority handle as the two recorded ticks stood under it — what decides how much of the
+     * drawn frame is the simulation's, exactly as it does for a ragdoll's bones.
+     *
+     * <p>Read off the recording rather than off the form, for the same reason everything else here
+     * is: the form holds the handle for the frame being drawn, at whatever fraction of a tick the
+     * frame falls on, while these two transforms belong to whole ticks. Taking all three from the
+     * same place is what keeps the blend from sliding against the pair it is blending.</p>
+     */
+    private float previousAuthority = 1F;
+    private float authority = 1F;
 
     /**
      * Whether the recording actually has this body on the frame being drawn.
@@ -52,13 +65,15 @@ public class PhysicsBodyState
      *                 first tick. Interpolating across a jump would draw the body sliding through
      *                 the scene to catch up
      */
-    public void set(Vector3f position, Quaternionf rotation, boolean teleport)
+    public void set(Vector3f position, Quaternionf rotation, float authority, boolean teleport)
     {
         this.previousPosition.set(this.position);
         this.previousRotation.set(this.rotation);
+        this.previousAuthority = this.authority;
 
         this.position.set(position);
         this.rotation.set(rotation);
+        this.authority = authority;
 
         if (teleport || !this.simulated)
         {
@@ -67,9 +82,28 @@ public class PhysicsBodyState
              * thing sliding in from wherever the animation had left it. */
             this.previousPosition.set(this.position);
             this.previousRotation.set(this.rotation);
+            this.previousAuthority = this.authority;
         }
 
         this.simulated = true;
+    }
+
+    /**
+     * The simulation's share of the drawn frame: 0 while the animation owns the form outright, 1
+     * once it has been let go, and the way across in between — the counterpart of the weight a
+     * ragdoll's bones are drawn by, and now the whole of what makes a fade look like a fade.
+     *
+     * <p>Before this the substitution was all or nothing: below a full handle the body's own answer
+     * was drawn outright, and the only thing standing between "in the hand" and "flying" was how
+     * hard the pull happened to be holding the body that tick. It held hard almost to the very
+     * bottom of the handle (see {@code PhysicsMath.grip}), so a fade drawn over ten frames spent
+     * nine of them looking held and the tenth looking thrown.</p>
+     */
+    public float getWeight(float transition)
+    {
+        float value = this.previousAuthority + (this.authority - this.previousAuthority) * transition;
+
+        return MathUtils.clamp(1F - value, 0F, 1F);
     }
 
     /** No recorded answer for this frame — the renderer draws the keyframes instead (Р8.1). */

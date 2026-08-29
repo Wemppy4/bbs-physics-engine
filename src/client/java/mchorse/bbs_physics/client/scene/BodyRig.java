@@ -26,6 +26,7 @@ import mchorse.bbs_physics.engine.PhysicsCache;
 import mchorse.bbs_physics.engine.PhysicsLayers;
 import mchorse.bbs_physics.engine.PhysicsMath;
 import mchorse.bbs_physics.engine.PhysicsWorld;
+import mchorse.bbs_physics.engine.SwingWindow;
 import mchorse.bbs_physics.forms.FormBody;
 import mchorse.bbs_physics.forms.PhysicsBodyState;
 import mchorse.bbs_physics.forms.PhysicsForms;
@@ -41,19 +42,30 @@ import java.util.List;
  * directions: while the animation owns the form, the keyframes drive the body; once it is let go,
  * the body drives what is drawn.
  *
- * <p>The handover is what makes a thrown object work, and it costs nothing to arrange: a kinematic
- * body in Jolt carries the velocity {@code moveKinematic} gave it, so switching it to dynamic
- * leaves it flying at exactly the speed the keyframes were moving it. Animate the authority from 1
- * to 0 on the frame the hand opens and the object simply continues.</p>
+ * <p>The handover is what makes a thrown object work: drop the authority from 1 to 0 on the frame
+ * the hand opens and the object continues at the speed the keyframes were carrying it. Jolt does
+ * most of that for free — a kinematic body keeps the velocity {@code moveKinematic} gave it, so a
+ * body switched to dynamic is already flying — but that velocity is the <em>last tick's</em>, and
+ * an eased keyframe arrives at rest by construction, so on the very frame the object is let go the
+ * animation is often doing almost nothing. The release therefore reads the last few ticks and takes
+ * the swing at its fastest ({@link SwingWindow}), which is the motion the author drew rather than
+ * its dying tail.</p>
  *
- * <p><b>The handover is gradual, not a switch.</b> Below a full 1 the body is dynamic and is
- * <em>pulled</em> towards the animated pose: each tick it is given the velocity that would carry it
- * there, blended with the velocity it already has by the authority. At 1 that blend is the pose
- * exactly (and the body is simply made kinematic, which is the same thing for free and immovable);
- * at 0 nothing is applied and the body is on its own; in between it lags, sags under gravity and
- * gives way to whatever it hits, by that much. So a fade from 1 to 0 is a fade, and the object is
- * never seen to jump on the tick it is let go — which a threshold in the middle of the handle
- * guaranteed it would.</p>
+ * <p><b>The handover is gradual, not a switch, and it is gradual in two places.</b> Below a full 1
+ * the body is dynamic and is <em>pulled</em> towards the animated pose: each tick it is given the
+ * velocity that would carry it there, blended with the velocity it already has by the handle's grip
+ * ({@link PhysicsMath#grip}). At 1 that blend is the pose exactly (and the body is simply made
+ * kinematic, which is the same thing for free and immovable); at 0 nothing is applied and the body
+ * is on its own; in between it lags, sags under gravity and gives way to whatever it hits, by that
+ * much. The second place is the drawing: what is on screen is the animated frame blended with the
+ * simulated one by the handle, the way a ragdoll's bones have always been drawn.</p>
+ *
+ * <p>Both were needed, and having only the first is what left a fade still reading as a snap. The
+ * pull is a deadbeat one — at half strength a body is back on its keyframes in three ticks — so
+ * almost the whole travel of the handle looked identical to a full one, the fade lived in its last
+ * few percent, and all the way down the pull was rubbing off the very speed the throw was made of.
+ * Now the grip lets go early and the picture carries the rest, which costs the body no momentum at
+ * all.</p>
  *
  * <p><b>The body has no shape of its own.</b> It is a mark saying "this falls"; what it collides as
  * is gathered from the collision markup of everything nested inside it (§5.1), welded into one
@@ -76,8 +88,9 @@ import java.util.List;
  *
  * <p>Known approximations. A released nested body is re-anchored to its parent frame every tick, so
  * on a fast-moving parent the draw interpolation composes two lerps and can wobble a touch. A body
- * nested inside <em>another physics body</em> reads its parent's frame a tick late — the outer body
- * works, the inner one follows approximately. The throw, on the other hand, is no longer an
+ * nested inside <em>another physics body</em> is placed against the outer body's <em>animated</em>
+ * frame, because the walk the frame is read from is the simulation's own and answers with animation
+ * throughout — the outer body works, the inner one follows the animation of the thing it sits in. The throw, on the other hand, is no longer an
  * approximation of anything: every tick of the film is simulated exactly once, in order, so the
  * velocity a body inherits on release is the velocity the keyframes actually gave it — arriving at
  * that frame by scrubbing and arriving by playing are the same arrival now (§6).</p>
@@ -121,6 +134,9 @@ public class BodyRig implements SceneRig
 
     /** The steer-or-place move of the kinematic phase — held, because it carries scratch. */
     private final KinematicDrive move = new KinematicDrive();
+
+    /** The last few ticks of animated pose, for the speed the body is let go with. */
+    private final SwingWindow swing = new SwingWindow();
 
     private final SceneBody debug;
 
@@ -376,6 +392,14 @@ public class BodyRig implements SceneRig
 
             this.kinematic = wanted;
 
+            if (!wanted)
+            {
+                /* Let go with the swing rather than with the last tick of it — see SwingWindow.
+                 * The velocity Jolt carried across the change is that last tick, and on an eased
+                 * keyframe the last tick is where the animation was already stopping. */
+                this.swing.release(bodies, this.bodyId);
+            }
+
             /* Taken back by the animation, after however long living its own life: it is nowhere
              * near its keyframe any more. Steering it back over a single tick would send it there
              * at the whole distance divided by a twentieth of a second, scattering everything in
@@ -400,6 +424,10 @@ public class BodyRig implements SceneRig
 
         if (entry == null || entry.matrix() == null)
         {
+            /* A tick with no pose at all is a hole in the window: the ticks either side of it are
+             * two ticks apart and would read as half the speed they were. */
+            this.swing.clear();
+
             return;
         }
 
@@ -420,12 +448,22 @@ public class BodyRig implements SceneRig
         if (put)
         {
             this.move.place(bodies, this.bodyId, this.scratchPosition, this.scratchRotation);
+
+            /* Put down rather than moved: the gap between this pose and the last is a jump, not a
+             * swing, and the window starts again from here. */
+            this.swing.clear();
+            this.swing.push(this.scratchPosition, this.scratchRotation);
         }
         else if (this.kinematic)
         {
             /* Steered when the keyframes moved, placed when they cut — see KinematicDrive: a
              * crate keyed across the set in one frame must not sweep the whole way there. */
-            this.move.move(bodies, this.bodyId, this.scratchPosition, this.scratchRotation);
+            if (this.move.move(bodies, this.bodyId, this.scratchPosition, this.scratchRotation))
+            {
+                this.swing.clear();
+            }
+
+            this.swing.push(this.scratchPosition, this.scratchRotation);
         }
         else
         {
@@ -439,7 +477,10 @@ public class BodyRig implements SceneRig
      */
     private void drive(BodyInterface bodies, float authority)
     {
-        if (this.drive.apply(bodies, this.bodyId, this.scratchPosition, this.scratchRotation, authority))
+        /* By the grip rather than by the handle itself: what holds the object through the middle of
+         * a fade is the drawn blend, and a pull that held it there too would be taking the throw's
+         * momentum away to do work the picture is already doing. */
+        if (this.drive.apply(bodies, this.bodyId, this.scratchPosition, this.scratchRotation, PhysicsMath.grip(authority)))
         {
             return;
         }
@@ -677,7 +718,7 @@ public class BodyRig implements SceneRig
 
         if (cache.read(tick, this.channel, this.position, this.rotation))
         {
-            state.set(this.position, this.rotation, teleport);
+            state.set(this.position, this.rotation, cache.readAuthority(tick, this.channel), teleport);
         }
         else
         {
