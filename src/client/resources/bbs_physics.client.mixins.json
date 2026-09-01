@@ -1,6 +1,6 @@
 {
     "required": true,
-    "package": "mchorse.bbs_physics.mixin.client",
+    "package": "wemppy.bbs_physics.mixin.client",
     "compatibilityLevel": "JAVA_21",
     "client": [
         "BaseFilmControllerMixin",

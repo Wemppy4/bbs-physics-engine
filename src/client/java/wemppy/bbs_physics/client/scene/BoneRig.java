@@ -1,0 +1,226 @@
+package wemppy.bbs_physics.client.scene;
+
+import com.github.stephengold.joltjni.Body;
+import com.github.stephengold.joltjni.BodyCreationSettings;
+import com.github.stephengold.joltjni.BodyInterface;
+import com.github.stephengold.joltjni.Quat;
+import com.github.stephengold.joltjni.RVec3;
+import com.github.stephengold.joltjni.enumerate.EActivation;
+import com.github.stephengold.joltjni.enumerate.EMotionType;
+import com.github.stephengold.joltjni.readonly.ConstShape;
+import mchorse.bbs_mod.forms.forms.Form;
+import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
+import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
+import wemppy.bbs_physics.client.collision.CollisionCollector;
+import wemppy.bbs_physics.client.collision.JoltShapes;
+import wemppy.bbs_physics.engine.KinematicDrive;
+import wemppy.bbs_physics.engine.PhysicsLayers;
+import wemppy.bbs_physics.engine.PhysicsWorld;
+import org.joml.Matrix4f;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * One actor's collision as kinematic bodies: physics never moves them, they move physics. This is
+ * what makes an animated character part of the simulated world — a falling crate lands on a
+ * shoulder, and later a ragdoll's limbs have something to be driven towards.
+ *
+ * <p>Kinematic rather than static because a static body has no velocity: things resting on it
+ * would be left behind when it moves, instead of being carried and shoved. {@code moveKinematic}
+ * gives Jolt a target for the next tick and lets it work out the velocity that gets there, which
+ * is what makes the contact push.</p>
+ *
+ * <p><b>Only what is marked up.</b> Every piece here comes from the form tree's collision markup
+ * (§5.2) — nothing is measured behind the author's back. A model whose bones nobody marked has no
+ * bodies at all, which is the intended default: marking every cube costs contacts on geometry that
+ * was never meant to collide, and it would take ownership of the bones hair and cloth are about to
+ * be driven by. One body per marked slot, so a hand can shove a crate without the knee joining in.
+ * </p>
+ *
+ * <p><b>Known limit, deliberate for now:</b> the pose is only known at the tick the film is on. A
+ * seek that re-simulates twenty ticks stands the bodies still at the pose of the tick it is heading
+ * for, because computing the pose of every tick in between would mean replaying the whole property
+ * track per step. So a tick arrived at by scrubbing is not bit-for-bit the tick arrived at by
+ * playing, for any actor that moves — the props are exact either way, the character's shoving of
+ * them is not. Making it exact means sampling the pose per tick, which belongs with the ragdoll
+ * work in Э2. What it must never do is <em>steer</em> across a jump: a kinematic body keeps the
+ * velocity it was given, so a target one tick away, integrated over twenty, throws the body
+ * twentyfold across the scene, raking everything on the way. Hence {@code place}.</p>
+ */
+public class BoneRig implements SceneRig
+{
+
+    private final List<Part> parts = new ArrayList<>();
+
+    private final Matrix4f worldMatrix = new Matrix4f();
+    private final Vector3f translation = new Vector3f();
+    private final Quaternionf orientation = new Quaternionf();
+    private final RVec3 target = new RVec3();
+    private final Quat targetRotation = new Quat();
+
+    /** The steer-or-place move every kinematic body makes — held, because it carries scratch. */
+    private final KinematicDrive move = new KinematicDrive();
+
+    private BoneRig()
+    {}
+
+    /**
+     * Builds a rig from the marked-up pieces handed to it, or returns null when there are none —
+     * which is what an unmarked actor looks like, and is not an error.
+     *
+     * <p>The pieces arrive collected rather than being collected here because the scene divides
+     * one actor's markup between owners: a ragdoll-enabled model's bones go to its
+     * {@link RagdollRig}, and only the rest — other forms' slots, the models' own shapes —
+     * become plain kinematic bones.</p>
+     *
+     * @param matrices the actor's pose, already evaluated for the tick the scene is being built at
+     * @param group    the actor's collision group — these bodies are in it so that its ragdolls'
+     *                 parts can be excused from them once released, which they must be: the two
+     *                 sets of shapes were cut from one skeleton and overlap wherever bones join,
+     *                 and a kinematic body cannot give way (see {@link ActorCollisionGroup})
+     */
+    public static BoneRig build(PhysicsWorld physics, Form root, MatrixCache matrices, FilmScene scene, List<CollisionCollector.Piece> pieces, ActorCollisionGroup group)
+    {
+        if (root == null)
+        {
+            return null;
+        }
+
+        BoneRig rig = new BoneRig();
+        BodyInterface bodies = physics.getBodies();
+
+        for (CollisionCollector.Piece piece : pieces)
+        {
+            MatrixCacheEntry entry = matrices.get(piece.path());
+
+            /* No frame means nothing will ever tell this body where to stand, and a kinematic body
+             * left at the scene's origin is a collider in the middle of the set. */
+            if (entry == null || entry.matrix() == null)
+            {
+                continue;
+            }
+
+            ConstShape shape = JoltShapes.build(piece.shapes());
+
+            if (shape == null)
+            {
+                continue;
+            }
+
+            BodyCreationSettings settings = new BodyCreationSettings(shape, new RVec3(0D, 0D, 0D), Quat.sIdentity(), EMotionType.Kinematic, PhysicsLayers.BONE);
+
+            int sub = group.claimBone();
+
+            settings.setFriction(0.6F);
+            settings.setCollisionGroup(group.of(sub));
+
+            /* Created and added in two steps rather than createAndAddBody, because the Body
+             * reference has a consumer now: a ragdoll jointed to a kinematic bone — "the head
+             * falls, the torso walks on" — hands this very body to the constraint. */
+            Body body = bodies.createBody(settings);
+            int id = body.getId();
+
+            bodies.addBody(id, EActivation.Activate);
+
+            rig.parts.add(new Part(piece.path(), id, body, sub));
+
+            SceneBody debug = new SceneBody(id, 0.3F, 0.7F, 1F);
+
+            debug.addShapes(piece.shapes());
+            scene.addDebugBody(debug);
+        }
+
+        return rig.parts.isEmpty() ? null : rig;
+    }
+
+    /**
+     * Points every body at where the animation has its slot this tick. The pose arrives as the
+     * shared {@code MatrixCache} the scene evaluated once for this actor; its matrices are
+     * form-local, so the actor's world placement is applied on top — the same transform BBS's own
+     * bone physics resolves gravity against, so both agree on where the character stands.
+     *
+     * <p>A reset stands the bodies down where they belong and stops them, instead of steering them
+     * there over the coming tick. That is not an optimisation: a kinematic body keeps the velocity
+     * it was given, so a target one tick away, integrated over twenty, throws the body twentyfold
+     * across the scene, raking everything on the way.</p>
+     */
+    @Override
+    public void update(RigUpdate update)
+    {
+        MatrixCache matrices = update.matrices;
+
+        if (this.parts.isEmpty() || matrices == null)
+        {
+            return;
+        }
+
+        FilmScene scene = update.scene;
+        Matrix4f actorWorld = update.actorWorld;
+        boolean place = update.reset;
+        BodyInterface bodies = update.physics.getBodies();
+
+        for (Part part : this.parts)
+        {
+            MatrixCacheEntry entry = matrices.get(part.path);
+
+            if (entry == null || entry.matrix() == null)
+            {
+                continue;
+            }
+
+            this.worldMatrix.set(actorWorld).mul(entry.matrix());
+            this.worldMatrix.getTranslation(this.translation);
+
+            /* Unnormalized: the matrix carries the model's scale, and JOML's normalized variant
+             * assumes it does not — on a scaled model it returns a wrong rotation that also jumps
+             * as the model turns. BBS hit exactly this in its own bone physics. */
+            this.worldMatrix.getUnnormalizedRotation(this.orientation);
+
+            this.target.set(
+                this.translation.x - scene.getOriginX(),
+                this.translation.y - scene.getOriginY(),
+                this.translation.z - scene.getOriginZ());
+            this.targetRotation.set(this.orientation.x, this.orientation.y, this.orientation.z, this.orientation.w);
+
+            if (place)
+            {
+                this.move.place(bodies, part.id, this.target, this.targetRotation);
+            }
+            else
+            {
+                /* A target for one tick, so Jolt derives the velocity that reaches it — that
+                 * velocity is what shoves whatever the body runs into. Unless the keyframes cut
+                 * rather than moved, in which case the body is placed instead of sweeping the
+                 * whole way — see KinematicDrive. */
+                this.move.move(bodies, part.id, this.target, this.targetRotation);
+            }
+        }
+    }
+
+    /**
+     * The kinematic body standing at {@code path}, or null when the slot got none — for a ragdoll
+     * that needs to hang a falling part off a bone the animation kept.
+     */
+    public Part find(String path)
+    {
+        for (Part part : this.parts)
+        {
+            if (part.path.equals(path))
+            {
+                return part;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * One marked-up slot as a body: the matrix-cache path it follows, the body following it, and
+     * its subgroup in the actor's collision group.
+     */
+    public record Part(String path, int id, Body body, int sub)
+    {}
+}
