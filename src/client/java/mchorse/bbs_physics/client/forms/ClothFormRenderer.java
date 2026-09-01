@@ -136,8 +136,15 @@ public class ClothFormRenderer extends TexturedMeshFormRenderer<ClothForm>
     }
 
     /**
-     * A normal per vertex, from the grid's own neighbours: the cross of the run across and the run
-     * down, which handles the edges by using whichever neighbour exists.
+     * A normal per vertex, from the grid's own neighbours: the cross of the run down and the run
+     * across, which handles the edges by using whichever neighbour exists.
+     *
+     * <p><b>Down crossed into across, in that order</b>, because that is the way round that agrees
+     * with how the sheet is wound — and with how BBS lights a picture form, whose front triangles
+     * face +Z and are handed a +Z normal. Across-into-down is the other way round: on a flat sheet
+     * it answers -Z while the front of that same sheet faces +Z, so every fold was lit from behind
+     * and the drape read inside out. The flat fallback below always said +Z, which is what the two
+     * halves of this method disagreed about.</p>
      */
     private void fillNormals(int columns, int rows)
     {
@@ -160,9 +167,9 @@ public class ClothFormRenderer extends TexturedMeshFormRenderer<ClothForm>
                 float by = this.positions[down + 1] - this.positions[up + 1];
                 float bz = this.positions[down + 2] - this.positions[up + 2];
 
-                float nx = ay * bz - az * by;
-                float ny = az * bx - ax * bz;
-                float nz = ax * by - ay * bx;
+                float nx = by * az - bz * ay;
+                float ny = bz * ax - bx * az;
+                float nz = bx * ay - by * ax;
 
                 float length = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
 
