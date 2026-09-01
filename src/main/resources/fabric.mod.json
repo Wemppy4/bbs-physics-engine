@@ -12,16 +12,16 @@
     "environment": "*",
     "entrypoints": {
         "main": [
-            "mchorse.bbs_physics.BBSPhysics"
+            "wemppy.bbs_physics.BBSPhysics"
         ],
         "client": [
-            "mchorse.bbs_physics.client.BBSPhysicsClient"
+            "wemppy.bbs_physics.client.BBSPhysicsClient"
         ],
         "bbs-addon": [
-            "mchorse.bbs_physics.BBSPhysicsAddon"
+            "wemppy.bbs_physics.BBSPhysicsAddon"
         ],
         "bbs-client-addon": [
-            "mchorse.bbs_physics.client.BBSPhysicsClientAddon"
+            "wemppy.bbs_physics.client.BBSPhysicsClientAddon"
         ]
     },
     "mixins": [
