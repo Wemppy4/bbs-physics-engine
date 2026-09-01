@@ -1,6 +1,6 @@
 {
     "required": true,
-    "package": "mchorse.bbs_physics.mixin",
+    "package": "wemppy.bbs_physics.mixin",
     "compatibilityLevel": "JAVA_21",
     "mixins": [
         "FormMixin",
