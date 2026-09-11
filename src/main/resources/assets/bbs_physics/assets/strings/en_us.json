@@ -7,7 +7,7 @@
     "bbs_physics.config.general.debug": "Debug overlay",
     "bbs_physics.config.general.debug-comment": "Draws the shapes the simulation actually works with, on top of the rendered scene.",
     "bbs_physics.config.general.debug_line_width": "Debug line thickness",
-    "bbs_physics.config.general.debug_line_width-comment": "How heavily collision and joint outlines are drawn. Fine by default, so that a quarter-pixel plate reads as a plate rather than a narrow box; raise it when looking at a rig from across the set. Round outlines cannot go below one screen pixel — that is a hardware limit.",
+    "bbs_physics.config.general.debug_line_width-comment": "Thickness of collision outlines, joints and impulse markers: centre, direction and radius. Increase it for visibility at a distance, or decrease it for close-up editing.",
     "bbs_physics.config.general.debug_flat_plates": "Draw plates flat",
     "bbs_physics.config.general.debug_flat_plates-comment": "A collision plate (a box thinner than a quarter pixel) is outlined as a flat rectangle rather than a sliver with twelve edges. A plate does have thickness — the engine requires it — but it is hidden under the texture, and on screen it is a surface. Untick to see the actual sliver.",
     "bbs_physics.config.general.collision_preview": "Show markup in the editor",
