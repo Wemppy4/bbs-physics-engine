@@ -70,14 +70,22 @@ public final class SceneStatusHUD
             colors.add(Colors.A100 | Colors.NEGATIVE);
         }
 
-        /* Stacked upwards from the bottom left corner, so that adding a warning never moves the
+        /* Stacked upwards from the bottom right corner, so that adding a warning never moves the
          * line above it — a readout whose lines jump around is read as flickering rather than as
-         * information. */
+         * information.
+         *
+         * The bottom LEFT is where this sat until BBS 2.6, which gave that corner to the viewport's
+         * navigation gizmo and the stick guide stacked over it. BBS places its own overlays in six
+         * reserved zones now and keeps the bookkeeping to itself, so an addon cannot claim a slot —
+         * it can only stay out of the occupied corners, and this is the one left. */
         int y = area.ey() - 5 - context.batcher.getFont().getHeight();
 
         for (int i = lines.size() - 1; i >= 0; i--)
         {
-            context.batcher.textCard(lines.get(i), area.x + 5, y, colors.get(i), Colors.A50);
+            String line = lines.get(i);
+            int width = context.batcher.getFont().getWidth(line);
+
+            context.batcher.textCard(line, area.ex() - 5 - width, y, colors.get(i), Colors.A50);
 
             y -= LINE;
         }

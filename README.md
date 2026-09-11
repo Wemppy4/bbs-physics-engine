@@ -105,9 +105,9 @@ One branch per target, each building against its own BBS.
 
 | Branch | Minecraft | Built against |
 |---|---|---|
-| `master` | 1.20.1 – 1.20.4 | BBS 2.4 |
-| `1.21.1` | 1.21.1 | BBS 2.5.2 |
-| `1.21.11` | 1.21.11 | BBS 2.5.2 |
+| `master` | 1.20.1 – 1.20.4 | BBS 2.6 |
+| `1.21.1` | 1.21.1 | BBS 2.6 |
+| `1.21.11` | 1.21.11 | BBS 2.6 |
 | `cml-1.21.1` | 1.21.1 | BBS CML 2.1-RC4 |
 | `cml-1.20.4` | 1.20.4 | BBS CML 2.1-RC4 |
 | `cml-1.20.1` | 1.20.1 | BBS CML 2.1-RC4 |
@@ -125,23 +125,24 @@ overlay that draws the shapes the simulation actually works with.
 
 ## Building
 
-BBS is not published to any public repository, so it has to be put into the local Maven
-repository first:
+BBS is not published to any repository, so its jar goes into `libs/` by hand:
 
-```sh
-cd ../bbs-fs
-gradlew publishToMavenLocal
+```
+libs/bbs-<version>-<minecraft>.jar
+libs/bbs-<version>-<minecraft>-sources.jar   # optional, for reading what you build against
 ```
 
-That installs the `mchorse:bbs` version that `bbs_version` in `gradle.properties` points at into
-`~/.m2`. Repeat it whenever BBS changes in a way this addon depends on.
+`bbs_version` in `gradle.properties` picks which of them is used — `2.6-1.21.1` on this branch —
+and the build stops with a clear message if that file is not there. The folder is git-ignored, so
+the jars are never committed; take them from a BBS release, or from `build/libs/` of a BBS
+checkout after `gradlew build`.
 
-BBS keeps the same version string while it is being developed, and Loom caches remapped mod
-dependencies by coordinates — so a republished BBS would normally go unnoticed. This project's
-`build.gradle` drops the stale remap by itself, so a plain `gradlew build` is enough after
-republishing; `--refresh-dependencies` is not needed.
+BBS keeps the same version string while it is being developed, and Loom caches the remapped mod —
+so a jar replaced in place would normally go unnoticed. This project's `build.gradle` drops the
+stale remap by itself, so a plain `gradlew build` is enough after swapping the jar;
+`--refresh-dependencies` is not needed.
 
-Then, in this project:
+Then:
 
 ```sh
 gradlew build      # the jar lands in build/libs/
@@ -164,9 +165,16 @@ methods annotated with `@Subscribe`, which then receive BBS's registration event
   event is posted. It lives in the client source set, so BBS's client-only event classes are
   never loaded on a dedicated server. It registers the language files and the settings module.
 
-Beyond the events, BBS's factories are reachable statically — `BBSMod.getForms()`,
-`BBSMod.getFactoryCameraClips()`, `BBSMod.getFactoryActionClips()` — so new form types and clip
-types can be registered from the addon's own initializer, which Fabric runs after BBS's.
+Everything this addon adds to BBS is registered from those two classes, through the events of
+BBS's addon API (`mchorse.bbs_mod.api`): its form types and their renderers and editor panels, its
+tab of the form palette, its action clips and their panels, its settings, its language files, and
+the readout it draws over the editor's viewport. A running film reaches it through `FilmEvents`,
+which BBS posts as a scene is built, ticked, drawn and torn down.
+
+That package is the only part of BBS this addon is promised anything about. The handful of places
+it still reaches past it are mixins, each one for something BBS offers no hook for — the
+substituted pose in the renderer, the gizmo in the collision tab, the cache bar under the
+timeline, and the values the addon puts on every form.
 
 ## The engine
 
