@@ -9,6 +9,8 @@
         "ModelPivotFramesMixin",
         "UIClipsMixin",
         "UIFilmKeyframesMixin",
+        "UIFilmControllerMixin",
+        "FilmEntityRendererMixin",
         "UIFormEditorMixin",
         "UIFormMixin",
         "UIFormRendererMixin",
