@@ -18,8 +18,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Draws the cache bar along the bottom of the film's timeline.
  *
  * <p>{@code UIClips} is the timeline: it owns the time scale, so it is the only place that can turn
- * a tick into a screen position — {@link UIClips#toGraphX(int)} already accounts for the zoom and
- * the horizontal scroll, which a bar that is to line up with the clips above it must do too.</p>
+ * a tick into a screen position — {@code toGraphX} already accounts for the zoom and the horizontal
+ * scroll, which a bar that is to line up with the clips above it must do too. It is inherited from
+ * the timeline canvas and public, so it is simply called rather than shadowed.</p>
  *
  * <p>Drawn after the element has drawn itself, so it sits over the timeline's own background rather
  * than under it, and only when a film that is actually being simulated is on screen — an editor
@@ -30,9 +31,6 @@ public abstract class UIClipsMixin
 {
     @Shadow
     private IUIClipsDelegate delegate;
-
-    @Shadow
-    public abstract int toGraphX(int value);
 
     @Inject(method = "render", at = @At("TAIL"))
     private void bbs_physics$onRender(UIContext context, CallbackInfo info)
@@ -52,6 +50,6 @@ public abstract class UIClipsMixin
 
         UIClips self = (UIClips) (Object) this;
 
-        CacheBar.render(context, self.area, status, this::toGraphX);
+        CacheBar.render(context, self.area, status, self::toGraphX);
     }
 }

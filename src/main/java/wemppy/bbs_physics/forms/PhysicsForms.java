@@ -2,7 +2,6 @@ package wemppy.bbs_physics.forms;
 
 import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
-import mchorse.bbs_mod.settings.values.core.ValueData;
 import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 import mchorse.bbs_mod.utils.MathUtils;
 import wemppy.bbs_physics.balloon.BalloonForm;

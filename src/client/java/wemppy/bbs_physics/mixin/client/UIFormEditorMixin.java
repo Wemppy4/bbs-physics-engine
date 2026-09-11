@@ -51,7 +51,7 @@ public class UIFormEditorMixin
 
         if (transform != null)
         {
-            this.bbs_physics$origin(transition, transform.isLocal(), info);
+            this.bbs_physics$origin(transition, transform.getSpace() == TransformSpace.LOCAL, info);
         }
     }
 

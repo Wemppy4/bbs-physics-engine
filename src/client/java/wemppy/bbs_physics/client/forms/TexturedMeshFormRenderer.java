@@ -214,7 +214,9 @@ public abstract class TexturedMeshFormRenderer<T extends Form & ITexturedForm> e
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         MatrixStack.Entry entry = matrices.peek();
 
-        FormColorBlend.blend(color, this.form.getColor().get(), this.form.additiveColor.get());
+        /* A plain multiplier: BBS dropped the additive brighten mode in 2.6 — it clipped to
+         * flat white in any 8-bit target — and converts the old flag away on load. */
+        FormColorBlend.blend(color, this.form.getColor().get());
 
         /* The lightmap, the overlay, the blend function and the shader were all global state set
          * around the draw. They belong to the layer now, and the layer is picked below. */

@@ -4,6 +4,7 @@ import mchorse.bbs_mod.forms.FormCategories;
 import mchorse.bbs_mod.forms.categories.FormCategory;
 import mchorse.bbs_mod.forms.sections.FormSection;
 import mchorse.bbs_mod.resources.Link;
+import mchorse.bbs_mod.ui.utils.icons.Icons;
 import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.balloon.BalloonForm;
 import wemppy.bbs_physics.chain.ChainForm;
@@ -56,7 +57,9 @@ public class PhysicsFormSection extends FormSection
 
         PhysicsForms.setAuthority(chain, 0F);
 
-        this.category = new FormCategory(PhysicsKeys.CATEGORY, this.parent.visibility.get("bbs_physics"));
+        /* An icon like every other category in the palette carries since 2.6 — without one
+         * ours would be the only heading with a blank where the others have a picture. */
+        this.category = new FormCategory(PhysicsKeys.CATEGORY, this.parent.preferences.visible("bbs_physics")).icon(Icons.PHYSICS);
         this.category.addForm(cloth);
         this.category.addForm(balloon);
         this.category.addForm(chain);

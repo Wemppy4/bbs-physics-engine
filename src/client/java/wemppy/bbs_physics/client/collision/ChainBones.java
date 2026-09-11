@@ -2,16 +2,13 @@ package wemppy.bbs_physics.client.collision;
 
 import mchorse.bbs_mod.cubic.data.model.Model;
 import mchorse.bbs_mod.cubic.data.model.ModelGroup;
-import mchorse.bbs_mod.cubic.physics.ModelPhysicsConfig;
-import mchorse.bbs_mod.cubic.physics.ModelPhysicsIO;
-import mchorse.bbs_mod.data.types.BaseType;
-import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
+import mchorse.bbs_mod.forms.forms.utils.FormBone;
+import mchorse.bbs_mod.settings.values.base.BaseValue;
 
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -23,8 +20,8 @@ import java.util.Set;
  *
  * <p>Until Р8.4 that was the author's problem — the reason the markup defaulted to empty. Now the
  * automatic pass runs by itself the moment physics is added, so the exclusion has to be automatic
- * too, and it can be: BBS stores its chains as {@code start bone → end bone}, which is exactly the
- * list of bones to leave alone. Walking up the tree from each end to its start gives every bone in
+ * too, and it can be: BBS declares a chain on the bone it starts at, as
+ * {@code start bone → end bone}, which is exactly the list of bones to leave alone. Walking up the tree from each end to its start gives every bone in
  * between; a chain whose end is missing or unrelated contributes just its start, which is the safe
  * way to be wrong.</p>
  */
@@ -40,23 +37,20 @@ public final class ChainBones
             return Collections.emptySet();
         }
 
-        BaseType data = modelForm.physics.get();
-
-        if (!(data instanceof MapType map) || map.isEmpty())
-        {
-            return Collections.emptySet();
-        }
-
-        ModelPhysicsConfig config = ModelPhysicsIO.fromData(map);
         Set<String> bones = new HashSet<>();
 
-        for (Map.Entry<String, ModelPhysicsConfig.Bone> entry : config.bones().entrySet())
+        for (BaseValue value : modelForm.bones.getAll())
         {
-            String start = entry.getKey();
+            if (!(value instanceof FormBone bone) || !bone.hasPhysicsChain())
+            {
+                continue;
+            }
+
+            String start = bone.getId();
 
             bones.add(start);
 
-            collectChain(model, start, entry.getValue().end(), bones);
+            collectChain(model, start, bone.physicsEnd.get(), bones);
         }
 
         return bones;

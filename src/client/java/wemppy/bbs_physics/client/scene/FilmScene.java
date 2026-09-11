@@ -1,8 +1,8 @@
 package wemppy.bbs_physics.client.scene;
 
-import io.netty.util.collection.IntObjectMap;
 import mchorse.bbs_mod.film.BaseFilmController;
 import mchorse.bbs_mod.film.Film;
+import mchorse.bbs_mod.film.FilmMatrices;
 import mchorse.bbs_mod.film.replays.Replay;
 import mchorse.bbs_mod.forms.FormUtilsClient;
 import mchorse.bbs_mod.forms.entities.IEntity;
@@ -25,6 +25,7 @@ import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The physics of one film: a single Jolt world, a recording of what it did on every tick, and the
@@ -98,7 +99,7 @@ public class FilmScene implements AutoCloseable
     private final SceneClips clips = new SceneClips(this);
 
     /** The film's cast, as the anchor resolution needs it — an anchor points at another actor. */
-    private final IntObjectMap<IEntity> entities;
+    private final Map<String, IEntity> entities;
 
     /** The film being simulated, for its length — the recording has no reason to run past the end. */
     private final Film film;
@@ -883,7 +884,7 @@ public class FilmScene implements AutoCloseable
             weight = 1F;
         }
 
-        if (weight <= 0F || resolve.replay == Anchor.NO_ATTACHMENT)
+        if (weight <= 0F || !resolve.hasTarget())
         {
             return ChainRig.Attach.NONE;
         }
@@ -920,7 +921,7 @@ public class FilmScene implements AutoCloseable
         /* Everything else is a point: the actor itself, a bone of it, with the anchor's own offset —
          * the same resolution the film's anchors go through, at the tick the cast is standing on and
          * at transition 1 (0 is the previous tick — the Э1 lesson). */
-        Pair<Matrix4f, Float> matrix = BaseFilmController.getTotalMatrix(
+        Pair<Matrix4f, Float> matrix = FilmMatrices.getTotalMatrix(
             this.entities, resolve, new Matrix4f(), 0D, 0D, 0D, 1F, 0, true, null);
 
         if (matrix.a == null)
@@ -953,7 +954,7 @@ public class FilmScene implements AutoCloseable
     Matrix4f actorWorld(IEntity entity)
     {
         /* Zero camera: the actor's placement in the world, not on the screen. */
-        Matrix4f matrix = BaseFilmController.getMatrixForRenderWithRotation(entity, 0D, 0D, 0D, 1F);
+        Matrix4f matrix = FilmMatrices.getMatrixForRenderWithRotation(entity, 0D, 0D, 0D, 1F);
         Form root = entity.getForm();
 
         if (root == null)
@@ -961,7 +962,7 @@ public class FilmScene implements AutoCloseable
             return matrix;
         }
 
-        Pair<Matrix4f, Float> anchored = BaseFilmController.getTotalMatrix(
+        Pair<Matrix4f, Float> anchored = FilmMatrices.getTotalMatrix(
             this.entities, root.anchor.get(), matrix, 0D, 0D, 0D, 1F, 0, false, null);
 
         return anchored.a == null ? matrix : anchored.a;

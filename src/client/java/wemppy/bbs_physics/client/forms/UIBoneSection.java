@@ -10,7 +10,8 @@ import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.framework.elements.UIElement;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
-import mchorse.bbs_mod.ui.utils.PickedBone;
+import mchorse.bbs_mod.ui.utils.BoneSelection;
+import mchorse.bbs_mod.ui.utils.IBoneSelectionHost;
 import mchorse.bbs_mod.ui.utils.UIConstants;
 import mchorse.bbs_mod.ui.utils.bones.UIBoneTreeList;
 import mchorse.bbs_mod.utils.colors.Colors;
@@ -74,6 +75,9 @@ public abstract class UIBoneSection extends UIElement
      */
     protected String bone = "";
 
+    /** Stands in when this section is not inside an editor at all. */
+    private final BoneSelection detachedSelection = new BoneSelection();
+
     /**
      * The form's collision markup as of this frame — see the class note on why it is not read per
      * row. Refreshed by {@link #render}, so an edit made in the Collision tab shows up here on the
@@ -102,7 +106,7 @@ public abstract class UIBoneSection extends UIElement
                  * author cannot see highlighted. */
                 this.bone = l.isEmpty() ? "" : l.get(0);
 
-                PickedBone.set(this.bone);
+                this.boneSelection().set(this.bone);
             }
 
             this.onBonePicked();
@@ -203,7 +207,7 @@ public abstract class UIBoneSection extends UIElement
          * even have. The pick below puts a real one back. */
         this.bone = "";
 
-        if (pick && !this.pickBoneInList(PickedBone.get()) && !this.bones.getList().isEmpty())
+        if (pick && !this.pickBoneInList(this.boneSelection().get()) && !this.bones.getList().isEmpty())
         {
             this.bone = this.bones.getList().get(0);
             this.bones.setCurrentScroll(this.bone);
@@ -278,11 +282,28 @@ public abstract class UIBoneSection extends UIElement
 
         this.bone = bone;
 
-        PickedBone.set(bone);
+        this.boneSelection().set(bone);
         this.bones.setCurrentScroll(bone);
         this.onBonePicked();
 
         return true;
+    }
+
+    /**
+     * The bone the animator is working on, owned by the form editor this section is shown in —
+     * which is what carries a pick from one tab to the next, and what survives the editor being
+     * rebuilt from scratch when a body part is clicked in the viewport.
+     *
+     * <p>Up to BBS 2.4 this was one static field for the whole mod, and the film editor and the
+     * form editor quietly fought over it; since 2.6 it belongs to the editor and is found by
+     * walking up the widget tree. The fallback is for a section standing outside one, which only
+     * happens in tests.</p>
+     */
+    protected BoneSelection boneSelection()
+    {
+        IBoneSelectionHost host = this.getAncestor(IBoneSelectionHost.class);
+
+        return host == null ? this.detachedSelection : host.getBoneSelection();
     }
 
     /** Whether the Collision tab gave {@code bone} a shape at all. */

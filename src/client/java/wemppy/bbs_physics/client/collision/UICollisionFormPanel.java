@@ -29,7 +29,6 @@ import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UIStringList;
 import mchorse.bbs_mod.ui.framework.elements.utils.UILabel;
 import mchorse.bbs_mod.ui.framework.elements.utils.UIText;
-import mchorse.bbs_mod.ui.utils.PickedBone;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
 import mchorse.bbs_mod.ui.utils.bones.UIBoneTreeList;
@@ -168,7 +167,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             {
                 this.slot = l.isEmpty() ? FormCollision.SELF : l.get(0);
 
-                PickedBone.set(this.slot);
+                this.boneSelection().set(this.slot);
             }
 
             this.selectShape(0);
@@ -699,7 +698,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
             this.bones.fillBones(this.model.model, null);
             this.bones.filter(this.bonesSearch.search.getText());
 
-            if (!this.pickBoneInList(PickedBone.get()) && !this.bones.getList().isEmpty())
+            if (!this.pickBoneInList(this.boneSelection().get()) && !this.bones.getList().isEmpty())
             {
                 this.slot = this.bones.getList().get(0);
                 this.bones.setCurrentScroll(this.slot);
@@ -730,7 +729,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
         this.slot = bone;
 
-        PickedBone.set(bone);
+        this.boneSelection().set(bone);
         this.bones.setCurrentScroll(bone);
         this.selectShape(0);
         this.updateLabels();

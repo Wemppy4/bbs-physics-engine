@@ -3,14 +3,11 @@
     "package": "wemppy.bbs_physics.mixin.client",
     "compatibilityLevel": "JAVA_21",
     "client": [
-        "BaseFilmControllerMixin",
-        "FormCategoriesMixin",
         "FormRendererMixin",
         "ModelFormRendererMixin",
-        "ModelPhysicsRuntimeMixin",
+        "ModelPhysicsCacheMixin",
         "ModelPivotFramesMixin",
         "UIClipsMixin",
-        "UIFilmControllerMixin",
         "UIFilmKeyframesMixin",
         "UIFormEditorMixin",
         "UIFormMixin",
@@ -18,8 +15,7 @@
         "UIFormUndoHandlerMixin",
         "UIModelRendererInvoker",
         "UIPickableFormRendererMixin",
-        "UISelectionScreenMixin",
-        "WorldFilmControllerMixin"
+        "UILandingScreenMixin"
     ],
     "injectors": {
         "defaultRequire": 1

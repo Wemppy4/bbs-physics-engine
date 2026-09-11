@@ -1,5 +1,6 @@
 package wemppy.bbs_physics.client;
 
+import mchorse.bbs_mod.api.client.events.FilmEvents;
 import wemppy.bbs_physics.client.scene.FilmScenes;
 import wemppy.bbs_physics.engine.JoltEngine;
 import net.fabricmc.api.ClientModInitializer;
@@ -22,6 +23,17 @@ public class BBSPhysicsClient implements ClientModInitializer
          * is a library load; the alternative is finding out that physics is missing at the worst
          * possible moment. */
         JoltEngine.available();
+
+        /* The four moments a simulation needs out of a running film. BBS posts them for every way
+         * of running one — playback in the world, the editor's live scene, the frozen frame it
+         * leaves standing, the recorder — which is what keeps the editor's viewport agreeing with
+         * the exported video. They used to be taken by mixing into the film controller; since BBS
+         * 2.6 they are events it posts on purpose, so four of its method names stopped being a
+         * contract nobody had agreed to. */
+        FilmEvents.CREATED.register(FilmScenes::onSetup);
+        FilmEvents.TICK_AFTER.register(FilmScenes::onTick);
+        FilmEvents.RENDER_AFTER.register(FilmScenes::onRender);
+        FilmEvents.SHUTDOWN.register(FilmScenes::onShutdown);
 
         /* Leaving a world drops the film controllers without shutting them down, and a Jolt world
          * is native memory that no garbage collector will come back for. This is the one place

@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Keeps one {@link FilmScene} per running film and takes the four calls the mixins make.
+ * Keeps one {@link FilmScene} per running film and takes the four calls BBS makes into it.
  *
  * <p>Scenes are keyed by the controller object rather than by the film's id, because the editor
  * throws its controller away and builds a new one whenever the cast changes — two controllers for
@@ -23,8 +23,8 @@ import java.util.Set;
  * old simulation.</p>
  *
  * <p>Nothing in here is allowed to take BBS down with it. The calls arrive from inside BBS's own
- * tick and render, injected there by a mixin, so an exception would land in the middle of the
- * host's frame. Every entry point therefore catches, reports once and drops the scene: a film
+ * tick and render — it posts them there itself (see {@code FilmEvents}) — so an exception would
+ * land in the middle of the host's frame. Every entry point therefore catches, reports once and drops the scene: a film
  * without physics is a far better outcome than a film that crashes the game.</p>
  */
 public class FilmScenes
