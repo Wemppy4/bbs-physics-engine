@@ -2,7 +2,7 @@ package wemppy.bbs_physics.mixin;
 
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
-import mchorse.bbs_mod.settings.values.core.ValueData;
+import wemppy.bbs_physics.forms.ValueData;
 import wemppy.bbs_physics.chain.ChainKnob;
 import wemppy.bbs_physics.chain.FormChains;
 import wemppy.bbs_physics.forms.IModelPhysicsForm;

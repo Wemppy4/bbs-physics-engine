@@ -17,9 +17,8 @@ base {
 }
 
 repositories {
-	// BBS is not published to any public repository, so it is taken from the local Maven
-	// one, which `gradlew publishToMavenLocal` in the bbs-fs checkout fills.
-	mavenLocal()
+	// BBS is not published to any repository at all: its jar is kept in `libs/` next to this
+	// build, one file per Minecraft version, and `bbs_version` picks which one is used.
 
 	// Where Jolt comes from. Loom brings in the Fabric and Mojang repositories on its own,
 	// but not this one.
@@ -31,18 +30,26 @@ repositories {
 // list is about who gets physics, not about who can launch.
 def joltPlatforms = ["Windows64", "Linux64", "Linux_ARM64", "MacOSX64", "MacOSX_ARM64"]
 
-// Loom keys its cache of remapped mod dependencies by coordinates, and BBS keeps the same
-// version string while it is being developed — so after republishing it, this project would
-// quietly go on compiling against the previous remap. `--refresh-dependencies` clears it, but
-// a flag one has to remember is a flag one forgets, and forgetting it here looks like the
-// changes to BBS simply not existing. So the stale remap is dropped by the build itself.
-def bbsArtifact = file("${System.properties['user.home']}/.m2/repository/mchorse/bbs/${bbs_version}/bbs-${bbs_version}.jar")
-def bbsRemaps = file("${projectDir}/.gradle/loom-cache/remapped_mods/remapped/mchorse")
+// The BBS jar this addon is built against. It lives in `libs/` rather than in a repository,
+// because BBS is not published to any — the jar is dropped in by hand, one per Minecraft
+// version, and `bbs_version` in gradle.properties says which of them is the current one.
+def bbsArtifact = file("${projectDir}/libs/bbs-${bbs_version}.jar")
 
-if (bbsArtifact.isFile() && bbsRemaps.isDirectory()) {
+if (!bbsArtifact.isFile()) {
+	throw new GradleException("BBS ${bbs_version} is missing: expected ${bbsArtifact}. Drop the jar into libs/ or point bbs_version at one that is there.")
+}
+
+// Loom caches remapped mod dependencies, and BBS keeps the same version string while it is
+// being developed — so after replacing the jar in place, this project would quietly go on
+// compiling against the previous remap. `--refresh-dependencies` clears it, but a flag one has
+// to remember is a flag one forgets, and forgetting it here looks like the changes to BBS
+// simply not existing. So the stale remap is dropped by the build itself.
+def bbsRemaps = file("${projectDir}/.gradle/loom-cache/remapped_mods")
+
+if (bbsRemaps.isDirectory()) {
 	bbsRemaps.listFiles().each { remap ->
-		if (remap.isDirectory() && fileTree(remap).files.any { it.lastModified() < bbsArtifact.lastModified() }) {
-			logger.lifecycle("BBS has been republished since it was last remapped — dropping ${remap.name} from Loom's cache.")
+		if (remap.isDirectory() && fileTree(remap).files.any { it.name.startsWith("bbs-") && it.lastModified() < bbsArtifact.lastModified() }) {
+			logger.lifecycle("The BBS jar is newer than its remap — dropping ${remap.name} from Loom's cache.")
 
 			remap.deleteDir()
 		}
@@ -70,12 +77,11 @@ dependencies {
 	// The mod this one is an addon to. Loom remaps it back to the development mappings and
 	// puts it on the run classpath, so `runClient` starts the game with BBS present.
 	//
-	// Transitives are off deliberately: BBS's POM carries Sodium, Iris and the shader
-	// tooling it compiles against, and dragging those into this dev runtime buys nothing
-	// but a slower launch and failure modes that have nothing to do with physics.
-	modImplementation("mchorse:bbs:${project.bbs_version}") {
-		transitive = false
-	}
+	// It comes in as a plain file rather than through a repository, so nothing transitive
+	// rides along — which is what we want anyway: BBS is compiled against Sodium, Iris and
+	// the shader tooling, and dragging those into this dev runtime buys nothing but a slower
+	// launch and failure modes that have nothing to do with physics.
+	modImplementation files(bbsArtifact)
 
 	// Jolt Physics. Every platform artifact of jolt-jni carries the same Java classes, so one
 	// of them is taken for the API and the rest contribute nothing but their native library,

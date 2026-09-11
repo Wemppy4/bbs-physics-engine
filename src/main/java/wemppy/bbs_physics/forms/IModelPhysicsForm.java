@@ -1,6 +1,5 @@
 package wemppy.bbs_physics.forms;
 
-import mchorse.bbs_mod.settings.values.core.ValueData;
 import wemppy.bbs_physics.chain.ChainKnob;
 import wemppy.bbs_physics.ragdoll.RagdollKnob;
 import wemppy.bbs_physics.ragdoll.RagdollState;

@@ -1,16 +1,11 @@
 package wemppy.bbs_physics.client.chain;
 
-import mchorse.bbs_mod.data.types.BaseType;
-import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
 import wemppy.bbs_physics.chain.FormChain;
 import wemppy.bbs_physics.chain.FormChains;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.WeakHashMap;
 
 /**
  * Silences BBS's own chain solver on the bones our chain modifier drives.
@@ -22,92 +17,59 @@ import java.util.WeakHashMap;
  * told to leave chain bones alone.</p>
  *
  * <p><b>How.</b> Not by cancelling the solver — an author may well keep a skirt on the old physics
- * while the hair moves to ours, and cancelling wholesale would take both. Instead the config it
- * compiles from is handed over with the claimed chains removed: BBS then honestly has nothing to
- * say about those bones and everything else runs untouched. A chain is dropped when either end of
- * it is claimed, because a strand half-owned is the same fight as a strand wholly owned.</p>
+ * while the hair moves to ours, and cancelling wholesale would take both. Instead a claimed chain
+ * is never compiled: BBS then honestly has nothing to say about those bones and everything else
+ * runs untouched.</p>
  *
- * <p>The filtered map is cached per source map and rebuilt only when the claimed set changes:
- * {@code ModelPhysicsCache} keys its compiled chains by the map instance, so handing it a fresh
- * copy every frame would recompile every chain of every model every frame.</p>
+ * <p>Up to BBS 2.4 a model's chains were one stored blob, and this filtered a copy of it — which
+ * meant caching the copy, since the compiler keyed its work by the blob's identity and a fresh one
+ * every frame recompiled every chain of every model. Since 2.6 a chain is declared on the bone it
+ * starts at, and BBS compiles it by walking those bones, so the claim is simply answered per bone
+ * as it walks. Nothing is copied and there is nothing left to cache.</p>
  */
 public final class ChainMute
 {
-    private static final String KEY_BONES = "bones";
-    private static final String KEY_END = "end";
-
-    /** Source map → what we last handed on, and the claim it was filtered for. */
-    private static final Map<MapType, Filtered> CACHE = new WeakHashMap<>();
-
     private ChainMute()
     {}
 
     /**
-     * The physics config BBS should compile for {@code form} — the original when nothing is
-     * claimed, and a copy without the claimed chains when something is.
+     * Whether our chain modifier owns the strand BBS is about to compile.
+     *
+     * <p>A chain is claimed when <em>any</em> of its bones is: a strand half-owned is the same
+     * fight as a strand wholly owned.</p>
+     *
+     * @param bones the chain's bones, root to end, or null when BBS has not walked them yet — in
+     *              which case the two ends are all there is to go on.
      */
-    public static MapType filter(Form form, MapType data)
+    public static boolean claims(Form form, String root, String end, List<String> bones)
     {
-        if (data == null || form == null)
+        if (form == null)
         {
-            return data;
+            return false;
         }
 
         FormChain chain = FormChains.get(form);
 
-        if (!chain.enabled() || chain.bones().isEmpty() || !data.has(KEY_BONES, BaseType.TYPE_MAP))
+        if (!chain.enabled() || chain.bones().isEmpty())
         {
-            return data;
+            return false;
         }
 
         Set<String> claimed = chain.bones();
-        Filtered cached = CACHE.get(data);
 
-        if (cached != null && cached.claimed.equals(claimed))
+        if (bones != null)
         {
-            return cached.result;
-        }
-
-        MapType bones = data.getMap(KEY_BONES);
-        List<String> drop = new ArrayList<>(0);
-
-        for (String root : new ArrayList<>(bones.keys()))
-        {
-            if (!bones.has(root, BaseType.TYPE_MAP))
+            for (int i = 0; i < bones.size(); i++)
             {
-                continue;
-            }
-
-            String end = bones.getMap(root).getString(KEY_END, "");
-
-            if (claimed.contains(root) || (!end.isEmpty() && claimed.contains(end)))
-            {
-                drop.add(root);
-            }
-        }
-
-        MapType result = data;
-
-        if (!drop.isEmpty())
-        {
-            result = data.copy() instanceof MapType copy ? copy : data;
-
-            if (result != data)
-            {
-                MapType copiedBones = result.getMap(KEY_BONES);
-
-                for (String root : drop)
+                if (claimed.contains(bones.get(i)))
                 {
-                    copiedBones.remove(root);
+                    return true;
                 }
             }
+
+            return false;
         }
 
-        CACHE.put(data, new Filtered(Set.copyOf(claimed), result));
-
-        return result;
+        return claimed.contains(root) || (end != null && !end.isEmpty() && claimed.contains(end));
     }
-
-    private record Filtered(Set<String> claimed, MapType result)
-    {}
 }

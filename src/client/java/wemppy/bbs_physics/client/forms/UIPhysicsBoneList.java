@@ -67,7 +67,7 @@ public class UIPhysicsBoneList extends UIBoneTreeList
     }
 
     /** The rows the search is currently letting through, in the order they are drawn. */
-    private List<String> visible()
+    protected List<String> visible()
     {
         List<String> visible = new ArrayList<>();
 

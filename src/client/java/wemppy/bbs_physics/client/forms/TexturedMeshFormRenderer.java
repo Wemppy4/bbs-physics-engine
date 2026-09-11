@@ -186,7 +186,9 @@ public abstract class TexturedMeshFormRenderer<T extends Form & ITexturedForm> e
         Matrix4f matrix = matrices.peek().getPositionMatrix();
         Matrix3f normal = matrices.peek().getNormalMatrix();
 
-        FormColorBlend.blend(color, this.form.getColor().get(), this.form.additiveColor.get());
+        /* A plain multiplier: BBS dropped the additive brighten mode in 2.6 — it clipped to
+         * flat white in any 8-bit target — and converts the old flag away on load. */
+        FormColorBlend.blend(color, this.form.getColor().get());
 
         GameRenderer gameRenderer = MinecraftClient.getInstance().gameRenderer;
 
@@ -228,7 +230,9 @@ public abstract class TexturedMeshFormRenderer<T extends Form & ITexturedForm> e
             Vector3f origin = modelView.transformPosition(matrix.getTranslation(new Vector3f()));
 
             FormTranslucentQueue.add(new FormTranslucentQueue.VertexBufferCommand(
-                buffer, () -> finalShader, texture, modelView, null, origin, true,
+                /* No plane normal: this is a mesh rather than a flat quad, so it keeps sorting
+                 * by the distance to its origin the way it always did. */
+                buffer, () -> finalShader, texture, modelView, null, origin, null, true,
                 () ->
                 {
                     texture.bind();

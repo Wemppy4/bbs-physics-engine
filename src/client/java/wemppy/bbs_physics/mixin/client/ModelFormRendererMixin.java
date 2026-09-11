@@ -17,7 +17,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *
  * <p><b>The draw path:</b> at the head of the constraint stage's physics step — after IK, before
  * the chain solvers — which is the exact slot in the pipeline BBS reserves for things that
- * overrule the animated pose. Everything after it composes on the substituted bones: the hair
+ * overrule the animated pose. It runs whenever BBS runs its own step: up to 2.4 that was guarded
+ * to once per render and is now simply called once where it belongs, so the substitution follows
+ * BBS's cadence either way. Everything after it composes on the substituted bones: the hair
  * chains anchor to fallen limbs (§3.1's "hair rides the ragdoll for free"), the render draws
  * them, items and armor follow through the captured matrices.</p>
  *
@@ -29,7 +31,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ModelFormRenderer.class)
 public abstract class ModelFormRendererMixin
 {
-    @Inject(method = "applyPhysicsOnce", at = @At("HEAD"))
+    @Inject(method = "applyPhysics", at = @At("HEAD"))
     private void bbs_physics$applyRagdollPose(IEntity target, ModelInstance model, float transition, Matrix4f baseTransform, CallbackInfo info)
     {
         ModelFormRenderer renderer = (ModelFormRenderer) (Object) this;

@@ -57,8 +57,9 @@ public abstract class FormRendererMixin
     @Shadow
     protected Form form;
 
+    /* Public on the target since BBS 2.6 — a shadow may not narrow what it stands for. */
     @Shadow
-    protected abstract Transform createTransform();
+    public abstract Transform createTransform();
 
     /**
      * Whether the simulation has anything to say about this form right now. It has not in the form

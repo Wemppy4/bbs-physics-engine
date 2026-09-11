@@ -1,6 +1,5 @@
 package wemppy.bbs_physics.forms;
 
-import mchorse.bbs_mod.settings.values.core.ValueData;
 import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 
 /**

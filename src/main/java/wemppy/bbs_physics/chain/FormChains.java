@@ -2,7 +2,7 @@ package wemppy.bbs_physics.chain;
 
 import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
-import mchorse.bbs_mod.settings.values.core.ValueData;
+import wemppy.bbs_physics.forms.ValueData;
 import wemppy.bbs_physics.forms.IModelPhysicsForm;
 import wemppy.bbs_physics.forms.PhysicsKnobValue;
 import wemppy.bbs_physics.ragdoll.RagdollState;
