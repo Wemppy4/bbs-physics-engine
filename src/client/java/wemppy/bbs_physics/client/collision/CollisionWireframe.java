@@ -8,7 +8,7 @@ import net.minecraft.client.render.BufferBuilder;
 import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
-import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 
@@ -21,8 +21,8 @@ import org.joml.Vector3f;
  * the shoulders and the knees, where the box has corners the capsule does not.</p>
  *
  * <p>Boxes keep BBS's own thick-wire look ({@link Draw#renderBox}), because that is what the rest
- * of the overlay has always drawn and a sudden change of line weight would read as meaning
- * something. Round shapes are line rings, which is what every physics debug view draws them as.</p>
+ * of the overlay has always drawn. Round shapes, joints and impulse markers use geometry bars too,
+ * so the thickness setting works without relying on the driver's support for wide GL lines.</p>
  */
 public final class CollisionWireframe
 {
@@ -205,11 +205,10 @@ public final class CollisionWireframe
     private static void sphere(MatrixStack stack, float radius, float red, float green, float blue, float alpha)
     {
         BufferBuilder builder = begin();
-        Matrix4f matrix = stack.peek().getPositionMatrix();
 
-        ring(builder, matrix, Axis.Y, radius, 0F, red, green, blue, alpha);
-        ring(builder, matrix, Axis.X, radius, 0F, red, green, blue, alpha);
-        ring(builder, matrix, Axis.Z, radius, 0F, red, green, blue, alpha);
+        ring(builder, stack, Axis.Y, radius, 0F, red, green, blue, alpha);
+        ring(builder, stack, Axis.X, radius, 0F, red, green, blue, alpha);
+        ring(builder, stack, Axis.Z, radius, 0F, red, green, blue, alpha);
 
         end(builder);
     }
@@ -217,11 +216,10 @@ public final class CollisionWireframe
     private static void cylinder(MatrixStack stack, float radius, float halfHeight, float red, float green, float blue, float alpha)
     {
         BufferBuilder builder = begin();
-        Matrix4f matrix = stack.peek().getPositionMatrix();
 
-        ring(builder, matrix, Axis.Y, radius, -halfHeight, red, green, blue, alpha);
-        ring(builder, matrix, Axis.Y, radius, halfHeight, red, green, blue, alpha);
-        rails(builder, matrix, radius, -halfHeight, halfHeight, red, green, blue, alpha);
+        ring(builder, stack, Axis.Y, radius, -halfHeight, red, green, blue, alpha);
+        ring(builder, stack, Axis.Y, radius, halfHeight, red, green, blue, alpha);
+        rails(builder, stack, radius, -halfHeight, halfHeight, red, green, blue, alpha);
 
         end(builder);
     }
@@ -230,20 +228,19 @@ public final class CollisionWireframe
     private static void capsule(MatrixStack stack, float radius, float halfHeight, float red, float green, float blue, float alpha)
     {
         BufferBuilder builder = begin();
-        Matrix4f matrix = stack.peek().getPositionMatrix();
 
-        ring(builder, matrix, Axis.Y, radius, -halfHeight, red, green, blue, alpha);
-        ring(builder, matrix, Axis.Y, radius, halfHeight, red, green, blue, alpha);
-        rails(builder, matrix, radius, -halfHeight, halfHeight, red, green, blue, alpha);
+        ring(builder, stack, Axis.Y, radius, -halfHeight, red, green, blue, alpha);
+        ring(builder, stack, Axis.Y, radius, halfHeight, red, green, blue, alpha);
+        rails(builder, stack, radius, -halfHeight, halfHeight, red, green, blue, alpha);
 
-        cap(builder, matrix, radius, halfHeight, 1F, red, green, blue, alpha);
-        cap(builder, matrix, radius, -halfHeight, -1F, red, green, blue, alpha);
+        cap(builder, stack, radius, halfHeight, 1F, red, green, blue, alpha);
+        cap(builder, stack, radius, -halfHeight, -1F, red, green, blue, alpha);
 
         end(builder);
     }
 
     /** The two half circles that close a capsule's end, drawn in the XY and ZY planes. */
-    private static void cap(BufferBuilder builder, Matrix4f matrix, float radius, float centre, float direction, float red, float green, float blue, float alpha)
+    private static void cap(BufferBuilder builder, MatrixStack stack, float radius, float centre, float direction, float red, float green, float blue, float alpha)
     {
         for (int i = 0; i < SEGMENTS / 2; i++)
         {
@@ -255,18 +252,18 @@ public final class CollisionWireframe
             float bx = (float) Math.cos(b) * radius;
             float by = (float) Math.sin(b) * radius * direction;
 
-            line(builder, matrix, ax, centre + ay, 0F, bx, centre + by, 0F, red, green, blue, alpha);
-            line(builder, matrix, 0F, centre + ay, ax, 0F, centre + by, bx, red, green, blue, alpha);
+            line(builder, stack, ax, centre + ay, 0F, bx, centre + by, 0F, red, green, blue, alpha);
+            line(builder, stack, 0F, centre + ay, ax, 0F, centre + by, bx, red, green, blue, alpha);
         }
     }
 
     /** The four straight lines down the sides of a cylinder or a capsule. */
-    private static void rails(BufferBuilder builder, Matrix4f matrix, float radius, float bottom, float top, float red, float green, float blue, float alpha)
+    private static void rails(BufferBuilder builder, MatrixStack stack, float radius, float bottom, float top, float red, float green, float blue, float alpha)
     {
-        line(builder, matrix, radius, bottom, 0F, radius, top, 0F, red, green, blue, alpha);
-        line(builder, matrix, -radius, bottom, 0F, -radius, top, 0F, red, green, blue, alpha);
-        line(builder, matrix, 0F, bottom, radius, 0F, top, radius, red, green, blue, alpha);
-        line(builder, matrix, 0F, bottom, -radius, 0F, top, -radius, red, green, blue, alpha);
+        line(builder, stack, radius, bottom, 0F, radius, top, 0F, red, green, blue, alpha);
+        line(builder, stack, -radius, bottom, 0F, -radius, top, 0F, red, green, blue, alpha);
+        line(builder, stack, 0F, bottom, radius, 0F, top, radius, red, green, blue, alpha);
+        line(builder, stack, 0F, bottom, -radius, 0F, top, -radius, red, green, blue, alpha);
     }
 
     private enum Axis
@@ -275,7 +272,7 @@ public final class CollisionWireframe
     }
 
     /** A full circle around {@code axis}, {@code offset} along it. */
-    private static void ring(BufferBuilder builder, Matrix4f matrix, Axis axis, float radius, float offset, float red, float green, float blue, float alpha)
+    private static void ring(BufferBuilder builder, MatrixStack stack, Axis axis, float radius, float offset, float red, float green, float blue, float alpha)
     {
         float previousU = radius;
         float previousV = 0F;
@@ -288,9 +285,9 @@ public final class CollisionWireframe
 
             switch (axis)
             {
-                case X -> line(builder, matrix, offset, previousU, previousV, offset, u, v, red, green, blue, alpha);
-                case Y -> line(builder, matrix, previousU, offset, previousV, u, offset, v, red, green, blue, alpha);
-                case Z -> line(builder, matrix, previousU, previousV, offset, u, v, offset, red, green, blue, alpha);
+                case X -> line(builder, stack, offset, previousU, previousV, offset, u, v, red, green, blue, alpha);
+                case Y -> line(builder, stack, previousU, offset, previousV, u, offset, v, red, green, blue, alpha);
+                case Z -> line(builder, stack, previousU, previousV, offset, u, v, offset, red, green, blue, alpha);
             }
 
             previousU = u;
@@ -298,28 +295,50 @@ public final class CollisionWireframe
         }
     }
 
-    private static void line(BufferBuilder builder, Matrix4f matrix, float x1, float y1, float z1, float x2, float y2, float z2, float red, float green, float blue, float alpha)
+    /** A line with the same world-space thickness as the box outlines. */
+    static void line(BufferBuilder builder, MatrixStack stack, float x1, float y1, float z1, float x2, float y2, float z2, float red, float green, float blue, float alpha)
     {
-        builder.vertex(matrix, x1, y1, z1).color(red, green, blue, alpha);
-        builder.vertex(matrix, x2, y2, z2).color(red, green, blue, alpha);
+        if (x1 == x2 && y1 == y2 && z1 == z2)
+        {
+            return;
+        }
+
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float dz = z2 - z1;
+        float length = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        float halfWidth = lineThickness() / 2F;
+
+        stack.push();
+        stack.translate(x1, y1, z1);
+        /* Rotate the bar's +Z axis directly onto the segment. Camera yaw conventions do not
+         * describe this rotation. Extend both ends so adjacent bars meet around a bend. */
+        stack.multiply(new Quaternionf().rotationTo(0F, 0F, 1F, dx / length, dy / length, dz / length));
+        Draw.fillBox(builder, stack, -halfWidth, -halfWidth, -halfWidth,
+            halfWidth, halfWidth, length + halfWidth, red, green, blue, alpha);
+        stack.pop();
     }
 
     /**
-     * A buffer for the round outlines.
-     *
-     * <p>The width setting reaches the boxes only, on this branch. A hardware line's width used to
-     * be global GL state that could be turned up before the draw; since 1.21.5 it belongs to the
-     * pipeline, and the position-colour line pipeline both BBS and this overlay draw through is
-     * built at width one. Boxes are bars of geometry, so they still thicken — see
-     * {@link #thickness(Vector3f)}.</p>
+     * A buffer for the round outlines — bars of geometry, like the boxes. Since 1.21.5 a hardware
+     * line's width belongs to its pipeline and BBS's line pipeline is built at width one, so bars
+     * are the only way the width setting reaches round shapes on this branch.
      */
     private static BufferBuilder begin()
     {
-        return Tessellator.getInstance().begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+        return Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
     }
 
-    private static void end(BufferBuilder builder)
+    static void end(BufferBuilder builder)
     {
-        WireframeLayers.flushLines(builder);
+        WireframeLayers.flushTriangles(builder);
+    }
+
+    /** Full width of a line bar in blocks, scaled by the debug thickness setting. */
+    private static float lineThickness()
+    {
+        float scale = BBSPhysicsSettings.debugLineWidth == null ? 1F : BBSPhysicsSettings.debugLineWidth.get();
+
+        return 2F * Math.max(BASE_THICKNESS * scale, MIN_THICKNESS);
     }
 }

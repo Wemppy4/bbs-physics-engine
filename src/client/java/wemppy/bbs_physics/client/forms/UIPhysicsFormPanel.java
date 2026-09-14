@@ -237,12 +237,19 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
 
         this.ragdollBones = new UIRagdollSection(() -> this.options.resize());
         this.ragdollSection = new UIModifierSection(PhysicsKeys.RAGDOLL_TITLE, "physics.ragdoll", () -> this.toggleRagdoll(false));
+        /* Pass spare height through to the bone list; folded modifiers only need their header. */
+        this.ragdollSection.expand(this.ragdollSection.isExpanded());
+        this.ragdollSection.onToggle((s) -> s.expand(s.isExpanded()));
+        this.ragdollSection.fields.expand();
         this.ragdollSection.fields.add(this.ragdollAuthorityRow, this.ragdollMassRow, this.ragdollDampingRow, this.ragdollFrictionRow, this.ragdollGravityRow, this.musclesRow, this.ragdollSelfCollide, this.ragdollBones);
 
         this.chainAuthority = PhysicsFields.authority(this::setAuthority);
         this.chainAuthorityRow = UI.labelRow(PhysicsKeys.AUTHORITY, this.chainAuthority);
         this.chainBones = new UIChainSection(() -> this.options.resize());
         this.chainSection = new UIModifierSection(PhysicsKeys.CHAIN_MODIFIER_TITLE, "physics.chain", () -> this.toggleChain(false));
+        this.chainSection.expand(this.chainSection.isExpanded());
+        this.chainSection.onToggle((s) -> s.expand(s.isExpanded()));
+        this.chainSection.fields.expand();
         this.chainSection.fields.add(this.chainAuthorityRow, this.chainBones);
 
         /* Wrapped rather than a one-line label: the column is narrow, and the sentence that has to

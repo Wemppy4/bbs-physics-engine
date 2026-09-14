@@ -96,6 +96,7 @@ public abstract class UIBoneSection extends UIElement
         this.relayout = relayout;
 
         this.column(UIConstants.MARGIN).vertical().stretch();
+        this.expand();
 
         this.bones = new UIPhysicsBoneList((l) ->
         {
@@ -142,7 +143,7 @@ public abstract class UIBoneSection extends UIElement
 
         this.bonesSearch = new UISearchList<>(this.bones);
         this.bonesSearch.label(UIKeys.GENERAL_SEARCH);
-        this.bonesSearch.h(20 + UIConstants.LIST_ITEM_HEIGHT * 8);
+        this.bonesSearch.h(20 + UIConstants.LIST_ITEM_HEIGHT * 8).expand();
     }
 
     /* What a subclass fills in */
