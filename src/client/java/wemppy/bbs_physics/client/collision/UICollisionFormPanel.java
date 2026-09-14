@@ -185,7 +185,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         this.bones.background();
         this.bonesSearch = new UISearchList<>(this.bones);
         this.bonesSearch.label(UIKeys.GENERAL_SEARCH);
-        this.bonesSearch.h(20 + UIConstants.LIST_ITEM_HEIGHT * 8);
+        this.bonesSearch.h(20 + UIConstants.LIST_ITEM_HEIGHT * 8).expand();
         this.bones.context(() -> new UIDataContextMenu(PhysicsPresets.COLLISION, this.presetGroup, this::toPresetData, this::applyPresetData).tooltips("_CopyCollision",
             PhysicsKeys.COLLISION_CONTEXT_COPY,
             PhysicsKeys.COLLISION_CONTEXT_PASTE,

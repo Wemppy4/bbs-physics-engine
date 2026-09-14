@@ -2,13 +2,11 @@ package wemppy.bbs_physics.client.collision;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.BufferRenderer;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.Tessellator;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
-import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 /**
@@ -39,29 +37,19 @@ public final class JointWireframe
         float green = ((color >> 8) & 0xFF) / 255F;
         float blue = (color & 0xFF) / 255F;
 
-        Matrix4f matrix = stack.peek().getPositionMatrix();
-
         RenderSystem.setShader(GameRenderer::getPositionColorProgram);
-        RenderSystem.lineWidth(CollisionWireframe.lineWidth());
 
-        BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+        BufferBuilder builder = Tessellator.getInstance().begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
 
-        line(builder, matrix, pivot.x - MARK, pivot.y, pivot.z, pivot.x + MARK, pivot.y, pivot.z, red, green, blue, alpha);
-        line(builder, matrix, pivot.x, pivot.y - MARK, pivot.z, pivot.x, pivot.y + MARK, pivot.z, red, green, blue, alpha);
-        line(builder, matrix, pivot.x, pivot.y, pivot.z - MARK, pivot.x, pivot.y, pivot.z + MARK, red, green, blue, alpha);
+        CollisionWireframe.line(builder, stack, pivot.x - MARK, pivot.y, pivot.z, pivot.x + MARK, pivot.y, pivot.z, red, green, blue, alpha);
+        CollisionWireframe.line(builder, stack, pivot.x, pivot.y - MARK, pivot.z, pivot.x, pivot.y + MARK, pivot.z, red, green, blue, alpha);
+        CollisionWireframe.line(builder, stack, pivot.x, pivot.y, pivot.z - MARK, pivot.x, pivot.y, pivot.z + MARK, red, green, blue, alpha);
 
         if (parent != null)
         {
-            line(builder, matrix, pivot.x, pivot.y, pivot.z, parent.x, parent.y, parent.z, red, green, blue, alpha);
+            CollisionWireframe.line(builder, stack, pivot.x, pivot.y, pivot.z, parent.x, parent.y, parent.z, red, green, blue, alpha);
         }
 
-        BufferRenderer.drawWithGlobalProgram(builder.end());
-        RenderSystem.lineWidth(1F);
-    }
-
-    private static void line(BufferBuilder builder, Matrix4f matrix, float x1, float y1, float z1, float x2, float y2, float z2, float red, float green, float blue, float alpha)
-    {
-        builder.vertex(matrix, x1, y1, z1).color(red, green, blue, alpha);
-        builder.vertex(matrix, x2, y2, z2).color(red, green, blue, alpha);
+        CollisionWireframe.end(builder);
     }
 }
