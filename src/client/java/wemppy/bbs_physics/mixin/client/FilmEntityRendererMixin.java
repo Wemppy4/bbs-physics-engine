@@ -19,6 +19,13 @@ import wemppy.bbs_physics.client.clips.ImpulseGizmo;
 @Mixin(FilmEntityRenderer.class)
 public abstract class FilmEntityRendererMixin
 {
+    @Inject(method = "renderEntity", at = @At("HEAD"))
+    private static void bbs_physics$prepareFrames(FilmControllerContext context, CallbackInfo info)
+    {
+        wemppy.bbs_physics.client.scene.SceneActor.prepareRender(
+            context.entity, context.entities, context.transition, context.replay == null || !context.relative);
+    }
+
     /** Both the visible placement and the pick stencil use the impulse's world point. */
     @Inject(method = "renderReplayGizmo", at = @At("HEAD"), cancellable = true)
     private static void bbs_physics$renderImpulse(IEntity entity, double cx, double cy, double cz,
