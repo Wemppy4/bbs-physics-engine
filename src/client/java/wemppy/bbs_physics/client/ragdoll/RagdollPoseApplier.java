@@ -5,6 +5,7 @@ import mchorse.bbs_mod.cubic.data.model.Model;
 import mchorse.bbs_mod.cubic.data.model.ModelGroup;
 import mchorse.bbs_mod.forms.forms.Form;
 import wemppy.bbs_physics.chain.FormChains;
+import wemppy.bbs_physics.client.scene.PoseEvaluation;
 import wemppy.bbs_physics.ragdoll.FormRagdolls;
 import wemppy.bbs_physics.ragdoll.RagdollState;
 import org.joml.Matrix4f;
@@ -99,8 +100,15 @@ public final class RagdollPoseApplier
          *
          * Order matters for nothing else: a bone belongs to one of them, never both (the chain
          * modifier claims bones the ragdoll does not have shapes for). */
-        walk(cubic, FormRagdolls.getState(form), transition);
-        walk(cubic, FormChains.getState(form), transition);
+        if (PoseEvaluation.allows(form, PoseEvaluation.Kind.RAGDOLL))
+        {
+            walk(cubic, FormRagdolls.getState(form), transition);
+        }
+
+        if (PoseEvaluation.allows(form, PoseEvaluation.Kind.CHAIN))
+        {
+            walk(cubic, FormChains.getState(form), transition);
+        }
     }
 
     /** One state's substitution pass, when it has anything to say about this frame. */

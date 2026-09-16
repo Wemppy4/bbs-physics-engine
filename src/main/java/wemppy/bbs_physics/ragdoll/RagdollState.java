@@ -2,6 +2,7 @@ package wemppy.bbs_physics.ragdoll;
 
 import mchorse.bbs_mod.utils.MathUtils;
 import org.joml.Quaternionf;
+import wemppy.bbs_physics.engine.PoseFrame;
 import org.joml.Vector3f;
 
 import java.util.HashMap;
@@ -22,6 +23,7 @@ import java.util.Map;
  */
 public class RagdollState
 {
+    public final PoseFrame frame = new PoseFrame();
     private final Map<String, BoneState> bones = new HashMap<>();
 
     /**
@@ -151,23 +153,8 @@ public class RagdollState
             return false;
         }
 
-        position.set(state.prevPosition).lerp(state.position, transition);
-
-        float dot = state.prevRotation.dot(state.rotation);
-
-        rotation.set(state.prevRotation);
-
-        if (dot < 0F)
-        {
-            rotation.set(-rotation.x, -rotation.y, -rotation.z, -rotation.w);
-        }
-
-        rotation.set(
-            rotation.x + (state.rotation.x - rotation.x) * transition,
-            rotation.y + (state.rotation.y - rotation.y) * transition,
-            rotation.z + (state.rotation.z - rotation.z) * transition,
-            rotation.w + (state.rotation.w - rotation.w) * transition);
-        rotation.normalize();
+        this.frame.position(state.prevPosition, state.position, transition, position);
+        this.frame.rotation(state.prevRotation, state.rotation, transition, rotation);
 
         return true;
     }

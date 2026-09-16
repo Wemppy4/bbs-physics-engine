@@ -72,7 +72,6 @@ public abstract class SoftBodyRig implements SceneRig
      * The bone this form hangs on, named the way the pose walk names bones, or null when it hangs on
      * no bone at all. Only used to ask whether that bone is being ragdolled — see {@link #frame}.
      */
-    private final String anchor;
 
     /** How many vertices the body has — the mesh is fixed once the scene is assembled. */
     protected final int count;
@@ -118,13 +117,12 @@ public abstract class SoftBodyRig implements SceneRig
     /** The sub-step count the damping was converted for — part of the rate's arithmetic. */
     private int dampedSteps;
 
-    protected SoftBodyRig(Form form, String path, int bodyId, int channel, int count, SoftBodyMotionProperties motion, String anchor)
+    protected SoftBodyRig(Form form, String path, int bodyId, int channel, int count, SoftBodyMotionProperties motion)
     {
         this.form = form;
         this.path = path;
         this.bodyId = bodyId;
         this.channel = channel;
-        this.anchor = anchor;
         this.count = count;
         this.motion = motion;
         this.vertices = motion.getVertices();
@@ -160,6 +158,18 @@ public abstract class SoftBodyRig implements SceneRig
 
     /* The shared half */
 
+    @Override
+    public Form getForm()
+    {
+        return this.form;
+    }
+
+    @Override
+    public PoseEvaluation.Kind poseKind()
+    {
+        return PoseEvaluation.Kind.FORM;
+    }
+
     /**
      * Runs before the world steps: stands whatever the animation owns on the authored shape, and
      * pulls the rest towards it by however much of it the animation owns.
@@ -169,7 +179,7 @@ public abstract class SoftBodyRig implements SceneRig
     {
         PhysicsWorld physics = update.physics;
 
-        this.frame(update);
+        this.captureFrame(update);
         this.applySettings(physics);
 
         float authority = PhysicsForms.getAuthority(this.form);
@@ -267,18 +277,9 @@ public abstract class SoftBodyRig implements SceneRig
     protected void afterUpdate(PhysicsWorld physics)
     {}
 
-    /**
-     * The frame the whole rig works in for this tick.
-     *
-     * <p>The bone this form hangs on may be falling, and the pose walk cannot say so: it is run with
-     * the ragdoll's substitution off, because the simulation must see plain animation. Left at that,
-     * a cape pinned to a shoulder was simulated where the shoulder would have been had the character
-     * stayed on its feet, while the renderer drew it where the shoulder actually is. Multiplying on
-     * the left swaps the animated bone for the simulated one and leaves the form's own transform
-     * below it alone — and applying it to the frame the rig works in means the recording, which
-     * converts into this very frame, stays consistent with it for free.</p>
-     */
-    private void frame(RigUpdate update)
+    /** The form's frame, sampled with its physical ancestors already substituted. */
+    @Override
+    public void captureFrame(RigUpdate update)
     {
         MatrixCacheEntry entry = update.matrices == null ? null : update.matrices.get(this.path);
 
@@ -287,16 +288,7 @@ public abstract class SoftBodyRig implements SceneRig
             return;
         }
 
-        Matrix4f delta = this.anchor == null ? null : update.deltas.get(this.anchor);
-
-        if (delta == null)
-        {
-            this.formWorld.set(update.actorWorld).mul(entry.matrix());
-        }
-        else
-        {
-            this.formWorld.set(delta).mul(update.actorWorld).mul(entry.matrix());
-        }
+        this.formWorld.set(update.actorWorld).mul(entry.matrix());
     }
 
     /**
@@ -473,12 +465,6 @@ public abstract class SoftBodyRig implements SceneRig
     public boolean isLost()
     {
         return this.lost;
-    }
-
-    @Override
-    public boolean readsBoneDeltas()
-    {
-        return true;
     }
 
     /** The centre on the last recorded tick, in scene coordinates; false until one exists. */

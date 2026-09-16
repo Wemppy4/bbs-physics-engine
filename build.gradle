@@ -125,6 +125,29 @@ java {
 	targetCompatibility = JavaVersion.VERSION_17
 }
 
+sourceSets {
+	physicsChecks {
+		compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+		runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+	}
+}
+
+tasks.register('physicsCacheCheck', JavaExec) {
+	dependsOn physicsChecksClasses
+	classpath = sourceSets.physicsChecks.runtimeClasspath
+	mainClass = 'wemppy.bbs_physics.engine.PhysicsCacheCheck'
+}
+
+tasks.register('physicsPoseCheck', JavaExec) {
+	dependsOn physicsChecksClasses
+	classpath = sourceSets.physicsChecks.runtimeClasspath
+	mainClass = 'wemppy.bbs_physics.engine.PoseFrameCheck'
+}
+
+tasks.named('check') {
+	dependsOn physicsCacheCheck, physicsPoseCheck
+}
+
 publishing {
 	publications {
 		mavenJava(MavenPublication) {
