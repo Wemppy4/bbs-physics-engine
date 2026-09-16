@@ -6,6 +6,7 @@ import mchorse.bbs_mod.forms.renderers.FormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.utils.pose.Transform;
 import wemppy.bbs_physics.client.ragdoll.RagdollPoseApplier;
+import wemppy.bbs_physics.client.scene.PoseEvaluation;
 import wemppy.bbs_physics.forms.PhysicsBodyState;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import net.minecraft.client.util.math.MatrixStack;
@@ -69,7 +70,8 @@ public abstract class FormRendererMixin
     {
         PhysicsBodyState state = PhysicsForms.getState(this.form);
 
-        if (state == null || !state.isSimulated() || RagdollPoseApplier.isEvaluating())
+        if (state == null || !state.isSimulated() || RagdollPoseApplier.isEvaluating()
+            || !PoseEvaluation.allows(this.form, PoseEvaluation.Kind.BODY))
         {
             return null;
         }

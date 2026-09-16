@@ -19,6 +19,7 @@ import mchorse.bbs_mod.cubic.ModelInstance;
 import mchorse.bbs_mod.cubic.data.model.Model;
 import mchorse.bbs_mod.cubic.data.model.ModelGroup;
 import mchorse.bbs_mod.forms.forms.ModelForm;
+import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
@@ -178,8 +179,6 @@ public class RagdollRig implements SceneRig
     private final Quaternionf orientation = new Quaternionf();
     private final RVec3 scratchPosition = new RVec3();
     private final Quat scratchRotation = new Quat();
-    private final RVec3 currentPosition = new RVec3();
-    private final Quat currentRotation = new Quat();
     private final Vec3 linear = new Vec3();
 
     /** The velocity blend that pulls a part towards its pose — held, because it carries scratch. */
@@ -210,14 +209,7 @@ public class RagdollRig implements SceneRig
 
     private final Matrix4f poseFrame = new Matrix4f();
 
-    /* The two frames a bone's fall is measured between, and the weighted blend of them. Fields
-     * because this runs per part per tick — see {@link #publish}. */
-    private final Vector3f animatedPosition = new Vector3f();
-    private final Vector3f simulatedPosition = new Vector3f();
-    private final Vector3f blendedPosition = new Vector3f();
-    private final Quaternionf animatedRotation = new Quaternionf();
-    private final Quaternionf simulatedRotation = new Quaternionf();
-    private final Quaternionf blendedRotation = new Quaternionf();
+    private RecordedFrame frames;
 
     private RagdollRig(ModelForm form, String formPath)
     {
@@ -294,6 +286,7 @@ public class RagdollRig implements SceneRig
         FormRagdoll config = FormRagdolls.get(form);
         BodyInterface bodies = physics.getBodies();
         RagdollRig ragdoll = new RagdollRig(form, formPath);
+        ragdoll.frames = new RecordedFrame(scene, ragdoll.state.frame);
         Map<String, Part> byBone = new HashMap<>();
 
         ragdoll.groups = groups;
@@ -721,10 +714,20 @@ public class RagdollRig implements SceneRig
         return (float) Math.sqrt(x * x + y * y + z * z);
     }
 
+    @Override
+    public Form getForm()
+    {
+        return this.form;
+    }
+
+    @Override
+    public PoseEvaluation.Kind poseKind()
+    {
+        return PoseEvaluation.Kind.RAGDOLL;
+    }
+
     /**
-     * Runs before the world steps: drives every part towards its animated pose by the handle, and
-     * publishes how far each bone has actually been carried from it — see {@link #publish}, and
-     * {@link SceneRig#readsBoneDeltas()} for who reads that.
+     * Drives every part towards its animated pose, under the physical poses of ancestor forms.
      */
     @Override
     public void update(RigUpdate update)
@@ -734,7 +737,6 @@ public class RagdollRig implements SceneRig
         MatrixCache matrices = update.matrices;
         Matrix4f actorWorld = update.actorWorld;
         boolean reset = update.reset;
-        Map<String, Matrix4f> deltas = update.pinned ? update.deltas : null;
 
         this.captureBase(matrices, actorWorld);
 
@@ -828,8 +830,6 @@ public class RagdollRig implements SceneRig
             {
                 this.drive(bodies, part, effective);
             }
-
-            this.publish(bodies, scene, part, deltas, effective, torn);
         }
     }
 
@@ -1025,80 +1025,6 @@ public class RagdollRig implements SceneRig
     }
 
     /**
-     * Says how far this bone has been carried from the pose the animation drew it in, as one
-     * matrix: <em>where the body is</em> times the inverse of <em>where the keyframes put it</em>.
-     *
-     * <p>This exists because everything hanging off a fallen bone would otherwise stay behind.
-     * A form is placed from the actor's pose walk, and that walk is deliberately run with the
-     * ragdoll's substitution switched off — the simulation has to see plain animation, or the
-     * parts chase their own output. Correct for the ragdoll, wrong for a cape pinned to its
-     * shoulder: the sheet was simulated where the shoulder <em>would have been</em>, while the
-     * renderer drew it where the shoulder actually is. Multiplying the form's animated frame by
-     * this delta on the left swaps the animated bone out for the simulated one and leaves
-     * everything below it — the body part's own transform, nested forms — untouched.</p>
-     *
-     * <p>Published only while the ragdoll is actually falling: at a handle of 1 the bodies are
-     * kinematically glued to the animation, so the delta is the identity and saying so would be
-     * one matrix multiply per hanger per tick to change nothing.</p>
-     *
-     * <p>The delta describes the <em>previous</em> step, which is the only pose that exists before
-     * this one is solved. A tick of lag at 20 Hz, and the same lag the cloth proxies carry.</p>
-     */
-    private void publish(BodyInterface bodies, FilmScene scene, Part part, Map<String, Matrix4f> deltas, float authority, boolean torn)
-    {
-        /* A torn bone publishes even while the rest of the body is kinematic: hair pinned to a
-         * head that has left the neck follows the head, not the animation of a body it is no
-         * longer on. */
-        if (deltas == null || (this.kinematic && !torn))
-        {
-            return;
-        }
-
-        bodies.getPositionAndRotation(part.id, this.currentPosition, this.currentRotation);
-
-        double x = this.currentPosition.xx() + scene.getOriginX();
-        double y = this.currentPosition.yy() + scene.getOriginY();
-        double z = this.currentPosition.zz() + scene.getOriginZ();
-
-        if (!PhysicsMath.finite(x) || !PhysicsMath.finite(y) || !PhysicsMath.finite(z))
-        {
-            /* A part the solver has lost says nothing rather than handing everything pinned to it
-             * a frame made of infinities. */
-            return;
-        }
-
-        /* this.worldMatrix still holds the animated frame this part was just driven towards. */
-        this.worldMatrix.getTranslation(this.animatedPosition);
-        this.worldMatrix.getUnnormalizedRotation(this.animatedRotation);
-
-        this.simulatedPosition.set((float) x, (float) y, (float) z);
-        this.simulatedRotation.set(
-            this.currentRotation.getX(), this.currentRotation.getY(),
-            this.currentRotation.getZ(), this.currentRotation.getW());
-
-        /* Weighted exactly the way the renderer weighs the pose it substitutes: the handle is a
-         * crossfade, not a switch (the Р9 feedback), so at 0.5 what is drawn is halfway between
-         * animation and simulation. A delta taken from the simulation alone would place the sheet
-         * somewhere the shoulder is not being drawn, and the cape would float away from a
-         * character that is only half limp. At 0 and 1 this is the plain answer either way. */
-        float weight = 1F - authority;
-
-        this.animatedPosition.lerp(this.simulatedPosition, weight, this.blendedPosition);
-        this.animatedRotation.slerp(this.simulatedRotation, weight, this.blendedRotation);
-
-        /* Both frames taken as rigid — position and rotation, no scale. A model scaled in the film
-         * carries that scale in its matrices, and dividing one scaled frame by another would
-         * cancel it out of everything hanging below: the delta must move the sheet, not resize it.
-         * Rigid on both sides leaves the scale where it was, in the form's own frame. */
-        this.poseFrame.translationRotate(
-            this.animatedPosition.x, this.animatedPosition.y, this.animatedPosition.z, this.animatedRotation).invert();
-
-        deltas.computeIfAbsent(part.path, (key) -> new Matrix4f())
-            .translationRotate(this.blendedPosition.x, this.blendedPosition.y, this.blendedPosition.z, this.blendedRotation)
-            .mul(this.poseFrame);
-    }
-
-    /**
      * The velocity blend every driven body here uses — the part is offered the velocity that would
      * carry it to its keyframed place over one tick, mixed with what it already has in the handle's
      * proportion. The reasoning, and the NaN it is armoured against, live in {@link BodyDrive}.
@@ -1128,9 +1054,8 @@ public class RagdollRig implements SceneRig
      * Runs right after the world stepped: reads where the simulation put every part, expresses it
      * in the model's own group space, and writes that into the recording under {@code tick}.
      *
-     * <p>The conversion is done here rather than at draw time for the same reason
-     * {@link BodyRig#record} does it: the frame it is expressed against is a function of the
-     * tick, which has just been posed, so a recorded film draws with no pose evaluation at all.</p>
+     * <p>The model reference matrix is recorded alongside these local poses. At draw time the
+     * endpoints are reconstructed in world space before interpolation.</p>
      *
      * <p>Written every tick, the kinematic ones included — the tick the handle drops below 1 needs
      * the tick before it to interpolate from, or the release visibly jumps. The authority is
@@ -1156,6 +1081,7 @@ public class RagdollRig implements SceneRig
             return;
         }
 
+        this.frames.write(cache, tick, this.base);
         BodyInterface bodies = physics.getBodies();
         float authority = PhysicsForms.getAuthority(this.form);
 
@@ -1239,6 +1165,7 @@ public class RagdollRig implements SceneRig
         /* Coming back from unrecorded frames counts as a jump: the pose the bones are drawn out of
          * is wherever the animation last left them, not a place they fell from. */
         boolean jumped = teleport || !this.recorded;
+        this.frames.read(cache, tick, jumped);
         boolean recorded = false;
         float authority = 1F;
 
@@ -1272,6 +1199,25 @@ public class RagdollRig implements SceneRig
      * The frame {@link #read} expresses its answer against: the actor's placement times the model
      * form's own frame times the flip — the left-hand side of every bone's cache entry.
      */
+    @Override
+    public void captureFrame(RigUpdate update)
+    {
+        this.captureBase(update.matrices, update.actorWorld);
+    }
+
+    @Override
+    public boolean needsRenderFrame()
+    {
+        return this.state.isActive();
+    }
+
+    @Override
+    public void renderFrame(RigUpdate update)
+    {
+        this.captureFrame(update);
+        if (this.baseValid) this.state.frame.render(this.base);
+    }
+
     private void captureBase(MatrixCache matrices, Matrix4f actorWorld)
     {
         MatrixCacheEntry entry = matrices == null ? null : matrices.get(this.formPath);

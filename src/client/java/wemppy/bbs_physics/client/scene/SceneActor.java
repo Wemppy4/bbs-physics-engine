@@ -1,28 +1,43 @@
 package wemppy.bbs_physics.client.scene;
 
 import mchorse.bbs_mod.forms.entities.IEntity;
+import mchorse.bbs_mod.forms.FormUtilsClient;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.engine.PhysicsCache;
 import wemppy.bbs_physics.engine.PhysicsWorld;
 import org.joml.Matrix4f;
+import wemppy.bbs_physics.forms.FormTreeWalk;
+import wemppy.bbs_physics.client.ragdoll.RagdollPoseApplier;
 
+import mchorse.bbs_mod.forms.forms.utils.Anchor;
+import mchorse.bbs_mod.forms.forms.ModelForm;
+import wemppy.bbs_physics.forms.PhysicsForms;
+import wemppy.bbs_physics.forms.PhysicsAnchor;
+import wemppy.bbs_physics.ragdoll.FormRagdolls;
+import java.util.Collections;
+import java.util.Set;
+import io.netty.util.collection.IntObjectMap;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.IdentityHashMap;
+import java.util.Map;
 import java.util.List;
 
 /**
  * Everything simulated for one actor, driven together because it all reads one pose.
  *
- * <p>The rigs are in the order they were built in, and that order is load bearing: an actor's
- * kinematic bones go first, then its ragdolls, then everything that might be pinned to a ragdolled
- * bone — a crate in a fallen hand, a cape on a fallen shoulder, hair on a fallen head. Driven the
- * other way round, each of those would follow the previous tick's fall.</p>
+ * <p>Recording follows the form tree: a parent's physical frame must be available before a
+ * child's world result can be converted to local space. Within a model, the body comes before
+ * the ragdoll, and the ragdoll before its hair.</p>
  */
 public final class SceneActor
 {
+    private static final Map<IEntity, SceneActor> LIVE = new IdentityHashMap<>();
     private final IEntity entity;
 
-    /** What is simulated for this actor, in build order — see the class note on why that matters. */
+    /** What is simulated for this actor, in parent-first recording order. */
     private final List<SceneRig> rigs;
 
     /**
@@ -34,6 +49,7 @@ public final class SceneActor
 
     /** What the rigs are told each tick — one object, refilled rather than built per tick. */
     private final RigUpdate update;
+    private final Map<SceneRig, PoseEvaluation> evaluations = new IdentityHashMap<>();
 
     /**
      * Whether this actor's last evaluation failed, so the failure is reported once instead of sixty
@@ -45,11 +61,24 @@ public final class SceneActor
     public SceneActor(IEntity entity, List<SceneRig> rigs, ActorCollisionGroup group, RigUpdate update)
     {
         this.entity = entity;
-        this.rigs = rigs;
+        this.rigs = new ArrayList<>(rigs);
         this.group = group;
         this.update = update;
+        LIVE.put(entity, this);
 
-        update.pinned = pinned(rigs);
+        Map<Form, Integer> order = new IdentityHashMap<>();
+        FormTreeWalk.walk(entity.getForm(), (form, path, anchor) ->
+        {
+            order.put(form, order.size());
+            return true;
+        });
+        this.rigs.sort(Comparator.comparingInt((SceneRig rig) -> order.getOrDefault(rig.getForm(), -1))
+            .thenComparingInt(rig -> rig.poseKind().ordinal()));
+
+        for (SceneRig rig : this.rigs)
+        {
+            this.evaluations.put(rig, new PoseEvaluation(rig.getForm(), rig.poseKind()));
+        }
     }
 
     public IEntity getEntity()
@@ -65,8 +94,8 @@ public final class SceneActor
     /**
      * Evaluates this actor's pose at the tick being simulated and drives everything hanging off it.
      *
-     * <p>One walk per actor per tick: every rig reads the same {@code MatrixCache}, and the walk
-     * fills each physics body's parent frame through its renderer on the way.</p>
+     * <p>Each rig samples its own animation under the physical poses of its parents. The same
+     * walk captures the parent frame used to convert its result back to local space.</p>
      *
      * @param reset whether the scene is starting over, in which case every body is stood at its
      *              animated pose and stopped rather than steered towards it
@@ -82,13 +111,9 @@ public final class SceneActor
 
         try
         {
-            MatrixCache matrices = FilmScene.evaluatePose(this.entity, root);
-            Matrix4f actorWorld = scene.actorWorld(this.entity);
-
-            this.update.on(matrices, actorWorld, reset);
-
             for (SceneRig rig : this.rigs)
             {
+                this.sample(scene, rig, reset);
                 rig.update(this.update);
             }
 
@@ -96,21 +121,126 @@ public final class SceneActor
         }
         catch (Throwable e)
         {
-            if (!this.broken)
-            {
-                this.broken = true;
-
-                BBSPhysics.LOGGER.warn("An actor's pose could not be evaluated for physics; its bodies hold still until it recovers.", e);
-            }
+            this.failed(e);
         }
     }
 
     /** Writes every rig's answer for the tick that has just been simulated. */
-    public void record(PhysicsWorld physics, FilmScene scene, PhysicsCache cache, int tick)
+    public void record(PhysicsWorld physics, FilmScene scene, PhysicsCache cache, PhysicsCache pending, int tick)
     {
         for (SceneRig rig : this.rigs)
         {
+            if (rig.getForm() == null)
+            {
+                continue;
+            }
+
+            /* Parents have already published this tick. Re-read their frame after the solver,
+             * not the pre-step frame the drive used, then publish this child for its children. */
+            try
+            {
+                this.sample(scene, rig, false);
+            }
+            catch (Throwable e)
+            {
+                this.failed(e);
+                /* beginFrame cleared this rig's channels. Publish silence too, so a child
+                 * cannot inherit stale output from a model that has not loaded yet. */
+                rig.readCache(pending, tick, true);
+                continue;
+            }
+
+            rig.captureFrame(this.update);
             rig.record(physics, scene, cache, tick);
+            rig.readCache(pending, tick, true);
+        }
+    }
+
+    private void failed(Throwable e)
+    {
+        if (!this.broken)
+        {
+            this.broken = true;
+            BBSPhysics.LOGGER.warn("An actor's pose could not be evaluated for physics; its bodies hold still until it recovers.", e);
+        }
+    }
+
+    private void sample(FilmScene scene, SceneRig rig, boolean reset)
+    {
+        this.sample(scene, rig, reset, 1F, true);
+    }
+
+    private void sample(FilmScene scene, SceneRig rig, boolean reset, float transition, boolean anchored)
+    {
+        Form root = this.entity.getForm();
+        FilmScene.ensureAnimators(root);
+        boolean evaluating = RagdollPoseApplier.isEvaluating();
+
+        try (PoseEvaluation ignored = this.evaluations.get(rig).enter())
+        {
+            RagdollPoseApplier.setEvaluating(reset);
+            MatrixCache matrices = FormUtilsClient.getRenderer(root).collectMatrices(this.entity, transition);
+            Matrix4f actorWorld = scene.actorWorld(this.entity, transition, anchored);
+            this.update.on(matrices, actorWorld, reset);
+        }
+        finally
+        {
+            RagdollPoseApplier.setEvaluating(evaluating);
+        }
+    }
+
+    /** Detaching must not pull a partially released body towards the actor's unrelated free pose. */
+    public static Anchor releaseAnchor(Anchor anchor)
+    {
+        if (!anchor.isFadeOut()) return anchor;
+        for (SceneActor actor : LIVE.values())
+        {
+            Form root = actor.entity.getForm();
+            if (root == null || root.anchor.get() != anchor) continue;
+            var body = PhysicsForms.getState(root);
+            var ragdoll = root instanceof ModelForm model ? FormRagdolls.getState(model) : null;
+            boolean physical = body != null && body.isSimulated() || ragdoll != null && ragdoll.isActive();
+            float authority = PhysicsForms.getAuthority(root);
+            if (physical && authority > 0F && authority < 1F)
+            {
+                return PhysicsAnchor.release(anchor, authority);
+            }
+        }
+        return anchor;
+    }
+
+    /** Prepare anchor dependencies before the actor, including actors without a physics modifier. */
+    public static void prepareRender(IEntity entity, IntObjectMap<IEntity> entities, float transition)
+    {
+        prepareRender(entity, entities, transition, true);
+    }
+
+    public static void prepareRender(IEntity entity, IntObjectMap<IEntity> entities, float transition, boolean anchored)
+    {
+        prepareRender(entity, entities, transition, anchored, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private static void prepareRender(IEntity entity, IntObjectMap<IEntity> entities, float transition,
+        boolean anchored, Set<IEntity> visited)
+    {
+        if (entity == null || entity.getForm() == null || !visited.add(entity)) return;
+        var anchor = entity.getForm().anchor.get();
+        prepareRender(entities.get(anchor.replay), entities, transition, true, visited);
+        if (anchor.previous != null) prepareRender(entities.get(anchor.previous.replay), entities, transition, true, visited);
+        SceneActor actor = LIVE.get(entity);
+        if (actor == null) return;
+        try
+        {
+            for (SceneRig rig : actor.rigs)
+            {
+                if (!rig.needsRenderFrame()) continue;
+                actor.sample(actor.update.scene, rig, false, transition, anchored);
+                rig.renderFrame(actor.update);
+            }
+        }
+        catch (Throwable e)
+        {
+            actor.failed(e);
         }
     }
 
@@ -126,23 +256,11 @@ public final class SceneActor
     /** Lets go of every form this actor's rigs claimed — the scene is closing. */
     public void release()
     {
+        LIVE.remove(this.entity, this);
         for (SceneRig rig : this.rigs)
         {
             rig.release();
         }
     }
 
-    /** Whether anything here hangs off a ragdolled bone — see {@link SceneRig#readsBoneDeltas()}. */
-    private static boolean pinned(List<SceneRig> rigs)
-    {
-        for (SceneRig rig : rigs)
-        {
-            if (rig.readsBoneDeltas())
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

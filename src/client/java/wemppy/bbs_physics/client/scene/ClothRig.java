@@ -51,9 +51,9 @@ public class ClothRig extends SoftBodyRig
      */
     private final ClothProxy proxy;
 
-    private ClothRig(ClothForm form, String path, int bodyId, int channel, boolean[] held, float freeInvMass, SoftBodyMotionProperties motion, ClothProxy proxy, String anchor)
+    private ClothRig(ClothForm form, String path, int bodyId, int channel, boolean[] held, float freeInvMass, SoftBodyMotionProperties motion, ClothProxy proxy)
     {
-        super(form, path, bodyId, channel, form.getColumns() * form.getRows(), motion, anchor);
+        super(form, path, bodyId, channel, form.getColumns() * form.getRows(), motion);
 
         this.cloth = form;
         this.columns = form.getColumns();
@@ -66,7 +66,7 @@ public class ClothRig extends SoftBodyRig
      * Builds the soft body for a cloth form found at {@code path} in an actor's tree. Null when the
      * pose has no frame for that path — the scene will be rebuilt when the cast changes.
      */
-    public static ClothRig build(PhysicsWorld physics, ClothForm form, String path, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, int group, String anchor)
+    public static ClothRig build(PhysicsWorld physics, ClothForm form, String path, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, int group)
     {
         MatrixCacheEntry entry = matrices == null ? null : matrices.get(path);
 
@@ -201,7 +201,7 @@ public class ClothRig extends SoftBodyRig
 
         form.state = new ClothState(columns, rows);
 
-        return new ClothRig(form, path, body.getId(), scene.addChannel(columns * rows * 3 + 1), held, freeInvMass, motion, proxy, anchor);
+        return new ClothRig(form, path, body.getId(), scene.addChannel(columns * rows * 3 + 1), held, freeInvMass, motion, proxy);
     }
 
     @Override

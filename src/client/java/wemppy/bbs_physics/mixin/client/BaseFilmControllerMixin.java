@@ -25,6 +25,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(BaseFilmController.class)
 public class BaseFilmControllerMixin
 {
+    @Inject(method = "renderEntity(Lmchorse/bbs_mod/film/FilmControllerContext;)V", at = @At("HEAD"))
+    private static void bbs_physics$prepareFrames(mchorse.bbs_mod.film.FilmControllerContext context, CallbackInfo info)
+    {
+        wemppy.bbs_physics.client.scene.SceneActor.prepareRender(
+            context.entity, context.entities, context.transition, context.replay == null || !context.relative);
+    }
+
     /**
      * The cast was assembled, or rebuilt after the editor changed who is in the film. The entities
      * are new objects, so whatever was simulated for the previous ones is stale.
