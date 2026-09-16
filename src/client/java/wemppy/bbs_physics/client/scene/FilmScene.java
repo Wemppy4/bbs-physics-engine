@@ -24,6 +24,9 @@ import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 import java.util.List;
 
 /**
@@ -576,6 +579,18 @@ public class FilmScene implements AutoCloseable
     {
         this.cast.apply(tick);
 
+        /* The viewport may be anywhere. Every drive must instead see the last completed physics
+         * tick, including while computing a long batch or starting over after an edit. */
+        for (SceneActor actor : this.actors)
+        {
+            actor.readCache(this.cache, tick - 1, true);
+        }
+
+        /* Rebase the live Jolt pose onto this tick's animation before driving anything. Merely
+         * reading last tick's local cache would carry a free parent along with its newly moved
+         * actor/anchor. This is a private staging pass; the tick is still unreadable to playback. */
+        this.recordPoses(tick, this.cache.beginFrame(tick));
+
         for (SceneActor actor : this.actors)
         {
             actor.drive(this, false);
@@ -593,16 +608,14 @@ public class FilmScene implements AutoCloseable
      */
     private void record(int tick)
     {
+        PhysicsCache pending = this.cache.beginFrame(tick);
+
         for (SceneBody body : this.bodies)
         {
             body.record(this.world.getBodies(), this.cache, tick);
         }
 
-        for (SceneActor actor : this.actors)
-        {
-            actor.record(this.world, this, this.cache, tick);
-        }
-
+        this.recordPoses(tick, pending);
         this.cache.commit(tick);
 
         if (this.lostAt < 0 && this.anythingLost())
@@ -611,7 +624,47 @@ public class FilmScene implements AutoCloseable
         }
     }
 
-    /** Hands every body the recorded frame for {@code tick}, or the news that there is not one. */
+    /** Anchor targets publish before dependents, including through actors without physics.
+     * Marking on entry bounds cyclic anchor graphs just as BBS bounds their matrix walk. */
+    private void recordPoses(int tick, PhysicsCache pending)
+    {
+        Set<IEntity> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+
+        for (SceneActor actor : this.actors)
+        {
+            this.recordActor(actor.getEntity(), pending, tick, visited);
+        }
+    }
+
+    private void recordActor(IEntity entity, PhysicsCache pending, int tick, Set<IEntity> visited)
+    {
+        if (entity == null || !visited.add(entity))
+        {
+            return;
+        }
+
+        Form root = entity.getForm();
+
+        if (root != null)
+        {
+            Anchor anchor = root.anchor.get();
+            this.recordActor(this.entities.get(anchor.replay), pending, tick, visited);
+
+            if (anchor.previous != null)
+            {
+                this.recordActor(this.entities.get(anchor.previous.replay), pending, tick, visited);
+            }
+        }
+
+        SceneActor actor = this.actorOf(entity);
+
+        if (actor != null)
+        {
+            actor.record(this.world, this, this.cache, pending, tick);
+        }
+    }
+
+    /** Restores the displayed frame pair after the simulation borrowed the runtime slots. */
     private void distribute(int tick)
     {
         /* A jump is anything but the one step forward that playback makes: across one there is no
@@ -629,6 +682,13 @@ public class FilmScene implements AutoCloseable
 
         for (SceneActor actor : this.actors)
         {
+            /* Recording borrows the runtime slots too. Restore the displayed pair, not the
+             * future tick last touched by background computation. */
+            if (!jumped)
+            {
+                actor.readCache(this.cache, this.drawnTick, true);
+            }
+
             actor.readCache(this.cache, tick, jumped);
         }
 
@@ -732,6 +792,11 @@ public class FilmScene implements AutoCloseable
         try
         {
             this.cast.apply(0);
+
+            for (SceneActor actor : this.actors)
+            {
+                actor.readCache(this.cache, -1, true);
+            }
 
             for (SceneActor actor : this.actors)
             {
@@ -840,11 +905,17 @@ public class FilmScene implements AutoCloseable
         /* Everything else is a point: the actor itself, a bone of it, with the anchor's own offset —
          * the same resolution the film's anchors go through, at the tick the cast is standing on and
          * at transition 1 (0 is the previous tick — the Э1 lesson). */
-        /* CML's anchor walk has only the one shape — BBS's extra "full matrix" and shared pose
-         * cache are not there. Only the translation is read out below, and that is the same in
-         * either variant. */
+        Anchor targetAnchor = resolve;
+
+        if (anchor.isFadeIn() || anchor.isFadeOut())
+        {
+            targetAnchor = resolve.copy();
+            targetAnchor.previous = null;
+            targetAnchor.x = 1F;
+        }
+
         Pair<Matrix4f, Float> matrix = BaseFilmController.getTotalMatrix(
-            this.entities, resolve, new Matrix4f(), 0D, 0D, 0D, 1F, 0);
+            this.entities, targetAnchor, new Matrix4f(), 0D, 0D, 0D, 1F, 0);
 
         if (matrix.a == null)
         {
@@ -875,17 +946,27 @@ public class FilmScene implements AutoCloseable
      */
     Matrix4f actorWorld(IEntity entity)
     {
+        return this.actorWorld(entity, 1F);
+    }
+
+    Matrix4f actorWorld(IEntity entity, float transition)
+    {
+        return this.actorWorld(entity, transition, true);
+    }
+
+    Matrix4f actorWorld(IEntity entity, float transition, boolean anchoredFrame)
+    {
         /* Zero camera: the actor's placement in the world, not on the screen. */
-        Matrix4f matrix = BaseFilmController.getMatrixForRenderWithRotation(entity, 0D, 0D, 0D, 1F);
+        Matrix4f matrix = BaseFilmController.getMatrixForRenderWithRotation(entity, 0D, 0D, 0D, transition);
         Form root = entity.getForm();
 
-        if (root == null)
+        if (root == null || !anchoredFrame)
         {
             return matrix;
         }
 
         Pair<Matrix4f, Float> anchored = BaseFilmController.getTotalMatrix(
-            this.entities, root.anchor.get(), matrix, 0D, 0D, 0D, 1F, 0);
+            this.entities, root.anchor.get(), matrix, 0D, 0D, 0D, transition, 0);
 
         return anchored.a == null ? matrix : anchored.a;
     }
@@ -909,6 +990,7 @@ public class FilmScene implements AutoCloseable
     {
         ensureAnimators(root);
 
+        boolean evaluating = RagdollPoseApplier.isEvaluating();
         RagdollPoseApplier.setEvaluating(true);
 
         try
@@ -917,7 +999,7 @@ public class FilmScene implements AutoCloseable
         }
         finally
         {
-            RagdollPoseApplier.setEvaluating(false);
+            RagdollPoseApplier.setEvaluating(evaluating);
         }
     }
 
@@ -926,7 +1008,7 @@ public class FilmScene implements AutoCloseable
      * assumes the render path has already done this — on a freshly built cast it has not, and a
      * model form with body parts trips over the gap.
      */
-    private static void ensureAnimators(Form form)
+    static void ensureAnimators(Form form)
     {
         FormTreeWalk.walk(form, (child, path, anchor) ->
         {

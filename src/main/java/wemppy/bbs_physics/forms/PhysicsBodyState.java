@@ -3,6 +3,7 @@ package wemppy.bbs_physics.forms;
 import mchorse.bbs_mod.utils.MathUtils;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
+import wemppy.bbs_physics.engine.PoseFrame;
 import org.joml.Vector3f;
 
 /**
@@ -17,6 +18,7 @@ import org.joml.Vector3f;
  */
 public class PhysicsBodyState
 {
+    public final PoseFrame frame = new PoseFrame();
     private final Vector3f previousPosition = new Vector3f();
     private final Vector3f position = new Vector3f();
 
@@ -129,11 +131,11 @@ public class PhysicsBodyState
 
     public Vector3f getPosition(float transition, Vector3f out)
     {
-        return this.previousPosition.lerp(this.position, transition, out);
+        return this.frame.position(this.previousPosition, this.position, transition, out);
     }
 
     public Quaternionf getRotation(float transition, Quaternionf out)
     {
-        return this.previousRotation.slerp(this.rotation, transition, out);
+        return this.frame.rotation(this.previousRotation, this.rotation, transition, out);
     }
 }

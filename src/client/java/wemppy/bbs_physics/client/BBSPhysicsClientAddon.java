@@ -3,6 +3,7 @@ package wemppy.bbs_physics.client;
 import mchorse.bbs_mod.events.BBSAddonMod;
 import mchorse.bbs_mod.events.Subscribe;
 import mchorse.bbs_mod.events.register.RegisterClientSettingsEvent;
+import mchorse.bbs_mod.events.register.RegisterDashboardPanelsEvent;
 import mchorse.bbs_mod.events.register.RegisterL10nEvent;
 import mchorse.bbs_mod.forms.FormUtilsClient;
 import mchorse.bbs_mod.resources.Link;
@@ -38,6 +39,15 @@ import java.util.Collections;
  */
 public class BBSPhysicsClientAddon implements BBSAddonMod
 {
+    @Subscribe
+    public void onRegisterDashboard(RegisterDashboardPanelsEvent event)
+    {
+        event.dashboard.overlay.keys().register(PhysicsKeybinds.TOGGLE_DEBUG, () ->
+        {
+            BBSPhysicsSettings.debug.toggle();
+        }).active(() -> BBSPhysicsSettings.debug != null);
+    }
+
     @Subscribe
     public void onRegisterL10n(RegisterL10nEvent event)
     {
