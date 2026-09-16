@@ -4,6 +4,8 @@
     "bbs_physics.config.general.tooltip": "Общие настройки движка физики",
     "bbs_physics.config.general.enabled": "Включить физику",
     "bbs_physics.config.general.enabled-comment": "Главный выключатель движка. Когда выключен, ничего не считается и аддон не стоит ничего.",
+    "keybinds.config.bbs_physics.title": "Физика BBS",
+    "keybinds.config.bbs_physics.tooltip": "Горячие клавиши физики BBS",
     "bbs_physics.config.general.debug": "Отладочный слой",
     "bbs_physics.config.general.debug-comment": "Рисует поверх сцены те формы, с которыми на самом деле работает симуляция.",
     "bbs_physics.config.general.debug_line_width": "Толщина линий отладки",
