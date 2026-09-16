@@ -5,6 +5,8 @@
     "client": [
         "BaseFilmControllerGizmoMixin",
         "BaseFilmControllerMixin",
+        "FilmMatricesMixin",
+        "KeybindSettingsMixin",
         "FormCategoriesMixin",
         "FormRendererMixin",
         "ModelFormRendererMixin",

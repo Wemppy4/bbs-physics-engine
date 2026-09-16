@@ -1,5 +1,6 @@
 package wemppy.bbs_physics.client.scene;
 
+import mchorse.bbs_mod.forms.forms.Form;
 import wemppy.bbs_physics.engine.PhysicsCache;
 import wemppy.bbs_physics.engine.PhysicsWorld;
 import org.joml.Vector3f;
@@ -15,22 +16,45 @@ import org.joml.Vector3f;
  * is hardest to see — a strand that is never told about an explosion, a sheet whose form is never
  * handed back at shutdown. Now the scene holds one list and each of these loops is one loop.</p>
  *
- * <p>The order in the list is the order things were built in, and that is load bearing: the
- * ragdolls publish where their bones actually ended up, and everything pinned to a bone — a crate
- * in a fallen hand, a cape on a fallen shoulder, hair on a fallen head — is driven after them so it
- * follows this tick's fall rather than the one before it.</p>
+ * <p>Rigs are recorded in form-tree order so each child can express its result against its
+ * parent's physical frame. Sampling excludes the rig's own output to preserve its drive target.</p>
  */
 public interface SceneRig
 {
+    /** The form whose animation this rig drives; null for the actor's remaining colliders. */
+    default Form getForm()
+    {
+        return null;
+    }
+
+    default PoseEvaluation.Kind poseKind()
+    {
+        return PoseEvaluation.Kind.FORM;
+    }
+
+    /** Refreshes only the coordinate frame, without moving bodies or applying forces. */
+    default void captureFrame(RigUpdate update)
+    {}
+
     /**
      * Runs before the world steps: drives whatever this rig owns towards the pose the animation has
      * for it, by however much of it the authority handle says the animation owns.
      */
     void update(RigUpdate update);
 
+    default boolean needsRenderFrame()
+    {
+        return false;
+    }
+
+    /** Refresh the reference used to draw between simulation ticks. */
+    default void renderFrame(RigUpdate update)
+    {}
+
     /**
-     * Runs right after the world stepped: works out where things ended up, in the frame the renderer
-     * will substitute them into, and writes that into the recording under {@code tick}.
+     * Reads the live world pose, in the frame the renderer
+     * will substitute it into, and writes it under {@code tick}. Called before the step for private
+     * parent-pose staging, and after the step for the completed recording.
      *
      * <p>The conversion belongs here rather than at draw time (§6): the frame an answer is expressed
      * in is a function of the tick, and the tick has just been posed to be simulated, so both are at
@@ -68,20 +92,6 @@ public interface SceneRig
      * existed, so the readout says the number out loud.
      */
     default boolean isLost()
-    {
-        return false;
-    }
-
-    /**
-     * Whether this rig cares where a ragdoll of the same actor has actually carried its bones — a
-     * crate in a fallen hand, a cape on a fallen shoulder, a rope tied to a fallen wrist.
-     *
-     * <p>Asked once when the actor is assembled, and the answer decides whether its ragdolls do the
-     * work of publishing those deltas at all. An actor that is only a ragdoll — the common case —
-     * skips a matrix inversion per bone per tick, which during a catch-up is a few hundred of them
-     * per drawn frame.</p>
-     */
-    default boolean readsBoneDeltas()
     {
         return false;
     }
