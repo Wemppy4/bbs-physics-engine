@@ -86,28 +86,16 @@ import java.util.List;
  * carried back through the <em>parent frame</em> the renderer captured during the walk, because
  * the renderer substitutes a local transform and only the walk knows the chain above it.</p>
  *
- * <p>Known approximations. A released nested body is re-anchored to its parent frame every tick, so
- * on a fast-moving parent the draw interpolation composes two lerps and can wobble a touch. A body
- * nested inside <em>another physics body</em> is placed against the outer body's <em>animated</em>
- * frame, because the walk the frame is read from is the simulation's own and answers with animation
- * throughout — the outer body works, the inner one follows the animation of the thing it sits in. The throw, on the other hand, is no longer an
- * approximation of anything: every tick of the film is simulated exactly once, in order, so the
- * velocity a body inherits on release is the velocity the keyframes actually gave it — arriving at
- * that frame by scrubbing and arriving by playing are the same arrival now (§6).</p>
+ * <p>The cache uses the parent's physical frame after the solver steps. Between ticks,
+ * composing interpolated parent and child transforms remains an approximation.</p>
  */
 public class BodyRig implements SceneRig
 {
+    private RecordedFrame frames;
+    private final Matrix4f reference = new Matrix4f();
     private final Form form;
     private final String path;
     private final int bodyId;
-
-    /**
-     * The bone this body hangs on, named the way the pose walk names bones, or null when it hangs
-     * on no bone. Only used to ask whether that bone is being ragdolled — the Р13 delta, which
-     * cloth got first and this rig gets now (Э5): without it a crate strapped to a falling arm is
-     * driven towards the arm's <em>animated</em> place while the renderer draws the arm fallen.
-     */
-    private final String anchor;
 
     /** This body's slot in the film's recording — see {@link PhysicsCache}. */
     private final int channel;
@@ -160,9 +148,8 @@ public class BodyRig implements SceneRig
     /** The sub-step count the damping was converted for — the rate depends on it. */
     private int dampedSteps;
 
-    private BodyRig(Form form, String path, int bodyId, int channel, List<CollisionCollector.Piece> pieces, boolean kinematic, SceneBody debug, FormBody settings, String anchor)
+    private BodyRig(Form form, String path, int bodyId, int channel, List<CollisionCollector.Piece> pieces, boolean kinematic, SceneBody debug, FormBody settings)
     {
-        this.anchor = anchor;
         this.form = form;
         this.path = path;
         this.bodyId = bodyId;
@@ -200,7 +187,7 @@ public class BodyRig implements SceneRig
     }
 
     /** Builds the body for a form carrying the rigid body modifier, found at {@code path}. */
-    public static BodyRig build(PhysicsWorld physics, Form form, String path, MatrixCache matrices, FilmScene scene, String anchor)
+    public static BodyRig build(PhysicsWorld physics, Form form, String path, MatrixCache matrices, FilmScene scene)
     {
         FormBody body = PhysicsForms.getBody(form);
 
@@ -270,7 +257,9 @@ public class BodyRig implements SceneRig
 
         PhysicsForms.setState(form, new PhysicsBodyState());
 
-        BodyRig rig = new BodyRig(form, path, id, scene.addChannel(), ghost ? List.of() : pieces, kinematic, debug, body, anchor);
+        BodyRig rig = new BodyRig(form, path, id, scene.addChannel(), ghost ? List.of() : pieces, kinematic, debug, body);
+
+        rig.frames = new RecordedFrame(scene, PhysicsForms.getState(form).frame);
 
         compose(rig.pieces, path, matrices, rig.inverse, rig.builtFrom);
 
@@ -324,6 +313,18 @@ public class BodyRig implements SceneRig
         return subs;
     }
 
+    @Override
+    public Form getForm()
+    {
+        return this.form;
+    }
+
+    @Override
+    public PoseEvaluation.Kind poseKind()
+    {
+        return PoseEvaluation.Kind.BODY;
+    }
+
     /**
      * Runs before the world steps: keeps the body's motion type in step with the authority track
      * and, while the animation is in charge, steers the body along the keyframes and keeps its
@@ -345,31 +346,9 @@ public class BodyRig implements SceneRig
         PhysicsWorld physics = update.physics;
         FilmScene scene = update.scene;
         MatrixCache matrices = update.matrices;
-        Matrix4f actorWorld = update.actorWorld;
         boolean reset = update.reset;
-        PhysicsBodyState state = PhysicsForms.getState(this.form);
 
-        /* The bone this body hangs on may be falling, and the pose walk cannot say so — it runs
-         * with the ragdoll's substitution off. The published delta is multiplied onto the frame
-         * everything here is composed on, which fixes both halves of the Р13 problem at once: the
-         * drive's target (the crate follows the fallen arm) and the frame the answer is carried
-         * back through (the renderer's own stack is the fallen one, so a return frame built on the
-         * animated arm would count the fall twice). One matrix, both uses, no double counting. */
-        Matrix4f delta = this.anchor == null ? null : update.deltas.get(this.anchor);
-
-        if (delta == null)
-        {
-            this.actorWorld.set(actorWorld);
-        }
-        else
-        {
-            this.actorWorld.set(delta).mul(actorWorld);
-        }
-
-        if (state != null)
-        {
-            this.parentFrame.set(state.getWalkParentFrame());
-        }
+        this.captureFrame(update);
 
         BodyInterface bodies = physics.getBodies();
 
@@ -469,6 +448,32 @@ public class BodyRig implements SceneRig
         {
             this.drive(bodies, authority);
         }
+    }
+
+    @Override
+    public void captureFrame(RigUpdate update)
+    {
+        this.actorWorld.set(update.actorWorld);
+        PhysicsBodyState state = PhysicsForms.getState(this.form);
+
+        if (state != null)
+        {
+            this.parentFrame.set(state.getWalkParentFrame());
+        }
+    }
+
+    @Override
+    public boolean needsRenderFrame()
+    {
+        PhysicsBodyState state = PhysicsForms.getState(this.form);
+        return state != null && state.isSimulated() && (state.getWeight(0F) > 0F || state.getWeight(1F) > 0F);
+    }
+
+    @Override
+    public void renderFrame(RigUpdate update)
+    {
+        this.captureFrame(update);
+        PhysicsForms.getState(this.form).frame.render(this.reference.set(this.actorWorld).mul(this.parentFrame));
     }
 
     /**
@@ -664,12 +669,8 @@ public class BodyRig implements SceneRig
      * Runs right after the world stepped: works out where the body ended up, in the frame the
      * renderer will substitute it into, and writes that into the recording under {@code tick}.
      *
-     * <p><b>The conversion happens here, not at draw time, and that is what makes the recording
-     * cheap.</b> The frame a body's answer is expressed in — the actor's placement times the chain
-     * of forms above it — is a function of the tick, and the tick has just been posed to be
-     * simulated, so both are at hand for free. Storing the converted numbers means playing a
-     * recorded film back evaluates no poses at all: the renderer takes seven floats and applies
-     * them.</p>
+     * <p>The local pose and its reference frame are recorded together. Playback first reconstructs
+     * the two world poses, interpolates them, then converts into the live render frame.</p>
      *
      * <p>Written on every tick, the kinematic ones included, even though the renderer ignores the
      * answer while the animation is in charge. That is what keeps a release smooth: a drawn frame
@@ -680,6 +681,7 @@ public class BodyRig implements SceneRig
     @Override
     public void record(PhysicsWorld physics, FilmScene scene, PhysicsCache cache, int tick)
     {
+        this.frames.write(cache, tick, this.reference.set(this.actorWorld).mul(this.parentFrame));
         physics.getBodies().getPositionAndRotation(this.bodyId, this.scratchPosition, this.scratchRotation);
 
         this.rotation.set(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW());
@@ -716,6 +718,8 @@ public class BodyRig implements SceneRig
             return;
         }
 
+        this.frames.read(cache, tick, teleport);
+
         if (cache.read(tick, this.channel, this.position, this.rotation))
         {
             state.set(this.position, this.rotation, cache.readAuthority(tick, this.channel), teleport);
@@ -744,17 +748,6 @@ public class BodyRig implements SceneRig
     public void impulse(PhysicsWorld physics, SceneImpulse push)
     {
         push.apply(physics.getBodies(), this.bodyId);
-    }
-
-    /**
-     * A crate strapped to a falling arm has to be driven towards where the arm actually is — the Р13
-     * delta, which cloth got first and this rig got with Э5. Without it the body is pulled towards
-     * the arm's <em>animated</em> place while the renderer draws the arm fallen.
-     */
-    @Override
-    public boolean readsBoneDeltas()
-    {
-        return true;
     }
 
     /**

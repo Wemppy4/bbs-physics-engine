@@ -3,6 +3,8 @@ package wemppy.bbs_physics.client;
 import mchorse.bbs_mod.api.BBSAddonMod;
 import mchorse.bbs_mod.api.Subscribe;
 import mchorse.bbs_mod.api.client.events.RegisterClientSettingsEvent;
+import mchorse.bbs_mod.api.client.events.RegisterKeybindsEvent;
+import mchorse.bbs_mod.api.client.events.RegisterDashboardPanelsEvent;
 import mchorse.bbs_mod.api.client.events.RegisterClipPanelsEvent;
 import mchorse.bbs_mod.api.client.events.RegisterFormEditorsEvent;
 import mchorse.bbs_mod.api.client.events.RegisterFormRenderersEvent;
@@ -52,6 +54,22 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
     public void onRegisterClientSettings(RegisterClientSettingsEvent event)
     {
         event.register(Icons.PHYSICS, BBSPhysics.MOD_ID, BBSPhysicsSettings::register);
+    }
+
+    @Subscribe
+    public void onRegisterKeybinds(RegisterKeybindsEvent event)
+    {
+        event.register(PhysicsKeybinds.class);
+        event.registerCategoryIcon("bbs_physics", Icons.PHYSICS);
+    }
+
+    @Subscribe
+    public void onRegisterDashboard(RegisterDashboardPanelsEvent event)
+    {
+        event.dashboard.overlay.keys().register(PhysicsKeybinds.TOGGLE_DEBUG, () ->
+        {
+            BBSPhysicsSettings.debug.toggle();
+        }).strict().active(() -> BBSPhysicsSettings.debug != null);
     }
 
     /**

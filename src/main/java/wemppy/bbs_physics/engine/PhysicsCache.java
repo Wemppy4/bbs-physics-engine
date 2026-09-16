@@ -26,11 +26,9 @@ import java.util.Arrays;
  * the width, the <em>last</em> float of a channel is its marker: the authority for a transform,
  * and {@link #SILENT} for a tick the channel had nothing to say on.</p>
  *
- * <p><b>What is not cached is the reason this is cheap.</b> The frames a body's answer is expressed
- * in — actor-local for a body, the model's group space for a ragdoll bone, the form's own frame for
- * cloth — depend only on the tick, so the conversion is done once during recording and the numbers
- * stored are the ones the renderer substitutes directly. Playing back a recorded film therefore
- * evaluates no poses at all.</p>
+ * <p>Rigid bodies and ragdolls also record their reference matrix, shared by all bones of a rig.
+ * Playback interpolates their physical poses in world space before converting to the current
+ * render frame, so a changing anchor cannot turn local interpolation into a visible jump.</p>
  *
  * <p>A transform channel costs thirty-two bytes a tick; a thousand-tick film with thirty of them is
  * under a megabyte, which is why the whole thing can simply be kept. Cloth is the reason the ceiling
@@ -62,6 +60,7 @@ public class PhysicsCache
 
     private int channels;
     private boolean sealed;
+    private boolean readOnly;
 
     /** Where each channel's floats start within a tick, and how many it has. */
     private int[] offsets = new int[8];
@@ -166,7 +165,7 @@ public class PhysicsCache
      */
     public boolean canWrite(int tick)
     {
-        return tick == this.computed && tick < this.getLimit();
+        return !this.readOnly && tick == this.computed && tick < this.getLimit();
     }
 
     /**
@@ -207,6 +206,40 @@ public class PhysicsCache
         }
 
         System.arraycopy(values, 0, this.data, at, values.length);
+    }
+
+    /**
+     * Starts a frame and returns a read-only view for parent-to-child pose conversion. Only the
+     * recording pass sees this view; ordinary readers still cannot see the tick until commit.
+     * Clearing markers also prevents an unwritten channel from exposing a previous recording.
+     * The view is valid only until this frame is committed, before another allocation can occur.
+     */
+    public PhysicsCache beginFrame(int tick)
+    {
+        if (this.readOnly || !this.canWrite(tick))
+        {
+            throw new IllegalStateException("Cannot start physics frame " + tick);
+        }
+
+        this.ensureCapacity(tick + 1);
+
+        for (int channel = 0; channel < this.channels; channel++)
+        {
+            this.data[tick * this.stride + this.offsets[channel] + this.widths[channel] - 1] = SILENT;
+        }
+
+        PhysicsCache view = new PhysicsCache();
+        view.channels = this.channels;
+        view.offsets = this.offsets;
+        view.widths = this.widths;
+        view.stride = this.stride;
+        view.data = this.data;
+        view.capacity = this.capacity;
+        view.computed = tick + 1;
+        view.sealed = true;
+        view.readOnly = true;
+
+        return view;
     }
 
     /** The tick is complete: everything after this point may read it. */

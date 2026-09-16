@@ -27,6 +27,7 @@ import wemppy.bbs_physics.forms.IPhysicsForm;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import wemppy.bbs_physics.ragdoll.FormRagdolls;
 import wemppy.bbs_physics.ragdoll.RagdollState;
+import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
@@ -126,6 +127,28 @@ public final class PhysicsBake
     /** The paths of the forms whose handle is to be set to 1 once the keys are in. */
     private final Set<String> baked = new LinkedHashSet<>();
 
+    private Form anchorRoot;
+    private Matrix4f anchorCorrection;
+    private boolean rootBody;
+
+    /** Preserve the release frame after baking removes the authority track. */
+    void anchorFrame(Form root, Matrix4f correction)
+    {
+        this.anchorRoot = root;
+        this.anchorCorrection = correction;
+    }
+
+    private Transform correctAnchor(Transform value)
+    {
+        if (this.anchorCorrection == null || this.anchorCorrection.equals(new Matrix4f(), 0.000001F)) return value;
+        Matrix4f matrix = new Matrix4f(this.anchorCorrection).mul(value.createMatrix());
+        matrix.getTranslation(value.translate);
+        matrix.getScale(value.scale);
+        value.rotationMode = Transform.RotationMode.QUATERNION;
+        matrix.getUnnormalizedRotation(value.quat).normalize();
+        return value;
+    }
+
     private int ticks;
 
     PhysicsBake(Film film, Replay replay, String formPath)
@@ -141,6 +164,9 @@ public final class PhysicsBake
         this.tick = tick;
         this.local = this.replay.getTick(tick);
         this.models.clear();
+        this.anchorRoot = null;
+        this.anchorCorrection = null;
+        this.rootBody = false;
     }
 
     /**
@@ -177,6 +203,11 @@ public final class PhysicsBake
             value.quat.set(animated.createRotation()).slerp(new Quaternionf(rotation).normalize(), weight);
         }
 
+        if (path.isEmpty())
+        {
+            this.correctAnchor(value);
+            this.rootBody = true;
+        }
         this.stage(this.transformKey(path), KeyframeFactories.TRANSFORM, value, authority < 1F);
         this.baked.add(path);
     }
@@ -206,6 +237,14 @@ public final class PhysicsBake
      */
     void finishTick()
     {
+        if (this.anchorRoot != null && !this.rootBody)
+        {
+            Transform value = new Transform();
+            value.copy(this.anchorRoot.transform.get());
+            this.stage(this.transformKey(""), KeyframeFactories.TRANSFORM, this.correctAnchor(value),
+                !this.anchorCorrection.equals(new Matrix4f(), 0.00001F));
+        }
+
         this.ticks++;
 
         for (Map.Entry<ModelForm, String> entry : this.models.entrySet())

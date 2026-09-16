@@ -245,7 +245,7 @@ final class SceneBuilder
         for (ClaimedChain claim : chains)
         {
             BoneChainRig chain = BoneChainRig.build(this.world, claim.form(), claim.formPath(), claim.claimed(),
-                bones, matrices, actorWorld, this.scene, actorGroup, claim.anchor());
+                bones, matrices, actorWorld, this.scene, actorGroup);
 
             if (chain != null)
             {
@@ -293,19 +293,19 @@ final class SceneBuilder
         {
             if (PhysicsForms.isBody(form))
             {
-                bodies.add(new Found(form, path, anchor));
+                bodies.add(new Found(form, path));
             }
             else if (form instanceof ClothForm)
             {
-                cloths.add(new Found(form, path, anchor));
+                cloths.add(new Found(form, path));
             }
             else if (form instanceof BalloonForm)
             {
-                balloons.add(new Found(form, path, anchor));
+                balloons.add(new Found(form, path));
             }
             else if (form instanceof ChainForm)
             {
-                chains.add(new Found(form, path, anchor));
+                chains.add(new Found(form, path));
             }
 
             return true;
@@ -319,7 +319,7 @@ final class SceneBuilder
          * things that can hang off a bone, so they follow the bodies, which follow the ragdolls. */
         for (Found found : bodies)
         {
-            rigs.add(BodyRig.build(this.world, found.form(), found.path(), matrices, this.scene, found.anchor()));
+            rigs.add(BodyRig.build(this.world, found.form(), found.path(), matrices, this.scene));
         }
 
         for (Found found : cloths)
@@ -327,19 +327,19 @@ final class SceneBuilder
             /* Each sheet takes an id of its own from the same counter, so its stand-ins are excused
              * from it alone — see ClothProxy. Taken whether or not the sheet was built, and whether
              * or not it asked for stand-ins: an id spent is cheaper than an id reused by mistake. */
-            add(rigs, ClothRig.build(this.world, (ClothForm) found.form(), found.path(), matrices, actorWorld, this.scene, this.group++, found.anchor()));
+            add(rigs, ClothRig.build(this.world, (ClothForm) found.form(), found.path(), matrices, actorWorld, this.scene, this.group++));
         }
 
         for (Found found : balloons)
         {
-            add(rigs, BalloonRig.build(this.world, (BalloonForm) found.form(), found.path(), matrices, actorWorld, this.scene, found.anchor()));
+            add(rigs, BalloonRig.build(this.world, (BalloonForm) found.form(), found.path(), matrices, actorWorld, this.scene));
         }
 
         for (Found found : chains)
         {
             /* An id from the same counter too — a strand's neighbours are excused from each other
              * through its own filter, and a shared id would read another rig's table. */
-            add(rigs, ChainRig.build(this.world, (ChainForm) found.form(), found.path(), matrices, actorWorld, this.scene, this.group++, found.anchor()));
+            add(rigs, ChainRig.build(this.world, (ChainForm) found.form(), found.path(), matrices, actorWorld, this.scene, this.group++));
         }
     }
 
@@ -352,7 +352,7 @@ final class SceneBuilder
     }
 
     /** A form the walk found, with the two things building it needs: where it is, and what it hangs on. */
-    private record Found(Form form, String path, String anchor)
+    private record Found(Form form, String path)
     {}
 
     /**
@@ -496,7 +496,7 @@ final class SceneBuilder
         {
             if (form instanceof ModelForm model && FormChains.isEnabled(model))
             {
-                found.add(new ChainModel(model, path, anchor));
+                found.add(new ChainModel(model, path));
             }
 
             return true;
@@ -519,7 +519,7 @@ final class SceneBuilder
         {
             FormChain config = FormChains.get(found.form());
 
-            claims.add(new ClaimedChain(found.form(), found.path(), found.anchor(),
+            claims.add(new ClaimedChain(found.form(), found.path(),
                 claim(pieces, found.path(), (piece) -> config.claims(piece.label()))));
         }
 
@@ -588,10 +588,10 @@ final class SceneBuilder
     {}
 
     /** The same for a chain modifier: the markup of its bones, taken before the kinematic rig. */
-    private record ClaimedChain(ModelForm form, String formPath, String anchor, List<CollisionCollector.Piece> claimed)
+    private record ClaimedChain(ModelForm form, String formPath, List<CollisionCollector.Piece> claimed)
     {}
 
     /** A model carrying the chain modifier: where it lives, and the bone it itself hangs on. */
-    private record ChainModel(ModelForm form, String path, String anchor)
+    private record ChainModel(ModelForm form, String path)
     {}
 }

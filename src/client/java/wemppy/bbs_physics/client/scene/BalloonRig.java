@@ -46,9 +46,9 @@ public class BalloonRig extends SoftBodyRig
     private float lastRestitution;
     private float lastGravity;
 
-    private BalloonRig(BalloonForm form, String path, int bodyId, int channel, SoftBodyMotionProperties motion, String anchor)
+    private BalloonRig(BalloonForm form, String path, int bodyId, int channel, SoftBodyMotionProperties motion)
     {
-        super(form, path, bodyId, channel, form.getVertexCount(), motion, anchor);
+        super(form, path, bodyId, channel, form.getVertexCount(), motion);
 
         this.balloon = form;
         this.lastRestitution = form.restitution.get();
@@ -65,7 +65,7 @@ public class BalloonRig extends SoftBodyRig
      * Builds the soft body for a balloon form found at {@code path} in an actor's tree. Null when
      * the pose has no frame for that path — the scene will be rebuilt when the cast changes.
      */
-    public static BalloonRig build(PhysicsWorld physics, BalloonForm form, String path, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, String anchor)
+    public static BalloonRig build(PhysicsWorld physics, BalloonForm form, String path, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene)
     {
         MatrixCacheEntry entry = matrices == null ? null : matrices.get(path);
 
@@ -160,7 +160,7 @@ public class BalloonRig extends SoftBodyRig
         form.state = new BalloonState(count);
 
         return new BalloonRig(form, path, body.getId(), scene.addChannel(count * 3 + 1),
-            (SoftBodyMotionProperties) body.getMotionProperties(), anchor);
+            (SoftBodyMotionProperties) body.getMotionProperties());
     }
 
     private static void addFace(SoftBodySharedSettings shared, int v0, int v1, int v2)

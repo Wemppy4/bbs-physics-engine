@@ -23,6 +23,7 @@ import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.chain.ChainForm;
+import mchorse.bbs_mod.forms.forms.Form;
 import wemppy.bbs_physics.chain.ChainState;
 import wemppy.bbs_physics.client.collision.CollisionShapes;
 import wemppy.bbs_physics.client.collision.JoltShapes;
@@ -108,7 +109,6 @@ public class ChainRig implements SceneRig
 
     private final ChainForm form;
     private final String path;
-    private final String anchor;
 
     private final int segments;
     private final float segmentLength;
@@ -180,11 +180,10 @@ public class ChainRig implements SceneRig
     private float lastStiffness = Float.NaN;
     private float lastDamping = Float.NaN;
 
-    private ChainRig(ChainForm form, String path, String anchor, int[] bodies, Body[] parts, int[] channels, SwingTwistConstraint[] joints, Body lastBody, int rootId, SwingTwistConstraint rootJoint, int pinId, PointConstraint pinJoint, GroupFilterTable filter, boolean kinematic)
+    private ChainRig(ChainForm form, String path, int[] bodies, Body[] parts, int[] channels, SwingTwistConstraint[] joints, Body lastBody, int rootId, SwingTwistConstraint rootJoint, int pinId, PointConstraint pinJoint, GroupFilterTable filter, boolean kinematic)
     {
         this.form = form;
         this.path = path;
-        this.anchor = anchor;
         this.segments = form.segments.get();
         this.segmentLength = form.getSegmentLength();
         this.bodies = bodies;
@@ -209,7 +208,7 @@ public class ChainRig implements SceneRig
      *
      * @param group a collision group id no other strand or actor in the scene uses
      */
-    public static ChainRig build(PhysicsWorld physics, ChainForm form, String path, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, int group, String anchor)
+    public static ChainRig build(PhysicsWorld physics, ChainForm form, String path, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, int group)
     {
         MatrixCacheEntry entry = matrices == null ? null : matrices.get(path);
 
@@ -387,7 +386,7 @@ public class ChainRig implements SceneRig
 
         form.state = new ChainState(segments);
 
-        return new ChainRig(form, path, anchor, ids, built, channels, joints, built[segments - 1], rootId, rootJoint, pin.getId(), pinJoint, filter, kinematic);
+        return new ChainRig(form, path, ids, built, channels, joints, built[segments - 1], rootId, rootJoint, pin.getId(), pinJoint, filter, kinematic);
     }
 
     /**
@@ -455,6 +454,18 @@ public class ChainRig implements SceneRig
         }
     }
 
+    @Override
+    public Form getForm()
+    {
+        return this.form;
+    }
+
+    @Override
+    public PoseEvaluation.Kind poseKind()
+    {
+        return PoseEvaluation.Kind.FORM;
+    }
+
     /**
      * Runs before the world steps: drives the strand toward its authored line by however much of
      * it the animation owns, stands the top pin on the form's frame, and ties or unties the bottom
@@ -468,33 +479,9 @@ public class ChainRig implements SceneRig
     {
         PhysicsWorld physics = update.physics;
         FilmScene scene = update.scene;
-        MatrixCache matrices = update.matrices;
-        Matrix4f actorWorld = update.actorWorld;
         boolean reset = update.reset;
-        Map<String, Matrix4f> deltas = update.deltas;
-
-        /* Where the bottom end is told to be this tick, resolved from the anchor track — the scene
-         * owns that resolution because an anchor can name any actor of the film, not just this one. */
+        this.captureFrame(update);
         Attach attach = scene.resolveAttach(this.form);
-
-        MatrixCacheEntry entry = matrices == null ? null : matrices.get(this.path);
-
-        if (entry != null && entry.matrix() != null)
-        {
-            /* The bone this strand hangs on may be falling — same delta, same reason as cloth. */
-            Matrix4f delta = this.anchor == null ? null : deltas.get(this.anchor);
-
-            if (delta == null)
-            {
-                this.formWorld.set(actorWorld).mul(entry.matrix());
-            }
-            else
-            {
-                this.formWorld.set(delta).mul(actorWorld).mul(entry.matrix());
-            }
-
-            this.formRotation.set(rotationOf(this.formWorld));
-        }
 
         BodyInterface bodies = physics.getBodies();
 
@@ -624,11 +611,19 @@ public class ChainRig implements SceneRig
         }
     }
 
-    /**
-     * Ties, moves or unties the bottom end for this tick. The state machine's whole job is the
-     * moment of switching on: the tie's anchor points are set where they are needed <em>then</em>,
-     * off the current tip and target, so re-recording lands them identically tick for tick.
-     */
+    /** The rope's frame under its physical parents. */
+    @Override
+    public void captureFrame(RigUpdate update)
+    {
+        MatrixCacheEntry entry = update.matrices == null ? null : update.matrices.get(this.path);
+
+        if (entry != null && entry.matrix() != null)
+        {
+            this.formWorld.set(update.actorWorld).mul(entry.matrix());
+            this.formRotation.set(rotationOf(this.formWorld));
+        }
+    }
+
     private void applyAttach(PhysicsWorld physics, FilmScene scene, Attach attach)
     {
         BodyInterface bodies = physics.getBodies();
@@ -938,12 +933,6 @@ public class ChainRig implements SceneRig
         }
 
         this.lost = !sound;
-    }
-
-    @Override
-    public boolean readsBoneDeltas()
-    {
-        return true;
     }
 
     /** Whether the simulation lost this strand on the tick it last recorded. */
