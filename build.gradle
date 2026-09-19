@@ -97,8 +97,9 @@ dependencies {
 	include "com.github.stephengold:jolt-jni-Windows64:${project.jolt_version}"
 
 	joltPlatforms.each { platform ->
-		runtimeOnly "com.github.stephengold:jolt-jni-${platform}:${project.jolt_version}:ReleaseSp"
-		include "com.github.stephengold:jolt-jni-${platform}:${project.jolt_version}:ReleaseSp"
+		def nativeVersion = platform == 'Linux_ARM64' ? project.jolt_linux_arm64_version : project.jolt_version
+		runtimeOnly "com.github.stephengold:jolt-jni-${platform}:${nativeVersion}:ReleaseSp"
+		include "com.github.stephengold:jolt-jni-${platform}:${nativeVersion}:ReleaseSp"
 	}
 }
 
