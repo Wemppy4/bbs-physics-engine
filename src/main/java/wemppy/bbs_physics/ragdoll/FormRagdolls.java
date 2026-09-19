@@ -3,6 +3,8 @@ package wemppy.bbs_physics.ragdoll;
 import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
 import wemppy.bbs_physics.forms.ValueData;
+import wemppy.bbs_physics.forms.PhysicsForms;
+import wemppy.bbs_physics.forms.PhysicsType;
 import wemppy.bbs_physics.forms.IModelPhysicsForm;
 import wemppy.bbs_physics.forms.PhysicsKnobValue;
 
@@ -44,7 +46,7 @@ public final class FormRagdolls
 
             value.set(stripped.isEmpty() ? null : stripped);
 
-            return ragdoll;
+            return ragdoll.withEnabled(isEnabled(form));
         }
 
         for (RagdollKnob knob : RagdollKnob.values())
@@ -52,7 +54,7 @@ public final class FormRagdolls
             ragdoll = knob.into(ragdoll, model.bbs_physics$getRagdollKnob(knob).get());
         }
 
-        return ragdoll;
+        return ragdoll.withEnabled(isEnabled(form));
     }
 
     public static void set(Form form, FormRagdoll ragdoll)
@@ -83,9 +85,7 @@ public final class FormRagdolls
     /** Whether the ragdoll is switched on, without parsing the joints — the per-frame check. */
     public static boolean isEnabled(Form form)
     {
-        ValueData value = value(form);
-
-        return value != null && RagdollIO.isEnabled(value.get());
+        return PhysicsForms.getType(form) == PhysicsType.RAGDOLL;
     }
 
     public static RagdollState getState(Form form)

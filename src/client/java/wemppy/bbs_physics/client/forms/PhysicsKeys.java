@@ -16,11 +16,10 @@ public class PhysicsKeys
     public static final IKey BONES_MULTI = L10n.lang("bbs_physics.forms.bones_multi");
 
     public static final IKey PHYSICS_TITLE = L10n.lang("bbs_physics.forms.physics.title");
-    public static final IKey PHYSICS_ADD = L10n.lang("bbs_physics.forms.physics.add");
-    public static final IKey PHYSICS_ADD_BODY = L10n.lang("bbs_physics.forms.physics.add_body");
-    public static final IKey PHYSICS_ADD_RAGDOLL = L10n.lang("bbs_physics.forms.physics.add_ragdoll");
-    public static final IKey PHYSICS_ADD_CHAIN = L10n.lang("bbs_physics.forms.physics.add_chain");
-    public static final IKey PHYSICS_REMOVE = L10n.lang("bbs_physics.forms.physics.remove");
+    public static final IKey PHYSICS_TYPE = L10n.lang("bbs_physics.forms.physics.type");
+    public static final IKey PHYSICS_NONE = L10n.lang("bbs_physics.forms.physics.none");
+    public static final IKey PHYSICS_NONE_HINT = L10n.lang("bbs_physics.forms.physics.none_hint");
+    public static final IKey PHYSICS_CHAINS = L10n.lang("bbs_physics.forms.physics.chains");
     public static final IKey PHYSICS_UNMARKED = L10n.lang("bbs_physics.forms.physics.unmarked");
 
     public static final IKey BAKE = L10n.lang("bbs_physics.forms.physics.bake");
@@ -111,7 +110,6 @@ public class PhysicsKeys
     public static final IKey CHAIN_HELD_START_TOOLTIP = L10n.lang("bbs_physics.forms.chain.held_start_tooltip");
     public static final IKey CHAIN_ATTACH_HINT = L10n.lang("bbs_physics.forms.chain.attach_hint");
 
-    public static final IKey CHAIN_MODIFIER_TITLE = L10n.lang("bbs_physics.forms.chain.modifier_title");
     public static final IKey CHAIN_TAKE_FROM_MODEL = L10n.lang("bbs_physics.forms.chain.take_from_model");
     public static final IKey CHAIN_TAKE_FROM_MODEL_TOOLTIP = L10n.lang("bbs_physics.forms.chain.take_from_model_tooltip");
     public static final IKey CHAIN_CLEAR = L10n.lang("bbs_physics.forms.chain.clear");

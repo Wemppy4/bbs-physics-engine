@@ -67,7 +67,7 @@ public final class ChainIO
     {
         MapType map = new MapType();
 
-        if (chain == null || chain.isEmpty())
+        if (chain == null)
         {
             return map;
         }

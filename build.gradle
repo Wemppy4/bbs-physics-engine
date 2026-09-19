@@ -144,8 +144,14 @@ tasks.register('physicsPoseCheck', JavaExec) {
 	mainClass = 'wemppy.bbs_physics.engine.PoseFrameCheck'
 }
 
+tasks.register('physicsSettingsCheck', JavaExec) {
+    dependsOn physicsChecksClasses
+    classpath = sourceSets.physicsChecks.runtimeClasspath
+    mainClass = 'wemppy.bbs_physics.engine.PhysicsSettingsCheck'
+}
+
 tasks.named('check') {
-	dependsOn physicsCacheCheck, physicsPoseCheck
+	dependsOn physicsCacheCheck, physicsPoseCheck, physicsSettingsCheck
 }
 
 publishing {

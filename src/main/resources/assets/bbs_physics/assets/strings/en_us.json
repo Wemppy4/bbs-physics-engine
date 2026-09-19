@@ -50,11 +50,6 @@
     "bbs_physics.clips.kick_tooltip": "The speed the torn bone is thrown with, on top of whatever it already had. Zero — it just drops off.",
 
     "bbs_physics.forms.physics.title": "Physics",
-    "bbs_physics.forms.physics.add": "Add a modifier",
-    "bbs_physics.forms.physics.add_body": "Rigid body",
-    "bbs_physics.forms.physics.add_ragdoll": "Ragdoll",
-    "bbs_physics.forms.physics.add_chain": "Chain (hair, tail)",
-    "bbs_physics.forms.physics.remove": "Remove the modifier",
     "bbs_physics.forms.physics.bake": "Bake to keyframes",
     "bbs_physics.forms.physics.bake_tooltip": "Turn this form's computed physics into ordinary replay keyframes — only on the ticks where physics moved something; still stretches (a body at rest) collapse to two keys, and the author's keys outside those stretches are left alone. The Animation strength handle goes to 1 afterwards, the animation owns the form, and the keys can be edited by hand. Undone like any other edit of the film.",
     "bbs_physics.forms.physics.bake_title": "Bake to keyframes",
@@ -63,6 +58,10 @@
     "bbs_physics.forms.physics.bake_no_scene": "Nothing to bake: this film has no physics scene right now. Physics is off in the settings, or the form is not in the film yet.",
     "bbs_physics.forms.physics.bake_no_actor": "No actor in the scene plays this replay — the scene is still being assembled, or nothing on it is simulated.",
     "bbs_physics.forms.physics.bake_failed": "Baking failed — see the game log for details.",
+    "bbs_physics.forms.physics.type": "Physics type",
+    "bbs_physics.forms.physics.none": "None",
+    "bbs_physics.forms.physics.none_hint": "The form follows its animation. Collision shapes are kept, so it can still act as an obstacle for other objects.",
+    "bbs_physics.forms.physics.chains": "Chains",
     "bbs_physics.forms.physics.unmarked": "Set up collision first — the Collision tab. Without it there is nothing for physics to take hold of: the form falls through everything and touches nothing.",
 
     "bbs_physics.forms.body.mass_tooltip": "Only matters when two moving bodies meet: in a vacuum everything falls alike.",
@@ -143,9 +142,8 @@
     "bbs_physics.forms.chain.ends": "Ends",
     "bbs_physics.forms.chain.held_start": "Top held by the form",
     "bbs_physics.forms.chain.held_start_tooltip": "On, the chain hangs from wherever the form is placed and follows it. Off, the whole strand is loose — a thrown rope.",
-    "bbs_physics.forms.chain.attach_hint": "The bottom end is tied by the \"attach\" track on the timeline: key an actor and a bone, like an anchor. If the actor carries the Rigid Body modifier, the chain honestly drags it along. Keys mid-film re-tie the end.",
+    "bbs_physics.forms.chain.attach_hint": "The bottom end is tied by the \"attach\" track on the timeline: key an actor and a bone, like an anchor. If the actor uses the Rigid body physics type, the chain honestly drags it along. Keys mid-film re-tie the end.",
 
-    "bbs_physics.forms.chain.modifier_title": "Chain",
     "bbs_physics.forms.chain.take_from_model": "Take chains from the model",
     "bbs_physics.forms.chain.take_from_model_tooltip": "Ticks the bones the model's own physics already describes (start of the chain down to its end) — usually the hair and tails. From then on those bones are ours and BBS's own chain solver is switched off on them: two owners for one strand is a strand doing neither thing convincingly. Use the knobs on this panel.",
     "bbs_physics.forms.chain.clear": "Untick all",
