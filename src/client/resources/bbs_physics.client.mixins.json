@@ -9,6 +9,7 @@
         "ModelPivotFramesMixin",
         "UIClipsMixin",
         "UIFilmKeyframesMixin",
+        "UIReplayPropertiesPanelMixin",
         "UIFilmControllerMixin",
         "FilmEntityRendererMixin",
         "FilmMatricesMixin",

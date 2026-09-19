@@ -744,7 +744,7 @@ public class FilmScene implements AutoCloseable
      * the bake out has stood every rig's state on every tick in turn.</p>
      *
      * @param replay   the replay whose keyframes receive the bake
-     * @param formPath where the form sits in the replay's form tree, by the walk's convention
+     * @param formPath where the form sits in the replay's form tree, or null for the whole actor
      * @return what was written, or null when this scene has no actor playing that replay
      */
     public PhysicsBake.Result bake(Replay replay, String formPath)
@@ -791,9 +791,9 @@ public class FilmScene implements AutoCloseable
 
                 bake.at(tick);
 
-                if (formPath.isEmpty()) bake.anchorFrame(root, new Matrix4f());
+                if (formPath == null || formPath.isEmpty()) bake.anchorFrame(root, new Matrix4f());
 
-                if (formPath.isEmpty() && SceneActor.releaseAnchor(root.anchor.get()) != root.anchor.get())
+                if ((formPath == null || formPath.isEmpty()) && SceneActor.releaseAnchor(root.anchor.get()) != root.anchor.get())
                 {
                     for (SceneActor other : this.actors) other.readCache(this.cache, tick, true);
                     Matrix4f effective = this.actorWorld(member.entity);
@@ -825,6 +825,12 @@ public class FilmScene implements AutoCloseable
         }
 
         return bake.write();
+    }
+
+    /** Bakes all supported physics in the actor's form tree in a single transaction. */
+    public PhysicsBake.Result bake(Replay replay)
+    {
+        return this.bake(replay, null);
     }
 
     /**

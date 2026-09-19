@@ -1,4 +1,6 @@
 {
+    "bbs_physics.forms.physics.bake_actor_tooltip": "Запечь поддерживаемую физику актёра, показанного в свойствах, вместе с вложенными формами за весь фильм. Отменяется одной операцией.",
+    "bbs_physics.forms.physics.bake_actor_confirm": "Запечь физику этого актёра и его вложенных форм за весь фильм? Ключи на просчитанных участках будут заменены результатом физики. Действие можно отменить.",
     "bbs_physics.forms.sections.motion": "Движение",
     "bbs_physics.forms.sections.limits": "Ограничения",
     "bbs_physics.forms.sections.bones": "Кости",

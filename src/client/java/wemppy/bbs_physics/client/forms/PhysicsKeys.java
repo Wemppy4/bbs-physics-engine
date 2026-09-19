@@ -34,6 +34,8 @@ public class PhysicsKeys
     public static final IKey PHYSICS_CHAINS = L10n.lang("bbs_physics.forms.physics.chains");
 
     public static final IKey BAKE = L10n.lang("bbs_physics.forms.physics.bake");
+    public static final IKey BAKE_ACTOR_TOOLTIP = L10n.lang("bbs_physics.forms.physics.bake_actor_tooltip");
+    public static final IKey BAKE_ACTOR_CONFIRM = L10n.lang("bbs_physics.forms.physics.bake_actor_confirm");
     public static final IKey BAKE_TOOLTIP = L10n.lang("bbs_physics.forms.physics.bake_tooltip");
     public static final IKey BAKE_TITLE = L10n.lang("bbs_physics.forms.physics.bake_title");
     public static final IKey BAKE_CONFIRM = L10n.lang("bbs_physics.forms.physics.bake_confirm");

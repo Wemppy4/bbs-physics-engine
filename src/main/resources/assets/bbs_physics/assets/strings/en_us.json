@@ -1,4 +1,6 @@
 {
+    "bbs_physics.forms.physics.bake_actor_tooltip": "Bake supported physics for the actor shown in properties, including nested forms, over the entire film. Can be undone in one step.",
+    "bbs_physics.forms.physics.bake_actor_confirm": "Bake physics for this actor and its nested forms over the entire film? Keys in simulated intervals will be replaced by the physics result. This can be undone.",
     "bbs_physics.forms.sections.motion": "Motion",
     "bbs_physics.forms.sections.limits": "Limits",
     "bbs_physics.forms.sections.bones": "Bones",
