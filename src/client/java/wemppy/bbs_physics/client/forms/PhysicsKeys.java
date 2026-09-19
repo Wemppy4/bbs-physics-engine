@@ -209,6 +209,8 @@ public class PhysicsKeys
     public static final IKey CLIP_POINT = L10n.lang("bbs_physics.clips.point");
     public static final IKey CLIP_POINT_FROM_LOOK = L10n.lang("bbs_physics.clips.point_from_look");
     public static final IKey CLIP_RADIAL = L10n.lang("bbs_physics.clips.radial");
+    public static final IKey CLIP_ONLY_THIS_REPLAY = L10n.lang("bbs_physics.clips.only_this_replay");
+    public static final IKey CLIP_ONLY_THIS_REPLAY_TOOLTIP = L10n.lang("bbs_physics.clips.only_this_replay_tooltip");
     public static final IKey CLIP_RADIAL_TOOLTIP = L10n.lang("bbs_physics.clips.radial_tooltip");
     public static final IKey CLIP_STRENGTH = L10n.lang("bbs_physics.clips.strength");
     public static final IKey CLIP_STRENGTH_TOOLTIP = L10n.lang("bbs_physics.clips.strength_tooltip");

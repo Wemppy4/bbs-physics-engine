@@ -57,6 +57,8 @@
     "bbs_physics.clips.point": "Point (world coordinates)",
     "bbs_physics.clips.point_from_look": "Take the point from the crosshair",
     "bbs_physics.clips.radial": "Explosion — away from the point",
+    "bbs_physics.clips.only_this_replay": "Only this recording",
+    "bbs_physics.clips.only_this_replay_tooltip": "Apply the impulse only to physics objects in the recording that owns this clip, including nested forms. The radius still applies. Collisions with other recordings still work.",
     "bbs_physics.clips.radial_tooltip": "On — everything in the radius flies away from the point, like a blast. Off — everything in the radius is shoved the same way, along the Direction vector.",
     "bbs_physics.clips.strength": "Strength (blocks/s)",
     "bbs_physics.clips.strength_tooltip": "The speed things get at the point itself, in blocks per second, fading to nothing at the edge of the radius. Only what physics owns is pushed: a body with its handle at 1 belongs to the animation, and no blast outranks it.",

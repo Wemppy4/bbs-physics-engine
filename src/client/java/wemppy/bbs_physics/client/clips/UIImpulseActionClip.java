@@ -28,6 +28,7 @@ public class UIImpulseActionClip extends UIActionClip<ImpulseActionClip>
 {
     public UIPointModule point;
     public UIToggle radial;
+    public UIToggle onlyThisReplay;
     public UITrackpad strength;
     public UITrackpad radius;
     public UIPointModule direction;
@@ -65,6 +66,9 @@ public class UIImpulseActionClip extends UIActionClip<ImpulseActionClip>
         this.radial = new UIToggle(PhysicsKeys.CLIP_RADIAL, (toggle) -> this.editor.editMultiple(this.clip.radial, (radial) -> radial.set(toggle.getValue())));
         this.radial.tooltip(PhysicsKeys.CLIP_RADIAL_TOOLTIP);
 
+        this.onlyThisReplay = new UIToggle(PhysicsKeys.CLIP_ONLY_THIS_REPLAY, (toggle) -> this.editor.editMultiple(this.clip.onlyThisReplay, (value) -> value.set(toggle.getValue())));
+        this.onlyThisReplay.tooltip(PhysicsKeys.CLIP_ONLY_THIS_REPLAY_TOOLTIP);
+
         this.strength = new UITrackpad((v) -> this.editor.editMultiple(this.clip.strength, (strength) -> strength.set(v.floatValue())));
         this.strength.tooltip(PhysicsKeys.CLIP_STRENGTH_TOOLTIP);
 
@@ -83,6 +87,7 @@ public class UIImpulseActionClip extends UIActionClip<ImpulseActionClip>
         this.panels.add(this.section(PhysicsKeys.CLIP_STRENGTH, this.strength));
         this.panels.add(this.section(PhysicsKeys.CLIP_RADIUS, this.radius));
         this.panels.add(this.radial);
+        this.panels.add(this.onlyThisReplay);
         this.panels.add(this.direction);
     }
 
@@ -93,6 +98,7 @@ public class UIImpulseActionClip extends UIActionClip<ImpulseActionClip>
 
         this.point.fill(this.clip.point);
         this.radial.setValue(this.clip.radial.get());
+        this.onlyThisReplay.setValue(this.clip.onlyThisReplay.get());
         this.strength.setValue(this.clip.strength.get());
         this.radius.setValue(this.clip.radius.get());
         this.direction.fill(this.clip.direction);
