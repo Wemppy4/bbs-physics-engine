@@ -123,6 +123,20 @@ gravity, where half of Earth's reads as slow motion without touching a single ke
 sub-steps; how many blocks of the world around, below and above the scene take part; and a debug
 overlay that draws the shapes the simulation actually works with.
 
+### Structure destruction
+
+For a BBS structure form, choose **Physics → Physics type → Destruction**, set **Strength**,
+and add an **Impulse** clip to the film. Each solid block inside the impulse radius breaks off
+when the impulse's local speed (after distance falloff) exceeds the strength threshold. Detached
+blocks collide with the scene and with each other; the untouched blocks keep following the form.
+Rewinding before the impulse restores the intact structure.
+
+This first version supports up to **1024 solid blocks per structure**, within the scene's body
+and recording budgets. Block collision shapes are taken from Minecraft, including slabs and
+stairs. Fluids and blocks without collision stay with the intact remainder. Use a fixed positive
+scale; animated scale and sheared transforms are not supported. Destruction does not yet react
+to ordinary collisions, propagate through missing supports, or bake to keyframes.
+
 ## Building
 
 BBS is not published to any repository, so its jar goes into `libs/` by hand:

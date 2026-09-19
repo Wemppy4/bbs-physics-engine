@@ -11,6 +11,7 @@ import wemppy.bbs_physics.chain.ChainIO;
 import wemppy.bbs_physics.cloth.ClothForm;
 import wemppy.bbs_physics.ragdoll.FormRagdolls;
 import wemppy.bbs_physics.ragdoll.RagdollIO;
+import wemppy.bbs_physics.structure.IStructurePhysicsForm;
 
 /**
  * Reading and writing the physics a form carries: its rigid body modifier and the one handle both
@@ -44,6 +45,12 @@ public final class PhysicsForms
             return PhysicsType.BODY;
         }
 
+        if (form instanceof IStructurePhysicsForm structure
+            && ModifierIO.isEnabled(structure.bbs_physics$getDestruction().get()))
+        {
+            return PhysicsType.DESTRUCTION;
+        }
+
         if (form instanceof IModelPhysicsForm model)
         {
             ValueData ragdoll = model.bbs_physics$getRagdoll();
@@ -67,12 +74,18 @@ public final class PhysicsForms
     public static void setType(Form form, PhysicsType type)
     {
         if (form == null || type == null || !(form instanceof IPhysicsForm)
-            || ((type == PhysicsType.RAGDOLL || type == PhysicsType.CHAIN) && !(form instanceof IModelPhysicsForm)))
+            || ((type == PhysicsType.RAGDOLL || type == PhysicsType.CHAIN) && !(form instanceof IModelPhysicsForm))
+            || (type == PhysicsType.DESTRUCTION && !(form instanceof IStructurePhysicsForm)))
         {
             return;
         }
 
         setEnabled(bodyValue(form), type == PhysicsType.BODY);
+
+        if (form instanceof IStructurePhysicsForm structure)
+        {
+            setEnabled(structure.bbs_physics$getDestruction(), type == PhysicsType.DESTRUCTION);
+        }
 
         if (form instanceof IModelPhysicsForm model)
         {

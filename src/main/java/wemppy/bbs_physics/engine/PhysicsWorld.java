@@ -104,6 +104,11 @@ public class PhysicsWorld implements AutoCloseable
         return this.system.getNumBodies();
     }
 
+    public int remainingBodyCapacity()
+    {
+        return MAX_BODIES - this.getBodyCount();
+    }
+
     /** Downwards, which is the only direction an author has ever asked for. */
     public void setGravity(float strength)
     {

@@ -4,6 +4,8 @@
     "compatibilityLevel": "JAVA_17",
     "client": [
         "TrackIdMixin",
+        "StructureRenderDataAccessor",
+        "StructureFormRendererMixin",
         "FormRendererMixin",
         "ModelFormRendererMixin",
         "ModelPhysicsCacheMixin",

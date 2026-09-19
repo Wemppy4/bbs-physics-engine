@@ -151,7 +151,15 @@ tasks.register('physicsSettingsCheck', JavaExec) {
 }
 
 tasks.named('check') {
-	dependsOn physicsCacheCheck, physicsPoseCheck, physicsSettingsCheck, physicsSceneCheck
+	dependsOn physicsCacheCheck, physicsPoseCheck, physicsSettingsCheck, physicsSceneCheck, physicsDestructionCheck
+}
+
+tasks.register('physicsDestructionCheck', JavaExec) {
+    dependsOn physicsChecksClasses
+    classpath = sourceSets.physicsChecks.runtimeClasspath
+    mainClass = 'wemppy.bbs_physics.client.scene.StructureDestructionCheck'
+    workingDir layout.buildDirectory.dir('physicsDestructionCheck')
+    doFirst { workingDir.mkdirs() }
 }
 
 tasks.register('physicsSceneCheck', JavaExec) {

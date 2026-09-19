@@ -11,6 +11,8 @@ import com.github.stephengold.joltjni.enumerate.EMotionType;
 import mchorse.bbs_mod.forms.entities.IEntity;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
+import mchorse.bbs_mod.forms.forms.StructureForm;
+import wemppy.bbs_physics.structure.StructureDestruction;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import wemppy.bbs_physics.BBSPhysics;
@@ -291,12 +293,17 @@ final class SceneBuilder
         List<Found> cloths = new ArrayList<>(0);
         List<Found> balloons = new ArrayList<>(0);
         List<Found> chains = new ArrayList<>(0);
+        List<Found> structures = new ArrayList<>(0);
 
         FormTreeWalk.walk(root, (form, path, anchor) ->
         {
             if (PhysicsForms.isBody(form))
             {
                 bodies.add(new Found(form, path));
+            }
+            else if (form instanceof StructureForm && StructureDestruction.isEnabled(form))
+            {
+                structures.add(new Found(form, path));
             }
             else if (form instanceof ClothForm)
             {
@@ -331,6 +338,11 @@ final class SceneBuilder
              * from it alone — see ClothProxy. Taken whether or not the sheet was built, and whether
              * or not it asked for stand-ins: an id spent is cheaper than an id reused by mistake. */
             add(rigs, ClothRig.build(this.world, (ClothForm) found.form(), found.path(), matrices, actorWorld, this.scene, this.group++));
+        }
+
+        for (Found found : structures)
+        {
+            add(rigs, StructureRig.build(this.world, (StructureForm) found.form(), found.path(), matrices, actorWorld, this.scene));
         }
 
         for (Found found : balloons)

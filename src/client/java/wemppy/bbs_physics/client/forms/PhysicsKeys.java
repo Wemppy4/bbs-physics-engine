@@ -32,6 +32,9 @@ public class PhysicsKeys
     public static final IKey PHYSICS_TYPE = L10n.lang("bbs_physics.forms.physics.type");
     public static final IKey PHYSICS_NONE = L10n.lang("bbs_physics.forms.physics.none");
     public static final IKey PHYSICS_CHAINS = L10n.lang("bbs_physics.forms.physics.chains");
+    public static final IKey DESTRUCTION = L10n.lang("bbs_physics.forms.destruction.title");
+    public static final IKey DESTRUCTION_STRENGTH = L10n.lang("bbs_physics.forms.destruction.strength");
+    public static final IKey DESTRUCTION_STRENGTH_TOOLTIP = L10n.lang("bbs_physics.forms.destruction.strength_tooltip");
 
     public static final IKey BAKE = L10n.lang("bbs_physics.forms.physics.bake");
     public static final IKey BAKE_ACTOR_TOOLTIP = L10n.lang("bbs_physics.forms.physics.bake_actor_tooltip");

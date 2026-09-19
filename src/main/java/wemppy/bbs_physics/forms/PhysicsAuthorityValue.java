@@ -25,6 +25,7 @@ public class PhysicsAuthorityValue extends ValueFloat
     @Override
     public boolean isVisible()
     {
-        return super.isVisible() && this.getParent() instanceof Form form && PhysicsForms.isSimulated(form);
+        return super.isVisible() && this.getParent() instanceof Form form && PhysicsForms.isSimulated(form)
+            && PhysicsForms.getType(form) != PhysicsType.DESTRUCTION;
     }
 }

@@ -6,6 +6,8 @@ import mchorse.bbs_mod.forms.FormUtils;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.l10n.keys.IKey;
 import mchorse.bbs_mod.forms.forms.ModelForm;
+import mchorse.bbs_mod.forms.forms.StructureForm;
+import wemppy.bbs_physics.structure.StructureDestruction;
 import mchorse.bbs_mod.ui.dashboard.UIDashboard;
 import mchorse.bbs_mod.ui.film.UIFilmPanel;
 import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
@@ -42,6 +44,8 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
 {
     private final UIButton physicsType;
     private final UIElement physicsTypeRow;
+    private final UITrackpad destructionStrength;
+    private final UIElement destructionStrengthRow;
 
     /** Blender's "Bake to Keyframes": the recording becomes ordinary keys, see {@link PhysicsBake}. */
     private final UIButton bake;
@@ -99,6 +103,13 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
 
         this.physicsType = new UIButton(PhysicsKeys.PHYSICS_NONE, (b) -> this.openTypeMenu());
         this.physicsTypeRow = UI.labelRow(PhysicsKeys.PHYSICS_TYPE, this.physicsType);
+        this.destructionStrength = new UITrackpad(value ->
+        {
+            if (!this.syncing && this.form != null) StructureDestruction.setStrength(this.form, value.floatValue());
+        });
+        this.destructionStrength.limit(0D, 1000D).increment(0.5D);
+        this.destructionStrength.tooltip(PhysicsKeys.DESTRUCTION_STRENGTH_TOOLTIP);
+        this.destructionStrengthRow = UI.labelRow(PhysicsKeys.DESTRUCTION_STRENGTH, this.destructionStrength);
         this.bake = new UIButton(PhysicsKeys.BAKE, (b) -> this.confirmBake());
         this.bake.tooltip(PhysicsKeys.BAKE_TOOLTIP);
 
@@ -228,6 +239,11 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
             menu.action(Icons.CLOSE, PhysicsKeys.PHYSICS_NONE, () -> this.selectType(PhysicsType.NONE));
             menu.action(Icons.BLOCK, PhysicsKeys.BODY_TITLE, () -> this.selectType(PhysicsType.BODY));
 
+            if (this.form instanceof StructureForm)
+            {
+                menu.action(Icons.BLOCK, PhysicsKeys.DESTRUCTION, () -> this.selectType(PhysicsType.DESTRUCTION));
+            }
+
             if (this.form instanceof ModelForm)
             {
                 menu.action(Icons.LIMB, PhysicsKeys.RAGDOLL_TITLE, () -> this.selectType(PhysicsType.RAGDOLL));
@@ -348,7 +364,9 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
             case BODY -> PhysicsKeys.BODY_TITLE;
             case RAGDOLL -> PhysicsKeys.RAGDOLL_TITLE;
             case CHAIN -> PhysicsKeys.PHYSICS_CHAINS;
+            case DESTRUCTION -> PhysicsKeys.DESTRUCTION;
         };
+        this.destructionStrength.setValue(StructureDestruction.strength(this.form));
         this.type.setValue(body.passive() ? 1 : 0);
         this.mass.setValue(body.mass());
         this.friction.setValue(body.friction());
@@ -398,6 +416,11 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
     {
         this.options.removeAll();
         this.options.add(this.physicsTypeRow);
+
+        if (StructureDestruction.isEnabled(this.form))
+        {
+            this.options.add(this.destructionStrengthRow);
+        }
 
         if (body)
         {

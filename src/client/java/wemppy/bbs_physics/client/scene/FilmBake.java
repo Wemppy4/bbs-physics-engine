@@ -12,6 +12,8 @@ import mchorse.bbs_mod.ui.framework.elements.overlay.UIOverlay;
 import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.client.forms.PhysicsKeys;
 import wemppy.bbs_physics.forms.PhysicsForms;
+import wemppy.bbs_physics.forms.FormTreeWalk;
+import wemppy.bbs_physics.structure.StructureDestruction;
 
 import java.util.function.Supplier;
 
@@ -30,7 +32,8 @@ public final class FilmBake
         {
             Replay replay = selected.get();
 
-            button.setEnabled(replay != null && replay.form.get() != null && PhysicsForms.isSimulatedTree(replay.form.get()));
+            button.setEnabled(replay != null && FormTreeWalk.any(replay.form.get(),
+                form -> PhysicsForms.isSimulated(form) && !StructureDestruction.isEnabled(form)));
         });
 
         return button;
