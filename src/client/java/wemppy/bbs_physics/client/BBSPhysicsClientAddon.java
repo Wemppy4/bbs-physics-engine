@@ -11,6 +11,7 @@ import mchorse.bbs_mod.api.client.events.RegisterFormRenderersEvent;
 import mchorse.bbs_mod.api.client.events.RegisterFormSectionsEvent;
 import mchorse.bbs_mod.api.client.events.RegisterL10nEvent;
 import mchorse.bbs_mod.api.client.events.RegisterPreviewOverlaysEvent;
+import mchorse.bbs_mod.api.client.events.RegisterTrackStylesEvent;
 import mchorse.bbs_mod.resources.Link;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import wemppy.bbs_physics.BBSPhysics;
@@ -32,6 +33,10 @@ import wemppy.bbs_physics.client.forms.UIClothFormPanel;
 import wemppy.bbs_physics.client.forms.UISoftForm;
 import wemppy.bbs_physics.client.scene.SceneStatusOverlay;
 import wemppy.bbs_physics.cloth.ClothForm;
+import wemppy.bbs_physics.forms.BodyKnob;
+import wemppy.bbs_physics.forms.PhysicsForms;
+import wemppy.bbs_physics.ragdoll.RagdollKnob;
+import wemppy.bbs_physics.chain.ChainKnob;
 
 import java.util.Collections;
 
@@ -44,6 +49,27 @@ import java.util.Collections;
  */
 public class BBSPhysicsClientAddon implements BBSAddonMod
 {
+    @Subscribe
+    public void onRegisterTrackStyles(RegisterTrackStylesEvent event)
+    {
+        event.register(PhysicsForms.AUTHORITY_KEY, Icons.PHYSICS, 0x62c980);
+
+        for (BodyKnob knob : BodyKnob.values())
+        {
+            event.register(knob.id, Icons.BLOCK, 0xe5a45b);
+        }
+
+        for (RagdollKnob knob : RagdollKnob.values())
+        {
+            event.register(knob.id, Icons.POSE, 0xb28be0);
+        }
+
+        for (ChainKnob knob : ChainKnob.values())
+        {
+            event.register(knob.id, Icons.CURVES, 0x58bec9);
+        }
+    }
+
     @Subscribe
     public void onRegisterL10n(RegisterL10nEvent event)
     {
