@@ -9,6 +9,15 @@ import wemppy.bbs_physics.ragdoll.RagdollJointKind;
 /** The addon's own UI strings, resolved from its language files. */
 public class PhysicsKeys
 {
+    public static final IKey SECTION_MOTION = L10n.lang("bbs_physics.forms.sections.motion");
+    public static final IKey SECTION_LIMITS = L10n.lang("bbs_physics.forms.sections.limits");
+    public static final IKey SECTION_BONES = L10n.lang("bbs_physics.forms.sections.bones");
+    public static final IKey SECTION_PROPERTIES = L10n.lang("bbs_physics.forms.sections.properties");
+    public static final IKey SECTION_JOINT = L10n.lang("bbs_physics.forms.sections.joint");
+    public static final IKey SECTION_APPEARANCE = L10n.lang("bbs_physics.forms.sections.appearance");
+    public static final IKey SECTION_ANIMATION = L10n.lang("bbs_physics.forms.sections.animation");
+    public static final IKey SECTION_SETUP = L10n.lang("bbs_physics.forms.sections.setup");
+
     public static final IKey CATEGORY = L10n.lang("bbs_physics.forms.category");
     public static final IKey BODY_TITLE = L10n.lang("bbs_physics.forms.body.title");
 

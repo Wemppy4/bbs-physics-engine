@@ -40,6 +40,7 @@ import mchorse.bbs_mod.utils.pose.Transform;
 import wemppy.bbs_physics.BBSPhysicsSettings;
 import wemppy.bbs_physics.client.forms.PhysicsColors;
 import wemppy.bbs_physics.client.forms.PhysicsKeys;
+import wemppy.bbs_physics.client.forms.PhysicsFields;
 import wemppy.bbs_physics.client.forms.UIPhysicsBoneList;
 import wemppy.bbs_physics.collision.CollisionIO;
 import wemppy.bbs_physics.collision.CollisionKind;
@@ -745,7 +746,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
         if (model)
         {
-            this.options.add(this.bonesSearch, this.slotTitle);
+            this.options.add(PhysicsFields.boneSection("collision.bones", this.bonesSearch, this.slotTitle));
         }
 
         this.options.add(this.modeRow);
@@ -762,14 +763,13 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
         if (model)
         {
-            this.options.add(this.thresholdRow, this.autoMark);
+            this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_SETUP, "collision.setup.model", this.thresholdRow, this.autoMark, this.clearAll, this.preview));
         }
         else
         {
-            this.options.add(this.fitBounds);
+            this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_SETUP, "collision.setup.form", this.fitBounds, this.clearAll, this.preview));
         }
 
-        this.options.add(this.clearAll, this.preview);
         this.options.resize();
     }
 

@@ -1,4 +1,12 @@
 {
+    "bbs_physics.forms.sections.motion": "Motion",
+    "bbs_physics.forms.sections.limits": "Limits",
+    "bbs_physics.forms.sections.bones": "Bones",
+    "bbs_physics.forms.sections.properties": "Chain properties",
+    "bbs_physics.forms.sections.joint": "Joint",
+    "bbs_physics.forms.sections.appearance": "Appearance",
+    "bbs_physics.forms.sections.animation": "Animation",
+    "bbs_physics.forms.sections.setup": "Collision setup",
     "bbs_physics.forms.chain.stiffness_label": "Stiffness",
     "bbs_physics.forms.chain.damping_label": "Damping",
     "bbs_physics.forms.chain.falloff_label": "Stiffness falloff",

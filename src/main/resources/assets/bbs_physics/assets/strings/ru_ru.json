@@ -1,4 +1,12 @@
 {
+    "bbs_physics.forms.sections.motion": "Движение",
+    "bbs_physics.forms.sections.limits": "Ограничения",
+    "bbs_physics.forms.sections.bones": "Кости",
+    "bbs_physics.forms.sections.properties": "Параметры цепочек",
+    "bbs_physics.forms.sections.joint": "Сустав",
+    "bbs_physics.forms.sections.appearance": "Внешний вид",
+    "bbs_physics.forms.sections.animation": "Анимация",
+    "bbs_physics.forms.sections.setup": "Настройка коллизий",
     "bbs_physics.forms.chain.stiffness_label": "Упругость",
     "bbs_physics.forms.chain.damping_label": "Затухание",
     "bbs_physics.forms.chain.falloff_label": "Спад упругости",

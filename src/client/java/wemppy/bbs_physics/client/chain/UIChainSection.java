@@ -10,6 +10,7 @@ import wemppy.bbs_physics.chain.FormChain;
 import wemppy.bbs_physics.chain.FormChains;
 import wemppy.bbs_physics.client.collision.ChainBones;
 import wemppy.bbs_physics.client.forms.PhysicsKeys;
+import wemppy.bbs_physics.client.forms.PhysicsFields;
 import wemppy.bbs_physics.client.forms.UIBoneSection;
 
 import java.util.LinkedHashSet;
@@ -208,17 +209,17 @@ public class UIChainSection extends UIBoneSection
     private void rebuild()
     {
         this.removeAll();
-        this.add(this.bonesSearch, this.enabled, UI.row(this.takeFromModel, this.clear));
+        this.add(PhysicsFields.boneSection("physics.chain.bones", this.bonesSearch, this.enabled, UI.row(this.takeFromModel, this.clear)));
 
         if (!this.chain.bones().isEmpty())
         {
-            this.add(UI.labelRow(PhysicsKeys.CHAIN_STIFFNESS_LABEL, this.stiffness));
-            this.add(UI.labelRow(PhysicsKeys.CHAIN_DAMPING_LABEL, this.damping));
-            this.add(UI.labelRow(PhysicsKeys.CHAIN_FALLOFF_LABEL, this.falloff));
-            this.add(UI.labelRow(PhysicsKeys.CHAIN_BEND_LABEL, this.bend));
-            this.add(UI.labelRow(PhysicsKeys.MASS, this.mass));
-            this.add(UI.labelRow(PhysicsKeys.BODY_GRAVITY, this.gravity));
-            this.add(this.selfCollision);
+            this.add(PhysicsFields.section(PhysicsKeys.SECTION_PROPERTIES, "physics.chain.properties",
+                UI.labelRow(PhysicsKeys.CHAIN_STIFFNESS_LABEL, this.stiffness),
+                UI.labelRow(PhysicsKeys.CHAIN_DAMPING_LABEL, this.damping),
+                UI.labelRow(PhysicsKeys.CHAIN_FALLOFF_LABEL, this.falloff),
+                UI.labelRow(PhysicsKeys.CHAIN_BEND_LABEL, this.bend),
+                UI.labelRow(PhysicsKeys.MASS, this.mass),
+                UI.labelRow(PhysicsKeys.BODY_GRAVITY, this.gravity), this.selfCollision));
         }
 
         this.relayout();

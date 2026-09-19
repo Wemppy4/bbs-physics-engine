@@ -401,19 +401,23 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
 
         if (body)
         {
-            this.options.add(this.typeRow, this.massRow, this.frictionRow, this.restitutionRow,
-                this.dampingRow, this.gravityRow, this.lockMoveRow, this.lockSpinRow,
-                this.asleep, this.bodyAuthorityRow);
+            this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_MOTION, "physics.body.motion",
+                this.typeRow, this.massRow, this.gravityRow, this.dampingRow, this.asleep, this.bodyAuthorityRow));
+            this.options.add(this.frictionRow, this.restitutionRow);
+            this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_LIMITS, "physics.body.limits",
+                this.lockMoveRow, this.lockSpinRow));
         }
         else if (ragdoll)
         {
-            this.options.add(this.ragdollAuthorityRow, this.ragdollMassRow, this.ragdollDampingRow,
-                this.ragdollFrictionRow, this.ragdollGravityRow, this.musclesRow,
-                this.ragdollSelfCollide, this.ragdollBones);
+            this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_MOTION, "physics.ragdoll.motion",
+                this.ragdollAuthorityRow, this.ragdollMassRow, this.ragdollDampingRow,
+                this.ragdollGravityRow, this.musclesRow));
+            this.options.add(this.ragdollFrictionRow, this.ragdollSelfCollide);
+            this.options.add(this.ragdollBones);
         }
         else if (chain)
         {
-            this.options.add(this.chainAuthorityRow, this.chainBones);
+            this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_MOTION, "physics.chain.motion", this.chainAuthorityRow), this.chainBones);
         }
 
         if (body || ragdoll || chain)

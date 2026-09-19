@@ -4,7 +4,6 @@ import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
 import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.utils.UI;
-import mchorse.bbs_mod.ui.utils.UIConstants;
 import wemppy.bbs_physics.balloon.BalloonForm;
 import wemppy.bbs_physics.forms.PhysicsForms;
 
@@ -65,13 +64,17 @@ public class UIBalloonFormPanel extends UIFormPanel<BalloonForm>
         this.damping.limit(0D, 1D).tooltip(PhysicsKeys.BALLOON_DAMPING);
 
 
-        this.skin.addTo(this.options);
-        this.options.add(UI.label(PhysicsKeys.BALLOON_BALL).marginTop(UIConstants.SECTION_GAP));
-        this.options.add(this.radius, UI.row(this.segments, this.rings));
-        this.options.add(UI.label(PhysicsKeys.BALLOON_SKIN).marginTop(UIConstants.SECTION_GAP));
-        this.options.add(this.inflation, this.stiffness, this.mass, this.gravity);
-        this.options.add(UI.row(this.friction, this.restitution), this.damping);
-        this.options.add(UI.label(PhysicsKeys.AUTHORITY).marginTop(UIConstants.SECTION_GAP), this.authority);
+        var appearance = PhysicsFields.section(PhysicsKeys.SECTION_APPEARANCE, "balloon.appearance");
+        this.skin.addTo(appearance.fields);
+        this.options.add(appearance);
+        this.options.add(PhysicsFields.section(PhysicsKeys.BALLOON_BALL, "balloon.geometry",
+            this.radius, UI.row(this.segments, this.rings)));
+        this.options.add(PhysicsFields.section(PhysicsKeys.BALLOON_SKIN, "balloon.skin",
+            this.inflation, this.stiffness, this.mass, this.gravity,
+            UI.row(this.friction, this.restitution), this.damping));
+        this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_ANIMATION, "balloon.animation",
+            UI.labelRow(PhysicsKeys.AUTHORITY, this.authority)));
+
     }
 
     @Override
