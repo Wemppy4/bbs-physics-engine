@@ -218,7 +218,7 @@ public class UIRagdollSection extends UIBoneSection
      * the markup cannot keep.
      */
     @Override
-    protected void setTicked(List<String> bones, boolean ticked)
+    protected void setParticipation(List<String> bones, boolean ticked)
     {
         FormRagdoll ragdoll = this.ragdoll;
 
@@ -232,13 +232,13 @@ public class UIRagdollSection extends UIBoneSection
     }
 
     @Override
-    protected boolean canTick(String bone)
+    protected boolean canParticipate(String bone)
     {
         return this.form != null && this.model != null && this.isMarked(bone);
     }
 
     @Override
-    protected boolean isTicked(String bone)
+    protected boolean isParticipating(String bone)
     {
         return this.ragdoll.isPart(bone);
     }
@@ -362,6 +362,7 @@ public class UIRagdollSection extends UIBoneSection
             return;
         }
 
+        this.syncEnabled();
         RagdollJoint joint = this.joint();
 
         this.syncing = true;
@@ -402,7 +403,7 @@ public class UIRagdollSection extends UIBoneSection
         boolean editable = this.model != null && !this.bone.isEmpty() && this.isMarked(this.bone) && this.ragdoll.isPart(this.bone);
 
         this.removeAll();
-        this.add(this.bonesSearch);
+        this.add(this.bonesSearch, this.enabled);
 
         if (!editable)
         {

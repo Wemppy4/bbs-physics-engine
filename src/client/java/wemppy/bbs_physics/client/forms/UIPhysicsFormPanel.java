@@ -17,22 +17,18 @@ import wemppy.bbs_physics.client.scene.FilmScene;
 import wemppy.bbs_physics.client.scene.FilmScenes;
 import wemppy.bbs_physics.client.scene.PhysicsBake;
 import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
-import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.framework.elements.UIElement;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UICirculate;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIIcon;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
-import mchorse.bbs_mod.ui.framework.elements.utils.UIText;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
-import mchorse.bbs_mod.utils.colors.Colors;
 import wemppy.bbs_physics.chain.FormChains;
 import wemppy.bbs_physics.client.chain.UIChainSection;
 import wemppy.bbs_physics.client.ragdoll.UIRagdollSection;
-import wemppy.bbs_physics.collision.FormCollisions;
 import wemppy.bbs_physics.forms.FormBody;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import wemppy.bbs_physics.forms.PhysicsType;
@@ -46,7 +42,6 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
 {
     private final UIButton physicsType;
     private final UIElement physicsTypeRow;
-    private final UIText noPhysics;
 
     /** Blender's "Bake to Keyframes": the recording becomes ordinary keys, see {@link PhysicsBake}. */
     private final UIButton bake;
@@ -96,12 +91,6 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
     private final UITrackpad ragdollAuthority;
     private final UIElement ragdollAuthorityRow;
 
-    /** Shown when physics is on and there is no shape for it to work with — see {@link #marked}. */
-    private final UIText unmarked;
-
-    /** What the tab was last built against, so an edit made in the collision tab is noticed. */
-    private boolean marked;
-
     private boolean syncing;
 
     public UIPhysicsFormPanel(UIForm editor)
@@ -110,7 +99,6 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
 
         this.physicsType = new UIButton(PhysicsKeys.PHYSICS_NONE, (b) -> this.openTypeMenu());
         this.physicsTypeRow = UI.labelRow(PhysicsKeys.PHYSICS_TYPE, this.physicsType);
-        this.noPhysics = new UIText(PhysicsKeys.PHYSICS_NONE_HINT).color(Colors.LIGHTER_GRAY, true).padding(0, 2);
         this.bake = new UIButton(PhysicsKeys.BAKE, (b) -> this.confirmBake());
         this.bake.tooltip(PhysicsKeys.BAKE_TOOLTIP);
 
@@ -133,8 +121,10 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
 
         UIElement massGroup = new UIElement();
 
-        massGroup.row(UIConstants.MARGIN).preferred(0).height(UIConstants.CONTROL_HEIGHT);
-        massGroup.add(this.mass, material.w(16));
+        massGroup.h(UIConstants.CONTROL_HEIGHT);
+        this.mass.relative(massGroup).w(1F, -16 - UIConstants.MARGIN).h(UIConstants.CONTROL_HEIGHT);
+        material.relative(massGroup).x(1F).y(0.5F).wh(16, 16).anchor(1F, 0.5F);
+        massGroup.add(this.mass, material);
 
         this.massRow = UI.labelRow(PhysicsKeys.MASS, UIConstants.VALUE_WIDTH, massGroup);
 
@@ -221,9 +211,7 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.chainAuthority = PhysicsFields.authority(this::setAuthority);
         this.chainAuthorityRow = UI.labelRow(PhysicsKeys.AUTHORITY, this.chainAuthority);
         this.chainBones = new UIChainSection(() -> this.options.resize());
-        /* Wrapped rather than a one-line label: the column is narrow, and the sentence that has to
-         * be read here is the one a single line cuts in half. */
-        this.unmarked = new UIText(PhysicsKeys.PHYSICS_UNMARKED).color(Colors.LIGHTER_GRAY, true).padding(0, 2);
+
     }
 
     /* Editing */
@@ -408,14 +396,8 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
 
     private void rebuild(boolean body, boolean ragdoll, boolean chain)
     {
-        this.marked = FormCollisions.has(this.form);
         this.options.removeAll();
         this.options.add(this.physicsTypeRow);
-
-        if ((body || ragdoll) && !this.marked)
-        {
-            this.options.add(this.unmarked);
-        }
 
         if (body)
         {
@@ -432,10 +414,6 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         else if (chain)
         {
             this.options.add(this.chainAuthorityRow, this.chainBones);
-        }
-        else
-        {
-            this.options.add(this.noPhysics);
         }
 
         if (body || ragdoll || chain)
@@ -531,24 +509,6 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
     private void message(IKey message)
     {
         UIOverlay.addOverlay(this.getContext(), new UIMessageOverlayPanel(PhysicsKeys.BAKE_TITLE, message));
-    }
-
-    /**
-     * The markup is edited in the <em>other</em> tab, and switching tabs does not rebuild this one —
-     * so without this the notice would still be sitting there after the author had gone and answered
-     * it. {@link FormCollisions#has} is the cheap form of the question (empty slots are never
-     * written, so "has anything stored" and "has anything that collides" are the same question), and
-     * the rebuild only fires on the frame the answer changes.
-     */
-    @Override
-    public void render(UIContext context)
-    {
-        if (this.form != null && FormCollisions.has(this.form) != this.marked)
-        {
-            this.rebuild(PhysicsForms.getBody(this.form).enabled(), FormRagdolls.isEnabled(this.form), FormChains.isEnabled(this.form));
-        }
-
-        super.render(context);
     }
 
     @Override

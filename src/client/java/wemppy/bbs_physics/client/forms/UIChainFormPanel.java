@@ -78,7 +78,6 @@ public class UIChainFormPanel extends UIFormPanel<ChainForm>
         this.options.add(UI.row(this.friction, this.gravity));
         this.options.add(UI.label(PhysicsKeys.CHAIN_ENDS).marginTop(UIConstants.SECTION_GAP));
         this.options.add(this.heldStart);
-        this.options.add(UI.label(PhysicsKeys.CHAIN_ATTACH_HINT).marginTop(UIConstants.MARGIN));
         this.options.add(UI.label(PhysicsKeys.AUTHORITY).marginTop(UIConstants.SECTION_GAP), this.authority);
     }
 

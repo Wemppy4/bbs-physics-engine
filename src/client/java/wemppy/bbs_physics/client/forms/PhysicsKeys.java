@@ -12,15 +12,17 @@ public class PhysicsKeys
     public static final IKey CATEGORY = L10n.lang("bbs_physics.forms.category");
     public static final IKey BODY_TITLE = L10n.lang("bbs_physics.forms.body.title");
 
+    public static final IKey BONES_ENABLED = L10n.lang("bbs_physics.forms.bones_enabled");
+    public static final IKey BONES_ENABLED_MIXED = L10n.lang("bbs_physics.forms.bones_enabled_mixed");
+    public static final IKey BONES_ENABLED_TOOLTIP = L10n.lang("bbs_physics.forms.bones_enabled_tooltip");
+
     /** The bone the knobs are showing and how many more they write into — %s name, %s count. */
     public static final IKey BONES_MULTI = L10n.lang("bbs_physics.forms.bones_multi");
 
     public static final IKey PHYSICS_TITLE = L10n.lang("bbs_physics.forms.physics.title");
     public static final IKey PHYSICS_TYPE = L10n.lang("bbs_physics.forms.physics.type");
     public static final IKey PHYSICS_NONE = L10n.lang("bbs_physics.forms.physics.none");
-    public static final IKey PHYSICS_NONE_HINT = L10n.lang("bbs_physics.forms.physics.none_hint");
     public static final IKey PHYSICS_CHAINS = L10n.lang("bbs_physics.forms.physics.chains");
-    public static final IKey PHYSICS_UNMARKED = L10n.lang("bbs_physics.forms.physics.unmarked");
 
     public static final IKey BAKE = L10n.lang("bbs_physics.forms.physics.bake");
     public static final IKey BAKE_TOOLTIP = L10n.lang("bbs_physics.forms.physics.bake_tooltip");
@@ -102,18 +104,20 @@ public class PhysicsKeys
     public static final IKey CHAIN_SEGMENTS = L10n.lang("bbs_physics.forms.chain.segments");
     public static final IKey CHAIN_RADIUS = L10n.lang("bbs_physics.forms.chain.radius");
     public static final IKey CHAIN_FEEL = L10n.lang("bbs_physics.forms.chain.feel");
+    public static final IKey CHAIN_STIFFNESS_LABEL = L10n.lang("bbs_physics.forms.chain.stiffness_label");
+    public static final IKey CHAIN_DAMPING_LABEL = L10n.lang("bbs_physics.forms.chain.damping_label");
+    public static final IKey CHAIN_FALLOFF_LABEL = L10n.lang("bbs_physics.forms.chain.falloff_label");
+    public static final IKey CHAIN_BEND_LABEL = L10n.lang("bbs_physics.forms.chain.bend_label");
     public static final IKey CHAIN_MASS = L10n.lang("bbs_physics.forms.chain.mass");
     public static final IKey CHAIN_STIFFNESS = L10n.lang("bbs_physics.forms.chain.stiffness");
     public static final IKey CHAIN_DAMPING = L10n.lang("bbs_physics.forms.chain.damping");
     public static final IKey CHAIN_ENDS = L10n.lang("bbs_physics.forms.chain.ends");
     public static final IKey CHAIN_HELD_START = L10n.lang("bbs_physics.forms.chain.held_start");
     public static final IKey CHAIN_HELD_START_TOOLTIP = L10n.lang("bbs_physics.forms.chain.held_start_tooltip");
-    public static final IKey CHAIN_ATTACH_HINT = L10n.lang("bbs_physics.forms.chain.attach_hint");
 
     public static final IKey CHAIN_TAKE_FROM_MODEL = L10n.lang("bbs_physics.forms.chain.take_from_model");
     public static final IKey CHAIN_TAKE_FROM_MODEL_TOOLTIP = L10n.lang("bbs_physics.forms.chain.take_from_model_tooltip");
     public static final IKey CHAIN_CLEAR = L10n.lang("bbs_physics.forms.chain.clear");
-    public static final IKey CHAIN_SHAPE_HINT = L10n.lang("bbs_physics.forms.chain.shape_hint");
     public static final IKey CHAIN_SELF_COLLISION = L10n.lang("bbs_physics.forms.chain.self_collision");
     public static final IKey CHAIN_SELF_COLLISION_TOOLTIP = L10n.lang("bbs_physics.forms.chain.self_collision_tooltip");
     public static final IKey CHAIN_FALLOFF = L10n.lang("bbs_physics.forms.chain.falloff");
@@ -165,7 +169,6 @@ public class PhysicsKeys
     public static final IKey COLLISION_FIT_TOOLTIP = L10n.lang("bbs_physics.forms.collision.fit_tooltip");
     public static final IKey COLLISION_CLEAR = L10n.lang("bbs_physics.forms.collision.clear");
     /** Under the markup tools: marked-up = solid, no modifier needed. */
-    public static final IKey COLLISION_SOLID = L10n.lang("bbs_physics.forms.collision.solid");
 
     public static final IKey COLLISION_CONTEXT_COPY = L10n.lang("bbs_physics.forms.collision.context.copy");
     public static final IKey COLLISION_CONTEXT_PASTE = L10n.lang("bbs_physics.forms.collision.context.paste");

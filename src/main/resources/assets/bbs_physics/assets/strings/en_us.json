@@ -1,4 +1,11 @@
 {
+    "bbs_physics.forms.chain.stiffness_label": "Stiffness",
+    "bbs_physics.forms.chain.damping_label": "Damping",
+    "bbs_physics.forms.chain.falloff_label": "Stiffness falloff",
+    "bbs_physics.forms.chain.bend_label": "Bend limit",
+    "bbs_physics.forms.bones_enabled": "Enable",
+    "bbs_physics.forms.bones_enabled_mixed": "Enable (mixed values)",
+    "bbs_physics.forms.bones_enabled_tooltip": "Includes the selected bones in physics. Ragdolls require collision shapes. For mixed values, the first click enables all eligible selected bones.",
     "bbs_physics.config.title": "Physics",
     "bbs_physics.config.general.title": "General",
     "bbs_physics.config.general.tooltip": "General physics engine options",
@@ -60,9 +67,7 @@
     "bbs_physics.forms.physics.bake_failed": "Baking failed — see the game log for details.",
     "bbs_physics.forms.physics.type": "Physics type",
     "bbs_physics.forms.physics.none": "None",
-    "bbs_physics.forms.physics.none_hint": "The form follows its animation. Collision shapes are kept, so it can still act as an obstacle for other objects.",
     "bbs_physics.forms.physics.chains": "Chains",
-    "bbs_physics.forms.physics.unmarked": "Set up collision first — the Collision tab. Without it there is nothing for physics to take hold of: the form falls through everything and touches nothing.",
 
     "bbs_physics.forms.body.mass_tooltip": "Only matters when two moving bodies meet: in a vacuum everything falls alike.",
 
@@ -142,12 +147,10 @@
     "bbs_physics.forms.chain.ends": "Ends",
     "bbs_physics.forms.chain.held_start": "Top held by the form",
     "bbs_physics.forms.chain.held_start_tooltip": "On, the chain hangs from wherever the form is placed and follows it. Off, the whole strand is loose — a thrown rope.",
-    "bbs_physics.forms.chain.attach_hint": "The bottom end is tied by the \"attach\" track on the timeline: key an actor and a bone, like an anchor. If the actor uses the Rigid body physics type, the chain honestly drags it along. Keys mid-film re-tie the end.",
 
     "bbs_physics.forms.chain.take_from_model": "Take chains from the model",
     "bbs_physics.forms.chain.take_from_model_tooltip": "Ticks the bones the model's own physics already describes (start of the chain down to its end) — usually the hair and tails. From then on those bones are ours and BBS's own chain solver is switched off on them: two owners for one strand is a strand doing neither thing convincingly. Use the knobs on this panel.",
-    "bbs_physics.forms.chain.clear": "Untick all",
-    "bbs_physics.forms.chain.shape_hint": "The chain creates no collision of its own — neither does the ragdoll. A strand hangs and swings straight away, but passes through everything; to have it rest on the character and the world, mark its bones up in the Collision tab, where the thickness is set too.",
+    "bbs_physics.forms.chain.clear": "Disable all bones",
     "bbs_physics.forms.chain.self_collision": "Strands collide with each other",
     "bbs_physics.forms.chain.self_collision_tooltip": "Every segment against every other — costly and jittery, and barely visible on screen. A marked-up strand always collides with the body, the bones and the world.",
     "bbs_physics.forms.chain.falloff": "Stiffness falloff towards the tip: 0 — the strand is as stiff all the way down, 1 — holds the hairstyle at the root and is a rope at the tip. This is what makes hair look like hair rather than a chain.",
@@ -186,7 +189,6 @@
     "bbs_physics.forms.collision.fit": "Box from bounds",
     "bbs_physics.forms.collision.fit_tooltip": "Puts boxes the size of what the form draws into the form's own slot. A block is measured from its real outline, piece by piece (stairs get two boxes). An item from its model: a flat one becomes a pixel-thick plate, a block item becomes the block. A picture or an extruded texture from its painted pixels, transparent margins left out. A mob from its kind's hitbox. Anything else gets a block-sized box to drag from.",
     "bbs_physics.forms.collision.clear": "Clear all markup",
-    "bbs_physics.forms.collision.solid": "A marked-up form is already solid to physics: crates, cloth, hair and fallen characters collide with it. It needs no modifier for that — a modifier is only for things that fall on their own.",
 
     "bbs_physics.forms.collision.context.copy": "Copy the markup",
     "bbs_physics.forms.collision.context.paste": "Paste the markup",
