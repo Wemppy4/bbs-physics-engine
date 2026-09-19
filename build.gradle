@@ -127,8 +127,8 @@ java {
 
 sourceSets {
 	physicsChecks {
-		compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
-		runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+		compileClasspath += sourceSets.main.output + sourceSets.client.output + sourceSets.client.compileClasspath
+		runtimeClasspath += sourceSets.main.output + sourceSets.client.output + sourceSets.client.runtimeClasspath
 	}
 }
 
@@ -151,7 +151,15 @@ tasks.register('physicsSettingsCheck', JavaExec) {
 }
 
 tasks.named('check') {
-	dependsOn physicsCacheCheck, physicsPoseCheck, physicsSettingsCheck
+	dependsOn physicsCacheCheck, physicsPoseCheck, physicsSettingsCheck, physicsSceneCheck
+}
+
+tasks.register('physicsSceneCheck', JavaExec) {
+	dependsOn physicsChecksClasses
+	classpath = sourceSets.physicsChecks.runtimeClasspath
+	mainClass = 'wemppy.bbs_physics.client.scene.PhysicsSceneCheck'
+	workingDir layout.buildDirectory.dir('physicsSceneCheck')
+	doFirst { workingDir.mkdirs() }
 }
 
 publishing {

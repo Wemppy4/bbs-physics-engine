@@ -36,7 +36,7 @@ public final class SceneEdits
 
     /** Ids of a form's values that physics never reads — looked up on a form and on its tracks. */
     private static final Set<String> FORM_COSMETIC = Set.of(
-        "color", "lighting", "name", "track_name", "uiScale", "shaderShadow", "additive_color",
+        "color", "color_overlay", "render_layer", "lighting", "name", "track_name", "uiScale", "shaderShadow", "additive_color",
         "hitbox", "hitboxWidth", "hitboxHeight", "hitboxSneakMultiplier", "hitboxEyeHeight",
         "hp", "movement_speed", "step_height", "keybind");
 

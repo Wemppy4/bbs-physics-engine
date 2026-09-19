@@ -191,18 +191,7 @@ public final class PhysicsForms
      */
     public static boolean isSimulatedTree(Form form)
     {
-        boolean[] found = new boolean[1];
-
-        FormTreeWalk.walk(form, (child, path, anchor) ->
-        {
-            found[0] |= isSimulated(child);
-
-            /* No early exit worth arranging: this is asked once per actor when a scene is built,
-             * and a form tree is a handful of nodes. */
-            return !found[0];
-        });
-
-        return found[0];
+        return FormTreeWalk.any(form, PhysicsForms::isSimulated);
     }
 
     /**
