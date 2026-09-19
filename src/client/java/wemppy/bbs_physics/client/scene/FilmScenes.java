@@ -8,6 +8,7 @@ import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.BBSPhysicsSettings;
 import wemppy.bbs_physics.engine.JoltEngine;
 import wemppy.bbs_physics.forms.PhysicsForms;
+import wemppy.bbs_physics.actions.ImpulseActionClip;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 
 import java.util.Collections;
@@ -193,6 +194,16 @@ public class FilmScenes
         FAILED.removeIf((controller) -> sameFilm(controller.film, film));
         EMPTY.removeIf((controller) -> sameFilm(controller.film, film));
 
+        boolean impulseEdit = false;
+        for (BaseValue parent = value; parent != null && parent != film; parent = parent.getParent())
+        {
+            if (parent instanceof ImpulseActionClip)
+            {
+                impulseEdit = true;
+                break;
+            }
+        }
+
         Iterator<Map.Entry<BaseFilmController, FilmScene>> scenes = SCENES.entrySet().iterator();
 
         while (scenes.hasNext())
@@ -206,7 +217,7 @@ public class FilmScenes
             {
                 if (hasSimulation(other))
                 {
-                    entry.getValue().invalidate();
+                    entry.getValue().invalidate(impulseEdit);
                 }
                 else
                 {

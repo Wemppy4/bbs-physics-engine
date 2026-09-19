@@ -123,6 +123,8 @@ public class FilmScene implements AutoCloseable
      * {@link FilmScenes#onFilmEdited}) and answered on the next tick by starting over.
      */
     private boolean stale;
+    private PhysicsCache impulsePreview;
+    private int impulsePreviewTick = -1;
 
     /** When the last edit arrived — the background catch-up keeps clear for a moment after one. */
     private long editedAt;
@@ -668,6 +670,21 @@ public class FilmScene implements AutoCloseable
     /** Restores the displayed frame pair after the simulation borrowed the runtime slots. */
     private void distribute(int tick)
     {
+        if (this.impulsePreview != null)
+        {
+            if (tick == this.impulsePreviewTick && !this.cache.has(tick) && !this.full && this.lostAt < 0)
+            {
+                /* Reapply after computation, which borrows the same render slots. This frame is
+                 * only a visual placeholder; it never enters simulation or baking caches. */
+                for (SceneBody body : this.bodies) body.readCache(this.impulsePreview, 0, true);
+                for (SceneActor actor : this.actors) actor.readCache(this.impulsePreview, 0, true);
+                this.drawnTick = tick;
+                this.teleport = true;
+                return;
+            }
+            this.impulsePreview = null;
+        }
+
         /* A jump is anything but the one step forward that playback makes: across one there is no
          * meaningful previous tick, and interpolating out of it would draw bodies sliding the whole
          * way. Asking for the same tick again — a paused editor — is not a jump and needs nothing
@@ -728,6 +745,21 @@ public class FilmScene implements AutoCloseable
      */
     public void invalidate()
     {
+        this.invalidate(false);
+    }
+
+    /** Keep the last displayed result only for impulse edits at the unchanged cursor. */
+    public void invalidate(boolean impulseEdit)
+    {
+        if (!impulseEdit)
+        {
+            this.impulsePreview = null;
+        }
+        else if (!this.stale && this.drawnTick == this.filmTick && this.cache.has(this.filmTick))
+        {
+            this.impulsePreview = this.cache.copyFrame(this.filmTick);
+            this.impulsePreviewTick = this.filmTick;
+        }
         this.stale = true;
         this.editedAt = System.nanoTime();
     }
