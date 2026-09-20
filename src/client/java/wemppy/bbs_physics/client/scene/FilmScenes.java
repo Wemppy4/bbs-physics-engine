@@ -1,5 +1,7 @@
 package wemppy.bbs_physics.client.scene;
 
+import java.util.List;
+
 import mchorse.bbs_mod.film.BaseFilmController;
 import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_mod.film.replays.Replay;
@@ -188,21 +190,28 @@ public class FilmScenes
             return;
         }
 
-        /* An edit is the one thing that can undo whatever made a scene fail — the author deleting
-         * the form that threw, most plainly — so it also clears the failures. One retry per edit is
-         * paced by a human hand, unlike one per tick. */
-        FAILED.removeIf((controller) -> sameFilm(controller.film, film));
-        EMPTY.removeIf((controller) -> sameFilm(controller.film, film));
+        onFilmEdited(film, List.of(value));
+    }
 
-        boolean impulseEdit = false;
-        for (BaseValue parent = value; parent != null && parent != film; parent = parent.getParent())
+    public static void onFilmEdited(Film film, List<BaseValue> values)
+    {
+        boolean significant = false;
+        boolean impulseEdit = true;
+        for (BaseValue value : values)
         {
-            if (parent instanceof ImpulseActionClip)
+            if (value != film && !SceneEdits.matters(value.getPath().strings)) continue;
+            significant = true;
+            boolean impulse = false;
+            for (BaseValue parent = value; parent != null && parent != film; parent = parent.getParent())
             {
-                impulseEdit = true;
-                break;
+                if (parent instanceof ImpulseActionClip) { impulse = true; break; }
             }
+            impulseEdit &= impulse;
         }
+        if (!significant) return;
+
+        FAILED.removeIf(controller -> sameFilm(controller.film, film));
+        EMPTY.removeIf(controller -> sameFilm(controller.film, film));
 
         Iterator<Map.Entry<BaseFilmController, FilmScene>> scenes = SCENES.entrySet().iterator();
 

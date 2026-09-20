@@ -6,12 +6,12 @@ package wemppy.bbs_physics.chain;
  */
 public enum ChainKnob
 {
-    STIFFNESS("bbs_physics_chain_stiffness", FormChain.DEFAULT_STIFFNESS, 0F, 1F),
-    DAMPING("bbs_physics_chain_damping", FormChain.DEFAULT_DAMPING, 0F, 1F),
-    GRAVITY("bbs_physics_chain_gravity", FormChain.DEFAULT_GRAVITY, -2F, 2F),
-    MASS("bbs_physics_chain_mass", FormChain.DEFAULT_MASS, 0.01F, 100F),
-    FALLOFF("bbs_physics_chain_falloff", FormChain.DEFAULT_FALLOFF, 0F, 1F),
-    BEND("bbs_physics_chain_bend", FormChain.DEFAULT_BEND, 5F, 180F);
+    STIFFNESS("bbs_physics:chain_stiffness", FormChain.DEFAULT_STIFFNESS, 0F, 1F),
+    DAMPING("bbs_physics:chain_damping", FormChain.DEFAULT_DAMPING, 0F, 1F),
+    GRAVITY("bbs_physics:chain_gravity", FormChain.DEFAULT_GRAVITY, -2F, 2F),
+    MASS("bbs_physics:chain_mass", FormChain.DEFAULT_MASS, 0.01F, 100F),
+    FALLOFF("bbs_physics:chain_falloff", FormChain.DEFAULT_FALLOFF, 0F, 1F),
+    BEND("bbs_physics:chain_bend", FormChain.DEFAULT_BEND, 5F, 180F);
 
     public final String id;
     public final float fallback;

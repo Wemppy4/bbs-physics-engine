@@ -17,7 +17,7 @@ import wemppy.bbs_physics.ragdoll.RagdollState;
 public final class FormChains
 {
     /** The key the modifier is stored under, prefixed so it cannot collide with a BBS key. */
-    public static final String KEY = "bbs_physics_chain";
+    public static final String KEY = "bbs_physics:chain";
 
     private FormChains()
     {}

@@ -22,7 +22,7 @@ public final class PhysicsSceneCheck
 {
     public static void main(String[] args) throws Exception
     {
-        BBSSettings.recordingPoseTransformOverlays = new ValueInt("overlays", 0);
+        BBSSettings.recordingTransformOverlays = new ValueInt("overlays", 0);
         BBSPhysicsSettings.enabled = new ValueBoolean("enabled", true);
         BBSPhysicsSettings.debug = new ValueBoolean("debug", true);
         Film film = null;

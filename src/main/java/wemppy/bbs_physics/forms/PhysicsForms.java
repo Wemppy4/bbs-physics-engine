@@ -6,7 +6,6 @@ import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 import mchorse.bbs_mod.utils.MathUtils;
 import wemppy.bbs_physics.balloon.BalloonForm;
 import wemppy.bbs_physics.chain.ChainForm;
-import wemppy.bbs_physics.chain.FormChains;
 import wemppy.bbs_physics.chain.ChainIO;
 import wemppy.bbs_physics.cloth.ClothForm;
 import wemppy.bbs_physics.ragdoll.FormRagdolls;
@@ -23,14 +22,14 @@ import wemppy.bbs_physics.structure.IStructurePhysicsForm;
 public final class PhysicsForms
 {
     /** Where the rigid body modifier is stored, prefixed so it cannot collide with a BBS key. */
-    public static final String BODY_KEY = "bbs_physics_body";
+    public static final String BODY_KEY = "bbs_physics:body";
 
     /**
      * The animation-strength handle — visible, which is all it takes for BBS to offer it as a
      * timeline track. Shared by the body and the ragdoll: §4 is explicit that this is one handle
      * with one meaning, and a form is one or the other, never both.
      */
-    public static final String AUTHORITY_KEY = "bbs_physics_authority";
+    public static final String AUTHORITY_KEY = "bbs_physics:authority";
 
     private PhysicsForms()
     {}

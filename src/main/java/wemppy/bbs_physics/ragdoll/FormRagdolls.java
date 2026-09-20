@@ -16,7 +16,7 @@ import wemppy.bbs_physics.forms.PhysicsKnobValue;
 public final class FormRagdolls
 {
     /** The key the setup is stored under, prefixed for the same reason the collision key is. */
-    public static final String KEY = "bbs_physics_ragdoll";
+    public static final String KEY = "bbs_physics:ragdoll";
 
     private FormRagdolls()
     {}

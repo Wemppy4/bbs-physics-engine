@@ -36,6 +36,6 @@
         "minecraft": "${minecraft_range}",
         "java": ">=17",
         "fabric-api": "*",
-        "bbs": "*"
+        "bbs": ">=2.7"
     }
 }

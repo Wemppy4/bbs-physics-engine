@@ -1,16 +1,13 @@
 package wemppy.bbs_physics.client.structure;
 
-import mchorse.bbs_mod.forms.structure.BakedStructure;
 import mchorse.bbs_mod.forms.structure.StructureRenderData;
-import mchorse.bbs_mod.forms.structure.StructureRenderWorld;
 import net.minecraft.block.BlockState;
-import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3i;
-import net.minecraft.world.World;
 import org.joml.Vector3f;
-import wemppy.bbs_physics.mixin.client.StructureRenderDataAccessor;
+import mchorse.bbs_mod.api.client.render.StructureRenderPart;
+import mchorse.bbs_mod.forms.forms.StructureForm;
 import wemppy.bbs_physics.structure.DestructionState;
 
 import java.util.*;
@@ -18,6 +15,7 @@ import java.util.*;
 /** Renderer-owned caches: one current remainder and lazily baked individual debris blocks. */
 public final class DestructionRender
 {
+    private final StructureForm form;
     public final DestructionState state;
     public final StructureRenderData source;
     public final String biome;
@@ -25,8 +23,9 @@ public final class DestructionRender
     private BitSet detached;
     private Part remainder;
 
-    public DestructionRender(DestructionState state, StructureRenderData source, String biome)
+    public DestructionRender(StructureForm form, DestructionState state, StructureRenderData source, String biome)
     {
+        this.form = form;
         this.state = state;
         this.source = source;
         this.biome = biome;
@@ -69,27 +68,15 @@ public final class DestructionRender
             NbtCompound nbt = this.source.getBlockEntities().get(p);
             if (nbt != null) entities.put(local, nbt.copy());
         }
-        StructureRenderData data = StructureRenderDataAccessor.bbs_physics$create(this.source.id,
+        StructureRenderData data = StructureRenderPart.createData(this.source.id,
             new Vec3i(maxX - minX + 1, maxY - minY + 1, maxZ - minZ + 1), states, entities);
-        return new Part(data, new StructureRenderWorld(data, this.biome),
-            new Vector3f(this.state.offset).add(minX, minY, minZ));
+        return new Part(new StructureRenderPart(this.form, data, this.biome,
+            new Vector3f(this.state.offset).add(minX, minY, minZ)));
     }
 
     public static final class Part
     {
-        public final StructureRenderData data;
-        public final StructureRenderWorld world;
-        public final Vector3f offset;
-        public BakedStructure baked;
-        public List<BlockEntity> entities;
-        public World structureWorld;
-        public final Set<BlockPos> errors = new HashSet<>();
-
-        Part(StructureRenderData data, StructureRenderWorld world, Vector3f offset)
-        {
-            this.data = data;
-            this.world = world;
-            this.offset = offset;
-        }
+        public final StructureRenderPart renderer;
+        Part(StructureRenderPart renderer) { this.renderer = renderer; }
     }
 }

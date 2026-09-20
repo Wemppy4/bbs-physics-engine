@@ -5,32 +5,14 @@ import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_mod.film.replays.Replay;
 import mchorse.bbs_mod.ui.film.IUIClipsDelegate;
 import mchorse.bbs_mod.ui.film.UIClips;
-import mchorse.bbs_mod.ui.framework.UIContext;
-import wemppy.bbs_physics.BBSPhysicsSettings;
 import wemppy.bbs_physics.actions.ImpulseActionClip;
-import wemppy.bbs_physics.client.scene.CacheBar;
-import wemppy.bbs_physics.client.scene.FilmScenes;
-import wemppy.bbs_physics.client.scene.SceneStatus;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * Draws the cache bar along the bottom of the film's timeline and initializes new impulse clips.
- *
- * <p>{@code UIClips} is the timeline: it owns the time scale, so it is the only place that can turn
- * a tick into a screen position — {@code toGraphX} already accounts for the zoom and the horizontal
- * scroll, which a bar that is to line up with the clips above it must do too. It is inherited from
- * the timeline canvas and public, so it is simply called rather than shadowed.</p>
- *
- * <p>Drawn after the element has drawn itself, so it sits over the timeline's own background rather
- * than under it, and only when a film that is actually being simulated is on screen — an editor
- * with physics switched off has no bar, because it has nothing to say.</p>
- */
+/** Seeds the world point of a newly inserted impulse before BBS records its first undo state. */
 @Mixin(UIClips.class)
 public abstract class UIClipsMixin
 {
@@ -74,24 +56,4 @@ public abstract class UIClipsMixin
         }
     }
 
-    @Inject(method = "render", at = @At("TAIL"))
-    private void bbs_physics$onRender(UIContext context, CallbackInfo info)
-    {
-        if (BBSPhysicsSettings.enabled == null || !BBSPhysicsSettings.enabled.get() || this.delegate == null)
-        {
-            return;
-        }
-
-        Film film = this.delegate.getFilm();
-        SceneStatus status = FilmScenes.getStatus(film);
-
-        if (status == null)
-        {
-            return;
-        }
-
-        UIClips self = (UIClips) (Object) this;
-
-        CacheBar.render(context, self.area, status, self::toGraphX);
-    }
 }

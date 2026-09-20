@@ -1,5 +1,7 @@
 package wemppy.bbs_physics;
 
+import mchorse.bbs_mod.api.FormPropertyAliases;
+
 import mchorse.bbs_mod.api.BBSAddonMod;
 import mchorse.bbs_mod.api.BBSApi;
 import mchorse.bbs_mod.api.Subscribe;
@@ -31,11 +33,36 @@ public class BBSPhysicsAddon implements BBSAddonMod
      * through a film: BBS tells the user which of the two to update, instead of the mismatch
      * surfacing as a missing method somewhere in the middle of a scene.
      */
-    public static final int API_VERSION = 1;
+    public static final int API_VERSION = 2;
 
     public BBSPhysicsAddon()
     {
         BBSApi.requireVersion(BBSPhysics.MOD_ID, API_VERSION);
+        FormPropertyAliases.register("bbs_physics_authority", "bbs_physics:authority");
+        FormPropertyAliases.register("bbs_physics_body", "bbs_physics:body");
+        FormPropertyAliases.register("bbs_physics_body_angular_damping", "bbs_physics:body_angular_damping");
+        FormPropertyAliases.register("bbs_physics_body_friction", "bbs_physics:body_friction");
+        FormPropertyAliases.register("bbs_physics_body_gravity", "bbs_physics:body_gravity");
+        FormPropertyAliases.register("bbs_physics_body_linear_damping", "bbs_physics:body_linear_damping");
+        FormPropertyAliases.register("bbs_physics_body_mass", "bbs_physics:body_mass");
+        FormPropertyAliases.register("bbs_physics_body_restitution", "bbs_physics:body_restitution");
+        FormPropertyAliases.register("bbs_physics_chain", "bbs_physics:chain");
+        FormPropertyAliases.register("bbs_physics_chain_bend", "bbs_physics:chain_bend");
+        FormPropertyAliases.register("bbs_physics_chain_damping", "bbs_physics:chain_damping");
+        FormPropertyAliases.register("bbs_physics_chain_falloff", "bbs_physics:chain_falloff");
+        FormPropertyAliases.register("bbs_physics_chain_gravity", "bbs_physics:chain_gravity");
+        FormPropertyAliases.register("bbs_physics_chain_mass", "bbs_physics:chain_mass");
+        FormPropertyAliases.register("bbs_physics_chain_stiffness", "bbs_physics:chain_stiffness");
+        FormPropertyAliases.register("bbs_physics_collision", "bbs_physics:collision");
+        FormPropertyAliases.register("bbs_physics_destruction", "bbs_physics:destruction");
+        FormPropertyAliases.register("bbs_physics_ragdoll", "bbs_physics:ragdoll");
+        FormPropertyAliases.register("bbs_physics_ragdoll_damping", "bbs_physics:ragdoll_damping");
+        FormPropertyAliases.register("bbs_physics_ragdoll_friction", "bbs_physics:ragdoll_friction");
+        FormPropertyAliases.register("bbs_physics_ragdoll_gravity", "bbs_physics:ragdoll_gravity");
+        FormPropertyAliases.register("bbs_physics_ragdoll_mass", "bbs_physics:ragdoll_mass");
+        FormPropertyAliases.register("bbs_physics_ragdoll_muscle_damping", "bbs_physics:ragdoll_muscle_damping");
+        FormPropertyAliases.register("bbs_physics_ragdoll_muscles", "bbs_physics:ragdoll_muscles");
+
 
         BBSPhysics.LOGGER.info("Attached to BBS {}.", version("bbs"));
     }

@@ -1,5 +1,8 @@
 package wemppy.bbs_physics.client.scene;
 
+import mchorse.bbs_mod.BBSSettings;
+import mchorse.bbs_mod.settings.values.numeric.ValueInt;
+
 import com.github.stephengold.joltjni.*;
 import com.github.stephengold.joltjni.enumerate.*;
 import mchorse.bbs_mod.forms.forms.StructureForm;
@@ -24,7 +27,7 @@ public final class StructureDestructionCheck
 {
     public static void main(String[] args) throws Exception
     {
-        mchorse.bbs_mod.BBSSettings.recordingPoseTransformOverlays = new mchorse.bbs_mod.settings.values.numeric.ValueInt("overlays", 0);
+        BBSSettings.recordingTransformOverlays = new ValueInt("overlays", 0);
         loadJolt();
         nativeRelease();
         playback();

@@ -50,7 +50,7 @@ public final class RagdollPoseApplier
      * True while a form whose ragdoll owns the pose is being rendered. The chain physics reads its
      * anchor frames through a walk that skips {@code offset} by default (the IK stretch rule);
      * while a ragdoll's offsets are in the groups, they are the character's fall and must be seen.
-     * Set per form by {@link #apply}, read by the {@code ModelPivotFrames} mixin.
+     * Set per form by {@link #apply}, read by the BBS pivot-frame API.
      */
     private static boolean chainStretch;
 
@@ -65,7 +65,7 @@ public final class RagdollPoseApplier
     /**
      * Whether the walk running right now is the simulation's own — the one that asks where the
      * <em>animation</em> has everything, because that is the target every rig pulls towards. Read
-     * by the body substitution too ({@code FormRendererMixin}): a form carrying the rigid body
+     * by the body substitution too ({@code PhysicsApiIntegration}): a form carrying the rigid body
      * modifier must answer that walk with its keyframes, not with where the body already is.
      */
     public static boolean isEvaluating()

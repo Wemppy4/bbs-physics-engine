@@ -30,14 +30,14 @@ public class BBSPhysicsClient implements ClientModInitializer
          * the exported video. They used to be taken by mixing into the film controller; since BBS
          * 2.6 they are events it posts on purpose, so four of its method names stopped being a
          * contract nobody had agreed to. */
+        PhysicsApiIntegration.register();
         FilmEvents.CREATED.register(FilmScenes::onSetup);
         FilmEvents.TICK_AFTER.register(FilmScenes::onTick);
         FilmEvents.RENDER_AFTER.register(FilmScenes::onRender);
         FilmEvents.SHUTDOWN.register(FilmScenes::onShutdown);
 
-        /* Leaving a world drops the film controllers without shutting them down, and a Jolt world
-         * is native memory that no garbage collector will come back for. This is the one place
-         * that is guaranteed to run in that case. */
+        /* API 2 shuts down film controllers on reset. Also clear any addon-owned dormant/failure
+         * entries on disconnect; clear() is idempotent and owns no already-closed worlds. */
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> FilmScenes.clear());
     }
 }

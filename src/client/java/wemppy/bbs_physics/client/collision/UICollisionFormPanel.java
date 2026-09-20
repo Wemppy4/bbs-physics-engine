@@ -1,5 +1,8 @@
 package wemppy.bbs_physics.client.collision;
 
+import mchorse.bbs_mod.api.client.editor.FormEditorTool;
+import mchorse.bbs_mod.ui.framework.elements.input.drag.TransformSpace;
+
 import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.cubic.ModelInstance;
 import mchorse.bbs_mod.cubic.data.model.Model;
@@ -86,7 +89,7 @@ import java.util.function.UnaryOperator;
  * pushed into eight bones would be eight boxes in eight wrong places. The bulk answer to "give these
  * bones a shape" already exists and is measured per bone — that is what "Automatic" mode is.</p>
  */
-public class UICollisionFormPanel extends UIFormPanel<Form>
+public class UICollisionFormPanel extends UIFormPanel<Form> implements FormEditorTool
 {
     /** One model pixel, in blocks — the step every distance here scrolls by. */
     private static final double PIXEL = 1D / 16D;
@@ -527,6 +530,12 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
      * shape is placed by the same call that places it for the engine, so whatever the frame does to
      * a collider it does to the handles.</p>
      */
+    @Override
+    public Matrix4f getGizmoOrigin(float transition, TransformSpace space)
+    {
+        return this.gizmoOrigin(this.editor.editor.renderer.getTargetEntity(), transition, space.placesOnOwnFrame());
+    }
+
     public Matrix4f gizmoOrigin(IEntity entity, float transition, boolean local)
     {
         CollisionShape shape = this.authored();

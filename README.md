@@ -146,7 +146,7 @@ libs/bbs-<version>-<minecraft>.jar
 libs/bbs-<version>-<minecraft>-sources.jar   # optional, for reading what you build against
 ```
 
-`bbs_version` in `gradle.properties` picks which of them is used — `2.6-1.20.4` on this branch —
+`bbs_version` in `gradle.properties` picks which of them is used — `2.7-1.20.4` on this branch —
 and the build stops with a clear message if that file is not there. The folder is git-ignored, so
 the jars are never committed; take them from a BBS release, or from `build/libs/` of a BBS
 checkout after `gradlew build`.
@@ -214,3 +214,18 @@ that will not start, so nothing here is allowed to be fatal.
 ## License
 
 MIT.
+
+## BBS API integration
+
+This checkout now requires **BBS 2.7 with addon API 2**. Build the matching BBS first and put
+`bbs-2.7-1.20.4.jar` (and optionally its sources jar) in `libs/`. Older 2.6 builds do not provide
+the editor/pose/structure hooks this version uses; the addon rejects them on initialization.
+
+Physics values now use `bbs_physics:` names. BBS reads the registered old `bbs_physics_` names
+and migrates their animation tracks and hidden-track settings as well. Open and save older
+films once with this updated pair installed before removing the addon; migrated namespaced
+settings then survive saving with the addon disabled.
+
+Pose evaluation, editor panels/actions, undo/redo invalidation, timeline/preview overlays,
+viewport tools and structure fragments use the public API. The remaining mixins hold runtime
+form state, initialize newly created impulse clips and customize the landing screen.
