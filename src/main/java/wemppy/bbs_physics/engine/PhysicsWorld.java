@@ -46,7 +46,7 @@ public class PhysicsWorld implements AutoCloseable
     /** Earth, in blocks per second squared — a block is a metre (§8). */
     public static final float EARTH_GRAVITY = 9.81F;
 
-    /** A film tick, in seconds — the step this world always advances by. */
+    /** A film tick in seconds, before the physics speed multiplier. */
     public static final float TICK = 1F / 20F;
 
     private static final int MAX_BODIES = 4096;
@@ -68,6 +68,7 @@ public class PhysicsWorld implements AutoCloseable
 
     /** Scene-wide knobs, which are Blender's scene properties rather than per-body settings (§7.4). */
     private int collisionSteps = COLLISION_STEPS;
+    private float speed = 1F;
 
     public PhysicsWorld()
     {
@@ -140,10 +141,26 @@ public class PhysicsWorld implements AutoCloseable
         this.system.optimizeBroadPhase();
     }
 
-    /** Advances the world by exactly one film tick. */
+    public void setSpeed(float speed)
+    {
+        this.speed = Float.isFinite(speed) ? Math.max(0.1F, Math.min(4F, speed)) : 1F;
+    }
+
+    /** Physical seconds elapsed during one unchanged film tick. */
+    public float getDeltaTime()
+    {
+        return TICK * this.speed;
+    }
+
+    public int getIntegrationSteps()
+    {
+        return Math.max(this.collisionSteps, (int) Math.ceil(this.collisionSteps * this.speed));
+    }
+
+    /** Advances physics for one film tick at the selected speed. */
     public void step()
     {
-        this.system.update(TICK, this.collisionSteps, this.temp, this.jobs);
+        this.system.update(this.getDeltaTime(), this.getIntegrationSteps(), this.temp, this.jobs);
     }
 
     @Override

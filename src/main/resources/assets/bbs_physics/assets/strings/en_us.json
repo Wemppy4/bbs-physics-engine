@@ -34,6 +34,8 @@
     "bbs_physics.config.general.debug_flat_plates-comment": "A collision plate (a box thinner than a quarter pixel) is outlined as a flat rectangle rather than a sliver with twelve edges. A plate does have thickness — the engine requires it — but it is hidden under the texture, and on screen it is a surface. Untick to see the actual sliver.",
     "bbs_physics.config.general.collision_preview": "Show markup in the editor",
     "bbs_physics.config.general.collision_preview-comment": "Draws collision over the model in the form editor, so shapes can be placed by eye.",
+    "bbs_physics.config.general.speed": "Physics speed",
+    "bbs_physics.config.general.speed-comment": "Global simulation speed: 1 is normal, 0.5 is half speed, 2 is double speed. Animation and film timing stay unchanged. Range 0.1?4. Changes recalculate physics; higher speed requires more computation.",
     "bbs_physics.config.general.gravity": "Gravity",
     "bbs_physics.config.general.gravity-comment": "How hard things fall, in blocks per second squared. Earth is 9.81; half of it reads as slow motion without touching a single keyframe, and zero is a space shot. It is part of the simulation's arithmetic, so changing it works the film's physics out again from the opening frame.",
     "bbs_physics.config.general.collision_steps": "Collision sub-steps",

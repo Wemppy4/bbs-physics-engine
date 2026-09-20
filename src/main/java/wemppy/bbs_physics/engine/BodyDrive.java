@@ -36,6 +36,14 @@ import org.joml.Quaternionf;
  */
 public final class BodyDrive
 {
+    private float deltaTime = PhysicsWorld.TICK;
+
+    public void setDeltaTime(float deltaTime)
+    {
+        if (!Float.isFinite(deltaTime) || deltaTime <= 0F) throw new IllegalArgumentException("Invalid physics step");
+        this.deltaTime = deltaTime;
+    }
+
     /**
      * The fastest the pull may ask a body to travel, in blocks per second. The gap to the pose is
      * closed at gap-per-tick, which for any honest animation is modest — but keyframes also cut,
@@ -92,14 +100,15 @@ public final class BodyDrive
         /* The speed that would carry the body home this tick, capped — see MAX_PULL_SPEED: past
          * the cap the gap is a cut in the keyframes, not a motion, and the pull becomes a fast
          * catch-up instead of a projectile. */
-        float homeX = (float) (position.xx() - this.currentPosition.xx()) / PhysicsWorld.TICK;
-        float homeY = (float) (position.yy() - this.currentPosition.yy()) / PhysicsWorld.TICK;
-        float homeZ = (float) (position.zz() - this.currentPosition.zz()) / PhysicsWorld.TICK;
+        float homeX = (float) (position.xx() - this.currentPosition.xx()) / this.deltaTime;
+        float homeY = (float) (position.yy() - this.currentPosition.yy()) / this.deltaTime;
+        float homeZ = (float) (position.zz() - this.currentPosition.zz()) / this.deltaTime;
         float homeSpeed = (float) Math.sqrt(homeX * homeX + homeY * homeY + homeZ * homeZ);
 
-        if (homeSpeed > MAX_PULL_SPEED)
+        float maxSpeed = MAX_PULL_SPEED * PhysicsWorld.TICK / this.deltaTime;
+        if (homeSpeed > maxSpeed)
         {
-            float scale = MAX_PULL_SPEED / homeSpeed;
+            float scale = maxSpeed / homeSpeed;
 
             homeX *= scale;
             homeY *= scale;
@@ -139,7 +148,7 @@ public final class BodyDrive
 
             /* Capped for the same reason the travel is: a half-turn cut read as one tick's spin
              * is sixty radians a second, and nothing downstream survives being asked for that. */
-            speed = Math.min(2F * (float) Math.acos(w) / PhysicsWorld.TICK, MAX_PULL_SPIN);
+            speed = Math.min(2F * (float) Math.acos(w) / this.deltaTime, MAX_PULL_SPIN * PhysicsWorld.TICK / this.deltaTime);
             axisX = this.delta.x * invSinHalf;
             axisY = this.delta.y * invSinHalf;
             axisZ = this.delta.z * invSinHalf;

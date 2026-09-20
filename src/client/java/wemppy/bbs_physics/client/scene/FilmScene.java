@@ -137,6 +137,7 @@ public class FilmScene implements AutoCloseable
 
     /** The scene-wide knobs this recording was made under — see {@link #applyWorldSettings()}. */
     private float gravity = PhysicsWorld.EARTH_GRAVITY;
+    private float speed = 1F;
     private int collisionSteps = PhysicsWorld.COLLISION_STEPS;
 
     /** The tick the film last asked for, against which the simulation's own tick is reported. */
@@ -471,7 +472,7 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
-     * Picks up the scene-wide knobs — gravity and collision steps — and throws the recording away
+     * Picks up the scene-wide knobs — gravity, speed and collision steps — and throws the recording away
      * when either has moved.
      *
      * <p>They are part of the simulation's arithmetic, not a display option: half gravity is a
@@ -484,15 +485,19 @@ public class FilmScene implements AutoCloseable
         float gravity = BBSPhysicsSettings.gravity == null ? PhysicsWorld.EARTH_GRAVITY : BBSPhysicsSettings.gravity.get();
         int steps = BBSPhysicsSettings.collisionSteps == null ? PhysicsWorld.COLLISION_STEPS : BBSPhysicsSettings.collisionSteps.get();
 
-        if (gravity == this.gravity && steps == this.collisionSteps)
+        float speed = BBSPhysicsSettings.speed == null ? 1F : BBSPhysicsSettings.speed.get();
+
+        if (gravity == this.gravity && steps == this.collisionSteps && speed == this.speed)
         {
             return;
         }
 
         this.gravity = gravity;
+        this.speed = speed;
         this.collisionSteps = steps;
 
         this.world.setGravity(gravity);
+        this.world.setSpeed(speed);
         this.world.setCollisionSteps(steps);
 
         this.invalidate();

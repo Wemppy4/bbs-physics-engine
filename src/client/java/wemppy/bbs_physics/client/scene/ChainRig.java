@@ -477,6 +477,9 @@ public class ChainRig implements SceneRig
     @Override
     public void update(RigUpdate update)
     {
+        this.drive.setDeltaTime(update.physics.getDeltaTime());
+        this.move.setDeltaTime(update.physics.getDeltaTime());
+
         PhysicsWorld physics = update.physics;
         FilmScene scene = update.scene;
         boolean reset = update.reset;

@@ -149,6 +149,8 @@ public final class StructureRig implements SceneRig
     @Override
     public void update(RigUpdate update)
     {
+        this.drive.setDeltaTime(update.physics.getDeltaTime());
+
         this.captureFrame(update);
         BodyInterface bodies = update.physics.getBodies();
         if (update.reset) this.reset(bodies);

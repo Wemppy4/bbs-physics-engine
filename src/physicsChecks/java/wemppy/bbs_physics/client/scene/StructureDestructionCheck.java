@@ -114,7 +114,7 @@ public final class StructureDestructionCheck
         require(!state.isBroken(), "Unrecorded frame must show original structure");
     }
 
-    private static void loadJolt() throws Exception
+    static void loadJolt() throws Exception
     {
         String os = System.getProperty("os.name").toLowerCase(Locale.ROOT);
         String arch = System.getProperty("os.arch").toLowerCase(Locale.ROOT);
