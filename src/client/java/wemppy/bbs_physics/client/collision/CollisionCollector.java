@@ -98,7 +98,8 @@ public final class CollisionCollector
 
         FormTreeWalk.walk(root, path, (form, formPath, anchor) ->
         {
-            if (stopAtBodies && !(enterRoot && form == root) && PhysicsForms.isBody(form))
+            if (stopAtBodies && !(enterRoot && form == root)
+                && PhysicsForms.isBody(form))
             {
                 return false;
             }
@@ -114,6 +115,7 @@ public final class CollisionCollector
     /** The markup of one form: its own shape, plus its bones when it is a model. */
     private static void collectForm(Form form, String path, MatrixCache matrices, List<Piece> pieces)
     {
+
         FormCollision collision = FormCollisions.get(form);
 
         if (collision.isEmpty())

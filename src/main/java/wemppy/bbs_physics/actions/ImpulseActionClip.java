@@ -29,6 +29,9 @@ import mchorse.bbs_mod.utils.clips.Clip;
  */
 public class ImpulseActionClip extends ActionClip
 {
+    /** Restrict the push to the recording that owns this clip. */
+    public final ValueBoolean onlyThisReplay = new ValueBoolean("onlyThisReplay", false);
+
     /** Where the push happens, in world coordinates. */
     public final ValuePoint point = new ValuePoint("point", new Point(0D, 0D, 0D));
 
@@ -49,6 +52,7 @@ public class ImpulseActionClip extends ActionClip
         super();
 
         this.add(this.point);
+        this.add(this.onlyThisReplay);
         this.add(this.radial);
         this.add(this.strength);
         this.add(this.radius);

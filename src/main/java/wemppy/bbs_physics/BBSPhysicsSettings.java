@@ -79,6 +79,9 @@ public class BBSPhysicsSettings
      */
     public static ValueFloat gravity;
 
+    /** Physical time per film tick; animation is still sampled at the original film tick. */
+    public static ValueFloat speed;
+
     /**
      * How many times Jolt re-solves collisions inside one film tick. A tick is 50 ms, which is long
      * for a solver aimed at 60 Hz frames, so two is the floor for stacked bodies not sinking into
@@ -102,6 +105,7 @@ public class BBSPhysicsSettings
         debugFlatPlates = builder.getBoolean("debug_flat_plates", true);
 
         gravity = builder.getFloat("gravity", 9.81F, 0F, 40F);
+        speed = builder.getFloat("speed", 1F, 0.1F, 4F);
         collisionSteps = builder.getInt("collision_steps", PhysicsWorld.COLLISION_STEPS, 1, 8);
 
         worldRadius = builder.getInt("world_radius", 32, 8, 96);

@@ -27,6 +27,14 @@ import com.github.stephengold.joltjni.enumerate.EActivation;
  */
 public final class KinematicDrive
 {
+    private float deltaTime = PhysicsWorld.TICK;
+
+    public void setDeltaTime(float deltaTime)
+    {
+        if (!Float.isFinite(deltaTime) || deltaTime <= 0F) throw new IllegalArgumentException("Invalid physics step");
+        this.deltaTime = deltaTime;
+    }
+
     /**
      * The farthest a kinematic body may be steered in one tick, in blocks. Five blocks per tick is
      * a hundred blocks per second — the same "no character reaches this honestly" line the ragdoll
@@ -80,7 +88,7 @@ public final class KinematicDrive
         }
         else
         {
-            bodies.moveKinematic(id, target, rotation, PhysicsWorld.TICK);
+            bodies.moveKinematic(id, target, rotation, this.deltaTime);
         }
 
         return cut;
