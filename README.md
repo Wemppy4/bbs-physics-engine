@@ -218,7 +218,7 @@ MIT.
 ## BBS API integration
 
 This checkout now requires **BBS 2.7 with addon API 2**. Build the matching BBS first and put
-`bbs-2.7-1.20.4.jar` (and optionally its sources jar) in `libs/`. Older 2.6 builds do not provide
+`bbs-2.7-1.21.1.jar` (and optionally its sources jar) in `libs/`. Older 2.6 builds do not provide
 the editor/pose/structure hooks this version uses; the addon rejects them on initialization.
 
 Physics values now use `bbs_physics:` names. BBS reads the registered old `bbs_physics_` names
