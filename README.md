@@ -105,9 +105,9 @@ One branch per target, each building against its own BBS.
 
 | Branch | Minecraft | Built against |
 |---|---|---|
-| `master` | 1.20.1 – 1.20.4 | BBS 2.6 |
-| `1.21.1` | 1.21.1 | BBS 2.6 |
-| `1.21.11` | 1.21.11 | BBS 2.6 |
+| `master` | 1.20.1 – 1.20.4 | BBS 2.7 / API 2 |
+| `1.21.1` | 1.21.1 | BBS 2.7 / API 2 |
+| `1.21.11` | 1.21.11 | BBS 2.7 / API 2 |
 | `cml-1.21.1` | 1.21.1 | BBS CML 2.1-RC4 |
 | `cml-1.20.4` | 1.20.4 | BBS CML 2.1-RC4 |
 | `cml-1.20.1` | 1.20.1 | BBS CML 2.1-RC4 |
