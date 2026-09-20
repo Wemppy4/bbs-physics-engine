@@ -8,6 +8,7 @@ import mchorse.bbs_mod.l10n.keys.IKey;
 import mchorse.bbs_mod.ui.UIKeys;
 import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.framework.elements.UIElement;
+import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
 import mchorse.bbs_mod.ui.utils.BoneSelection;
@@ -24,41 +25,15 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * A modifier that is described bone by bone: the model's skeleton as a list, a tick in the margin
- * for the bones it claims, and whatever knobs belong to the selected one underneath.
- *
- * <p>Both modifiers that work this way — the ragdoll and the chain — used to carry their own copy of
- * all of it: the list, the search box, the tick's hit test, the dot that says a bone has a shape, and
- * the "am I syncing" flag that keeps a value callback from writing back what it was just handed. The
- * two copies had already started to differ in ways nobody chose.</p>
- *
- * <p><b>Many bones at a time.</b> The list is multi-select, with the gestures BBS's pose bone list
- * already taught — Shift for a run, Ctrl for one more — and a knob turned here writes into every
- * selected bone, not just the one the panel is showing. A rig is described in groups (all the
- * fingers bend the same way, all the hair hangs the same way), and doing that one bone at a time was
- * the same numbers typed twenty times. The values on screen are the <em>first</em> selected bone's:
- * a panel showing an average of twenty bones would be showing a number none of them has.</p>
- *
- * <p>A tick clicked with several bones selected takes them all in — or leaves them all out, matching
- * the row that was clicked rather than flipping each one, so the click has one visible outcome
- * instead of twenty different ones. A tick clicked <em>outside</em> the selection is about that row
- * alone: the author is pointing at it, not at what happens to be highlighted elsewhere.</p>
- *
- * <p><b>Two rules the subclasses inherit rather than rediscover.</b> A value callback may
- * <em>write</em> but must never change the layout: {@code UITrackpad} calls back while it is being
- * dragged, which happens inside the render pass, so rebuilding this element's children from there
- * tears the list the renderer is walking — a crash on the first drag of a slider. And the collision
- * markup is read once per frame here rather than per row: it is stored as one blob on the form, so
- * asking per row meant parsing the whole thing sixty times a second for every visible bone.</p>
+ * Shared bone selection and properties for ragdolls and chains.
+ * The list only selects bones; the enable property edits the selected group.
+ * Numeric callbacks must not rebuild the layout during rendering.
  */
 public abstract class UIBoneSection extends UIElement
 {
-    /** How far from the list's right edge the tick sits — clear of the scrollbar. */
-    protected static final int TICK_RIGHT = 20;
-    protected static final int TICK_SIZE = 7;
-
     public final UIBoneTreeList bones;
     public final UISearchList<String> bonesSearch;
+    public final UIToggle enabled;
 
     /**
      * Told when the rows change, so the column outside can lay itself out again. This block grows
@@ -121,29 +96,30 @@ public abstract class UIBoneSection extends UIElement
                 UIBoneSection.this.renderMargin(context, element, y);
             }
 
-            @Override
-            public boolean subMouseClicked(UIContext context)
-            {
-                if (context.mouseButton == 0 && this.area.isInside(context)
-                    && context.mouseX >= this.area.ex() - TICK_RIGHT - TICK_SIZE
-                    && context.mouseX <= this.area.ex() - TICK_RIGHT + TICK_SIZE)
-                {
-                    int index = this.getIndexAtCursor(context);
-
-                    if (index >= 0 && index < this.getList().size() && UIBoneSection.this.toggleTick(this.getList().get(index)))
-                    {
-                        return true;
-                    }
-                }
-
-                return super.subMouseClicked(context);
-            }
         };
         this.bones.background();
 
         this.bonesSearch = new UISearchList<>(this.bones);
         this.bonesSearch.label(UIKeys.GENERAL_SEARCH);
         this.bonesSearch.h(20 + UIConstants.LIST_ITEM_HEIGHT * 8).expand();
+
+        this.enabled = new UIToggle(PhysicsKeys.BONES_ENABLED, (toggle) ->
+        {
+            if (this.syncing || this.form == null || this.model == null)
+            {
+                return;
+            }
+
+            List<String> targets = this.editableTargets();
+
+            if (!targets.isEmpty())
+            {
+                this.setParticipation(targets, toggle.getValue());
+            }
+
+            this.syncEnabled();
+        });
+        this.enabled.tooltip(PhysicsKeys.BONES_ENABLED_TOOLTIP);
     }
 
     /* What a subclass fills in */
@@ -153,13 +129,13 @@ public abstract class UIBoneSection extends UIElement
      * run at once rather than one bone at a time, so a modifier writes itself back onto the form —
      * and lays its panel out again — once per click instead of once per bone.
      */
-    protected abstract void setTicked(List<String> bones, boolean ticked);
+    protected abstract void setParticipation(List<String> bones, boolean ticked);
 
-    /** Whether this modifier claims {@code bone} — what the tick is filled in for. */
-    protected abstract boolean isTicked(String bone);
+    /** Whether physics includes this bone. */
+    protected abstract boolean isParticipating(String bone);
 
-    /** Whether {@code bone} has a tick to give at all — the ragdoll's unmarked bones have none. */
-    protected boolean canTick(String bone)
+    /** Whether this bone can participate; ragdolls require collision markup. */
+    protected boolean canParticipate(String bone)
     {
         return true;
     }
@@ -167,7 +143,7 @@ public abstract class UIBoneSection extends UIElement
     /** The author moved to another bone in the list. */
     protected abstract void onBonePicked();
 
-    /** Whether this modifier shows the collision dot beside the tick, as the ragdoll does. */
+    /** Whether this section shows collision indicators, as the ragdoll does. */
     protected boolean showsMarkup()
     {
         return false;
@@ -180,8 +156,7 @@ public abstract class UIBoneSection extends UIElement
      *
      * <p>Subclasses read their own modifier off the form first and then call this.</p>
      *
-     * @param pick whether to leave the author standing on a bone — the ragdoll edits one at a time
-     *             and needs one, the chain modifier edits the set and does not
+     * @param pick whether to restore the selected bone or select the first available one
      */
     protected void setForm(Form form, boolean pick)
     {
@@ -234,38 +209,40 @@ public abstract class UIBoneSection extends UIElement
         return targets;
     }
 
-    /**
-     * The tick was clicked on {@code clicked}: every selected bone follows it, and a bone that has
-     * no tick to give is passed over rather than counted as a miss.
-     *
-     * @return whether the click ticked anything — a click that did not is left to fall through to
-     *         the list, which selects the row instead
-     */
-    private boolean toggleTick(String clicked)
+    private List<String> editableTargets()
     {
-        if (!this.canTick(clicked))
-        {
-            return false;
-        }
-
         List<String> targets = this.targets();
 
-        if (!targets.contains(clicked))
+        targets.removeIf((bone) -> !this.canParticipate(bone));
+
+        return targets;
+    }
+
+    /** Mixed selections display their disagreement; the first click enables the whole group. */
+    protected void syncEnabled()
+    {
+        if (this.enabled == null)
         {
-            targets.clear();
-            targets.add(clicked);
+            return;
         }
 
-        targets.removeIf((bone) -> !this.canTick(bone));
+        List<String> targets = this.editableTargets();
+        boolean any = targets.stream().anyMatch(this::isParticipating);
+        boolean all = !targets.isEmpty() && targets.stream().allMatch(this::isParticipating);
+        boolean previous = this.syncing;
 
-        if (targets.isEmpty())
+        this.syncing = true;
+
+        try
         {
-            return false;
+            this.enabled.setValue(all);
+            this.enabled.setEnabled(this.form != null && this.model != null && !targets.isEmpty());
+            this.enabled.label = any && !all ? PhysicsKeys.BONES_ENABLED_MIXED : PhysicsKeys.BONES_ENABLED;
         }
-
-        this.setTicked(targets, !this.isTicked(clicked));
-
-        return true;
+        finally
+        {
+            this.syncing = previous;
+        }
     }
 
     /**
@@ -350,56 +327,26 @@ public abstract class UIBoneSection extends UIElement
             this.collision = FormCollisions.get(this.form);
         }
 
+        this.syncEnabled();
         super.render(context);
     }
 
-    /**
-     * The tick that says this bone is claimed, and — for the ragdoll — the dot that says whether
-     * there is anything to claim.
-     *
-     * <p>The dot is coloured by how the shape was described: measured from the bone's own cubes, read
-     * off their painted pixels, or placed by hand. The same colours the Collision tab draws, because it
-     * is the same fact; a bone with no dot cannot fall, and that is visible at a glance across a
-     * whole rig instead of being discovered one click at a time.</p>
-     */
+    /** Collision information is an indicator, never an inline enable button. */
     private void renderMargin(UIContext context, String element, int y)
     {
-        if (this.model == null || this.form == null)
+        if (this.model == null || this.form == null || !this.showsMarkup())
         {
             return;
         }
 
         CollisionMode mode = this.collision.get(element).mode();
 
-        if (this.showsMarkup())
+        if (mode != CollisionMode.NONE)
         {
-            if (mode == CollisionMode.NONE)
-            {
-                /* No shape, so no tick either: a tick on it would be a promise the markup cannot
-                 * keep. */
-                return;
-            }
-
             int mid = y + UIConstants.LIST_ITEM_HEIGHT / 2;
             int dot = this.bones.area.ex() - 8;
 
             context.batcher.box(dot, mid - 2, dot + 4, mid + 2, Colors.A100 | PhysicsColors.markup(mode));
-        }
-
-        this.renderTick(context, y, this.isTicked(element));
-    }
-
-    private void renderTick(UIContext context, int y, boolean ticked)
-    {
-        int mid = y + UIConstants.LIST_ITEM_HEIGHT / 2;
-        int x = this.bones.area.ex() - TICK_RIGHT - TICK_SIZE / 2;
-        int top = mid - TICK_SIZE / 2;
-
-        context.batcher.box(x, top, x + TICK_SIZE, top + TICK_SIZE, Colors.A50);
-
-        if (ticked)
-        {
-            context.batcher.box(x + 1, top + 1, x + TICK_SIZE - 1, top + TICK_SIZE - 1, Colors.A100 | Colors.WHITE);
         }
     }
 }

@@ -8,7 +8,6 @@ import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.utils.UI;
-import mchorse.bbs_mod.ui.utils.UIConstants;
 import wemppy.bbs_physics.chain.ChainForm;
 import wemppy.bbs_physics.forms.PhysicsForms;
 
@@ -70,16 +69,15 @@ public class UIChainFormPanel extends UIFormPanel<ChainForm>
         this.heldStart.tooltip(PhysicsKeys.CHAIN_HELD_START_TOOLTIP);
 
 
-        this.options.add(UI.label(PhysicsKeys.CHAIN_LINK_LABEL), this.link);
-        this.options.add(UI.label(PhysicsKeys.CHAIN_STRAND).marginTop(UIConstants.SECTION_GAP));
-        this.options.add(this.length, UI.row(this.segments, this.radius));
-        this.options.add(UI.label(PhysicsKeys.CHAIN_FEEL).marginTop(UIConstants.SECTION_GAP));
-        this.options.add(this.mass, this.stiffness, this.damping);
-        this.options.add(UI.row(this.friction, this.gravity));
-        this.options.add(UI.label(PhysicsKeys.CHAIN_ENDS).marginTop(UIConstants.SECTION_GAP));
-        this.options.add(this.heldStart);
-        this.options.add(UI.label(PhysicsKeys.CHAIN_ATTACH_HINT).marginTop(UIConstants.MARGIN));
-        this.options.add(UI.label(PhysicsKeys.AUTHORITY).marginTop(UIConstants.SECTION_GAP), this.authority);
+        this.options.add(PhysicsFields.section(PhysicsKeys.CHAIN_LINK_LABEL, "rope.link", this.link));
+        this.options.add(PhysicsFields.section(PhysicsKeys.CHAIN_STRAND, "rope.geometry",
+            this.length, UI.row(this.segments, this.radius)));
+        this.options.add(PhysicsFields.section(PhysicsKeys.CHAIN_FEEL, "rope.properties",
+            this.mass, this.stiffness, this.damping, UI.row(this.friction, this.gravity)));
+        this.options.add(PhysicsFields.section(PhysicsKeys.CHAIN_ENDS, "rope.ends", this.heldStart));
+        this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_ANIMATION, "rope.animation",
+            UI.labelRow(PhysicsKeys.AUTHORITY, this.authority)));
+
     }
 
     @Override

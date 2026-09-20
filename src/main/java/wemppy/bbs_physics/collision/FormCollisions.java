@@ -25,7 +25,7 @@ public final class FormCollisions
      * with every value BBS may add to a form in the future, and a collision there would silently
      * swap one for the other.
      */
-    public static final String KEY = "bbs_physics_collision";
+    public static final String KEY = "bbs_physics:collision";
 
     private FormCollisions()
     {}

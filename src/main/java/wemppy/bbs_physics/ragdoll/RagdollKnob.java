@@ -6,12 +6,12 @@ package wemppy.bbs_physics.ragdoll;
  */
 public enum RagdollKnob
 {
-    MASS("bbs_physics_ragdoll_mass", FormRagdoll.DEFAULT_MASS, 0F, 10000F),
-    DAMPING("bbs_physics_ragdoll_damping", FormRagdoll.DEFAULT_DAMPING, 0F, 1F),
-    FRICTION("bbs_physics_ragdoll_friction", FormRagdoll.DEFAULT_FRICTION, 0F, 100F),
-    GRAVITY("bbs_physics_ragdoll_gravity", FormRagdoll.DEFAULT_GRAVITY, -2F, 2F),
-    MUSCLES("bbs_physics_ragdoll_muscles", FormRagdoll.DEFAULT_MUSCLES, 0F, 1F),
-    MUSCLE_DAMPING("bbs_physics_ragdoll_muscle_damping", FormRagdoll.DEFAULT_MUSCLE_DAMPING, 0F, 1F);
+    MASS("bbs_physics:ragdoll_mass", FormRagdoll.DEFAULT_MASS, 0F, 10000F),
+    DAMPING("bbs_physics:ragdoll_damping", FormRagdoll.DEFAULT_DAMPING, 0F, 1F),
+    FRICTION("bbs_physics:ragdoll_friction", FormRagdoll.DEFAULT_FRICTION, 0F, 100F),
+    GRAVITY("bbs_physics:ragdoll_gravity", FormRagdoll.DEFAULT_GRAVITY, -2F, 2F),
+    MUSCLES("bbs_physics:ragdoll_muscles", FormRagdoll.DEFAULT_MUSCLES, 0F, 1F),
+    MUSCLE_DAMPING("bbs_physics:ragdoll_muscle_damping", FormRagdoll.DEFAULT_MUSCLE_DAMPING, 0F, 1F);
 
     public final String id;
     public final float fallback;

@@ -6,9 +6,11 @@ import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 import mchorse.bbs_mod.utils.MathUtils;
 import wemppy.bbs_physics.balloon.BalloonForm;
 import wemppy.bbs_physics.chain.ChainForm;
-import wemppy.bbs_physics.chain.FormChains;
+import wemppy.bbs_physics.chain.ChainIO;
 import wemppy.bbs_physics.cloth.ClothForm;
 import wemppy.bbs_physics.ragdoll.FormRagdolls;
+import wemppy.bbs_physics.ragdoll.RagdollIO;
+import wemppy.bbs_physics.structure.IStructurePhysicsForm;
 
 /**
  * Reading and writing the physics a form carries: its rigid body modifier and the one handle both
@@ -20,17 +22,98 @@ import wemppy.bbs_physics.ragdoll.FormRagdolls;
 public final class PhysicsForms
 {
     /** Where the rigid body modifier is stored, prefixed so it cannot collide with a BBS key. */
-    public static final String BODY_KEY = "bbs_physics_body";
+    public static final String BODY_KEY = "bbs_physics:body";
 
     /**
      * The animation-strength handle — visible, which is all it takes for BBS to offer it as a
      * timeline track. Shared by the body and the ragdoll: §4 is explicit that this is one handle
      * with one meaning, and a form is one or the other, never both.
      */
-    public static final String AUTHORITY_KEY = "bbs_physics_authority";
+    public static final String AUTHORITY_KEY = "bbs_physics:authority";
 
     private PhysicsForms()
     {}
+
+    /** Legacy combinations resolve consistently, without discarding any saved settings. */
+    public static PhysicsType getType(Form form)
+    {
+        ValueData body = bodyValue(form);
+
+        if (body != null && BodyIO.isEnabled(body.get()))
+        {
+            return PhysicsType.BODY;
+        }
+
+        if (form instanceof IStructurePhysicsForm structure
+            && ModifierIO.isEnabled(structure.bbs_physics$getDestruction().get()))
+        {
+            return PhysicsType.DESTRUCTION;
+        }
+
+        if (form instanceof IModelPhysicsForm model)
+        {
+            ValueData ragdoll = model.bbs_physics$getRagdoll();
+            ValueData chain = model.bbs_physics$getChain();
+
+            if (ragdoll != null && RagdollIO.isEnabled(ragdoll.get()))
+            {
+                return PhysicsType.RAGDOLL;
+            }
+
+            if (chain != null && ChainIO.isEnabled(chain.get()))
+            {
+                return PhysicsType.CHAIN;
+            }
+        }
+
+        return PhysicsType.NONE;
+    }
+
+    /** Changes only the enabled flags; numeric values, keyframes and collision data stay intact. */
+    public static void setType(Form form, PhysicsType type)
+    {
+        if (form == null || type == null || !(form instanceof IPhysicsForm)
+            || ((type == PhysicsType.RAGDOLL || type == PhysicsType.CHAIN) && !(form instanceof IModelPhysicsForm))
+            || (type == PhysicsType.DESTRUCTION && !(form instanceof IStructurePhysicsForm)))
+        {
+            return;
+        }
+
+        setEnabled(bodyValue(form), type == PhysicsType.BODY);
+
+        if (form instanceof IStructurePhysicsForm structure)
+        {
+            setEnabled(structure.bbs_physics$getDestruction(), type == PhysicsType.DESTRUCTION);
+        }
+
+        if (form instanceof IModelPhysicsForm model)
+        {
+            ValueData chain = model.bbs_physics$getChain();
+            boolean firstChain = chain != null && chain.get() == null;
+
+            setEnabled(model.bbs_physics$getRagdoll(), type == PhysicsType.RAGDOLL);
+            setEnabled(chain, type == PhysicsType.CHAIN);
+
+            /* New strands start loose. Returning to an existing setup keeps the shared handle. */
+            if (type == PhysicsType.CHAIN && firstChain && getAuthority(form) == 1F)
+            {
+                setAuthority(form, 0F);
+            }
+        }
+    }
+
+    private static void setEnabled(ValueData value, boolean enabled)
+    {
+        if (value == null || (!enabled && value.get() == null))
+        {
+            return;
+        }
+
+        MapType map = value.get() instanceof MapType stored ? (MapType) stored.copy() : new MapType();
+
+        map.putBool(ModifierIO.KEY_ENABLED, enabled);
+        value.set(map);
+    }
 
     /**
      * The body modifier of {@code form}, never null; empty when it has none.
@@ -103,15 +186,13 @@ public final class PhysicsForms
     /** Whether this form is a rigid body, without parsing the rest — the per-frame check. */
     public static boolean isBody(Form form)
     {
-        ValueData value = bodyValue(form);
-
-        return value != null && BodyIO.isEnabled(value.get());
+        return getType(form) == PhysicsType.BODY;
     }
 
     /** Whether the form is simulated at all — by either modifier, or by being a soft form. */
     public static boolean isSimulated(Form form)
     {
-        return isBody(form) || FormRagdolls.isEnabled(form) || FormChains.isEnabled(form)
+        return getType(form) != PhysicsType.NONE
             || form instanceof ClothForm || form instanceof BalloonForm || form instanceof ChainForm;
     }
 
@@ -122,18 +203,7 @@ public final class PhysicsForms
      */
     public static boolean isSimulatedTree(Form form)
     {
-        boolean[] found = new boolean[1];
-
-        FormTreeWalk.walk(form, (child, path, anchor) ->
-        {
-            found[0] |= isSimulated(child);
-
-            /* No early exit worth arranging: this is asked once per actor when a scene is built,
-             * and a form tree is a handful of nodes. */
-            return !found[0];
-        });
-
-        return found[0];
+        return FormTreeWalk.any(form, PhysicsForms::isSimulated);
     }
 
     /**
@@ -157,7 +227,7 @@ public final class PhysicsForms
          * it used to build was the addon's largest single source of per-frame garbage. */
         ValueData body = physics.bbs_physics$getBody();
 
-        if (body != null && BodyIO.isPassive(body.get()))
+        if (isBody(form) && body != null && BodyIO.isPassive(body.get()))
         {
             return 1F;
         }

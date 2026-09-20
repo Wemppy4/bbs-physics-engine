@@ -240,14 +240,15 @@ public abstract class SoftBodyRig implements SceneRig
                 Vec3 position = vertex.getPosition();
                 Vec3 velocity = vertex.getVelocity();
 
-                float homeX = (x - position.getX()) / PhysicsWorld.TICK;
-                float homeY = (y - position.getY()) / PhysicsWorld.TICK;
-                float homeZ = (z - position.getZ()) / PhysicsWorld.TICK;
+                float homeX = (x - position.getX()) / physics.getDeltaTime();
+                float homeY = (y - position.getY()) / physics.getDeltaTime();
+                float homeZ = (z - position.getZ()) / physics.getDeltaTime();
                 float homeSpeed = (float) Math.sqrt(homeX * homeX + homeY * homeY + homeZ * homeZ);
 
-                if (homeSpeed > MAX_PULL_SPEED)
+                float maxSpeed = MAX_PULL_SPEED * PhysicsWorld.TICK / physics.getDeltaTime();
+                if (homeSpeed > maxSpeed)
                 {
-                    float scale = MAX_PULL_SPEED / homeSpeed;
+                    float scale = maxSpeed / homeSpeed;
 
                     homeX *= scale;
                     homeY *= scale;

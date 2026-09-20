@@ -15,6 +15,7 @@ import wemppy.bbs_physics.collision.FormCollision;
 import wemppy.bbs_physics.collision.FormCollisions;
 import wemppy.bbs_physics.forms.FormTreeWalk;
 import wemppy.bbs_physics.forms.PhysicsForms;
+import wemppy.bbs_physics.structure.StructureDestruction;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -98,7 +99,8 @@ public final class CollisionCollector
 
         FormTreeWalk.walk(root, path, (form, formPath, anchor) ->
         {
-            if (stopAtBodies && !(enterRoot && form == root) && PhysicsForms.isBody(form))
+            if (stopAtBodies && !(enterRoot && form == root)
+                && (PhysicsForms.isBody(form) || StructureDestruction.isEnabled(form)))
             {
                 return false;
             }
@@ -114,6 +116,8 @@ public final class CollisionCollector
     /** The markup of one form: its own shape, plus its bones when it is a model. */
     private static void collectForm(Form form, String path, MatrixCache matrices, List<Piece> pieces)
     {
+        if (StructureDestruction.isEnabled(form)) return;
+
         FormCollision collision = FormCollisions.get(form);
 
         if (collision.isEmpty())

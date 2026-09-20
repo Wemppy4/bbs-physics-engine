@@ -1,5 +1,14 @@
 package wemppy.bbs_physics.client;
 
+import mchorse.bbs_mod.api.client.events.RegisterFilmToolsEvent;
+import mchorse.bbs_mod.api.client.events.RegisterFormPanelsEvent;
+import mchorse.bbs_mod.api.client.events.RegisterReplayActionsEvent;
+import mchorse.bbs_mod.ui.forms.editors.forms.UIForm;
+import wemppy.bbs_physics.client.clips.PhysicsFilmTool;
+import wemppy.bbs_physics.client.collision.UICollisionFormPanel;
+import wemppy.bbs_physics.client.forms.UIPhysicsFormPanel;
+import wemppy.bbs_physics.client.scene.FilmBake;
+
 import mchorse.bbs_mod.api.BBSAddonMod;
 import mchorse.bbs_mod.api.Subscribe;
 import mchorse.bbs_mod.api.client.events.RegisterClientSettingsEvent;
@@ -11,6 +20,7 @@ import mchorse.bbs_mod.api.client.events.RegisterFormRenderersEvent;
 import mchorse.bbs_mod.api.client.events.RegisterFormSectionsEvent;
 import mchorse.bbs_mod.api.client.events.RegisterL10nEvent;
 import mchorse.bbs_mod.api.client.events.RegisterPreviewOverlaysEvent;
+import mchorse.bbs_mod.api.client.events.RegisterTrackStylesEvent;
 import mchorse.bbs_mod.resources.Link;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
 import wemppy.bbs_physics.BBSPhysics;
@@ -32,11 +42,15 @@ import wemppy.bbs_physics.client.forms.UIClothFormPanel;
 import wemppy.bbs_physics.client.forms.UISoftForm;
 import wemppy.bbs_physics.client.scene.SceneStatusOverlay;
 import wemppy.bbs_physics.cloth.ClothForm;
+import wemppy.bbs_physics.forms.BodyKnob;
+import wemppy.bbs_physics.forms.PhysicsForms;
+import wemppy.bbs_physics.ragdoll.RagdollKnob;
+import wemppy.bbs_physics.chain.ChainKnob;
 
 import java.util.Collections;
 
 /**
- * The client half of {@link wemppy.bbs_physics.BBSPhysicsAddon}, declared under the
+ * The client half of {@link BBSPhysicsAddon}, declared under the
  * {@code bbs-client-addon} entry point.
  *
  * <p>It is split off and kept in the client source set so that BBS's client-only event classes
@@ -44,6 +58,80 @@ import java.util.Collections;
  */
 public class BBSPhysicsClientAddon implements BBSAddonMod
 {
+    @Subscribe
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public void onRegisterFormPanels(RegisterFormPanelsEvent event)
+    {
+        event.register(editor ->
+        {
+            if (editor instanceof UISoftForm) return;
+            UIForm raw = editor;
+            raw.registerPanel(new UICollisionFormPanel(raw), PhysicsKeys.COLLISION_TITLE, Icons.SHAPES);
+            raw.registerPanel(new UIPhysicsFormPanel(raw), PhysicsKeys.PHYSICS_TITLE, Icons.PHYSICS);
+        });
+    }
+
+    @Subscribe
+    public void onRegisterReplayActions(RegisterReplayActionsEvent event)
+    {
+        event.register(FilmBake::button);
+    }
+
+    @Subscribe
+    public void onRegisterFilmTools(RegisterFilmToolsEvent event)
+    {
+        event.register(PhysicsFilmTool::new);
+    }
+
+    @Subscribe
+    public void onRegisterTrackStyles(RegisterTrackStylesEvent event)
+    {
+        event.register(PhysicsForms.AUTHORITY_KEY, Icons.PHYSICS, 0x62c980);
+        event.registerLabel(PhysicsForms.AUTHORITY_KEY, PhysicsKeys.AUTHORITY);
+
+        for (BodyKnob knob : BodyKnob.values())
+        {
+            event.register(knob.id, Icons.BLOCK, 0xe5a45b);
+            event.registerLabel(knob.id, switch (knob)
+            {
+                case MASS -> PhysicsKeys.MASS;
+                case FRICTION -> PhysicsKeys.FRICTION;
+                case RESTITUTION -> PhysicsKeys.RESTITUTION;
+                case LINEAR_DAMPING -> PhysicsKeys.BODY_DAMPING;
+                case ANGULAR_DAMPING -> PhysicsKeys.BODY_DAMPING;
+                case GRAVITY -> PhysicsKeys.BODY_GRAVITY;
+            });
+        }
+
+        for (RagdollKnob knob : RagdollKnob.values())
+        {
+            event.register(knob.id, Icons.POSE, 0xb28be0);
+            event.registerLabel(knob.id, switch (knob)
+            {
+                case MASS -> PhysicsKeys.RAGDOLL_MASS;
+                case DAMPING -> PhysicsKeys.RAGDOLL_DAMPING;
+                case FRICTION -> PhysicsKeys.RAGDOLL_FRICTION;
+                case GRAVITY -> PhysicsKeys.BODY_GRAVITY;
+                case MUSCLES -> PhysicsKeys.RAGDOLL_MUSCLES;
+                case MUSCLE_DAMPING -> PhysicsKeys.RAGDOLL_DAMPING;
+            });
+        }
+
+        for (ChainKnob knob : ChainKnob.values())
+        {
+            event.register(knob.id, Icons.CURVES, 0x58bec9);
+            event.registerLabel(knob.id, switch (knob)
+            {
+                case STIFFNESS -> PhysicsKeys.CHAIN_STIFFNESS_LABEL;
+                case DAMPING -> PhysicsKeys.CHAIN_DAMPING_LABEL;
+                case GRAVITY -> PhysicsKeys.BODY_GRAVITY;
+                case MASS -> PhysicsKeys.CHAIN_MASS;
+                case FALLOFF -> PhysicsKeys.CHAIN_FALLOFF_LABEL;
+                case BEND -> PhysicsKeys.CHAIN_BEND_LABEL;
+            });
+        }
+    }
+
     @Subscribe
     public void onRegisterL10n(RegisterL10nEvent event)
     {

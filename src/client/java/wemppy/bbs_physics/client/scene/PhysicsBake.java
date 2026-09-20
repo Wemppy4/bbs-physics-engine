@@ -85,6 +85,7 @@ public final class PhysicsBake
 
     private final Film film;
     private final Replay replay;
+    /** Null selects the whole actor; an empty string selects only its root form. */
     private final String formPath;
 
     /** The tick being worked out — of the film, and of the replay (which may loop). */
@@ -175,7 +176,7 @@ public final class PhysicsBake
      */
     public void body(Form form, String path, Vector3f position, Quaternionf rotation, float authority)
     {
-        if (!path.equals(this.formPath))
+        if (this.formPath != null && !path.equals(this.formPath))
         {
             return;
         }
@@ -218,7 +219,7 @@ public final class PhysicsBake
      */
     public void bones(ModelForm form, String path)
     {
-        if (path.equals(this.formPath))
+        if (this.formPath == null || path.equals(this.formPath))
         {
             this.models.put(form, path);
         }

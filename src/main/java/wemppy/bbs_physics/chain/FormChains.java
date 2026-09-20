@@ -3,6 +3,8 @@ package wemppy.bbs_physics.chain;
 import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.forms.forms.Form;
 import wemppy.bbs_physics.forms.ValueData;
+import wemppy.bbs_physics.forms.PhysicsForms;
+import wemppy.bbs_physics.forms.PhysicsType;
 import wemppy.bbs_physics.forms.IModelPhysicsForm;
 import wemppy.bbs_physics.forms.PhysicsKnobValue;
 import wemppy.bbs_physics.ragdoll.RagdollState;
@@ -15,7 +17,7 @@ import wemppy.bbs_physics.ragdoll.RagdollState;
 public final class FormChains
 {
     /** The key the modifier is stored under, prefixed so it cannot collide with a BBS key. */
-    public static final String KEY = "bbs_physics_chain";
+    public static final String KEY = "bbs_physics:chain";
 
     private FormChains()
     {}
@@ -45,7 +47,7 @@ public final class FormChains
 
             value.set(stripped.isEmpty() ? null : stripped);
 
-            return chain;
+            return chain.withEnabled(isEnabled(form));
         }
 
         for (ChainKnob knob : ChainKnob.values())
@@ -53,7 +55,7 @@ public final class FormChains
             chain = knob.into(chain, model.bbs_physics$getChainKnob(knob).get());
         }
 
-        return chain;
+        return chain.withEnabled(isEnabled(form));
     }
 
     public static void set(Form form, FormChain chain)
@@ -84,9 +86,7 @@ public final class FormChains
     /** Whether the modifier is switched on, without parsing the bones — the per-frame check. */
     public static boolean isEnabled(Form form)
     {
-        ValueData value = value(form);
-
-        return value != null && ChainIO.isEnabled(value.get());
+        return PhysicsForms.getType(form) == PhysicsType.CHAIN;
     }
 
     public static RagdollState getState(Form form)

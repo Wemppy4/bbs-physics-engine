@@ -6,7 +6,6 @@ import mchorse.bbs_mod.ui.framework.elements.buttons.UICirculate;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.utils.UI;
-import mchorse.bbs_mod.ui.utils.UIConstants;
 import wemppy.bbs_physics.cloth.ClothEdge;
 import wemppy.bbs_physics.cloth.ClothForm;
 import wemppy.bbs_physics.forms.PhysicsForms;
@@ -73,12 +72,16 @@ public class UIClothFormPanel extends UIFormPanel<ClothForm>
         this.friction.limit(0D, 1D).tooltip(PhysicsKeys.FRICTION);
 
 
-        this.skin.addTo(this.options);
-        this.options.add(UI.label(PhysicsKeys.CLOTH_SHEET).marginTop(UIConstants.SECTION_GAP));
-        this.options.add(UI.row(this.width, this.height), UI.row(this.segmentsX, this.segmentsY), this.edge, this.selfCollision);
-        this.options.add(UI.label(PhysicsKeys.CLOTH_FABRIC).marginTop(UIConstants.SECTION_GAP));
-        this.options.add(this.mass, this.stiffness, this.damping, this.friction);
-        this.options.add(UI.label(PhysicsKeys.AUTHORITY).marginTop(UIConstants.SECTION_GAP), this.authority);
+        var appearance = PhysicsFields.section(PhysicsKeys.SECTION_APPEARANCE, "cloth.appearance");
+        this.skin.addTo(appearance.fields);
+        this.options.add(appearance);
+        this.options.add(PhysicsFields.section(PhysicsKeys.CLOTH_SHEET, "cloth.sheet",
+            UI.row(this.width, this.height), UI.row(this.segmentsX, this.segmentsY), this.edge, this.selfCollision));
+        this.options.add(PhysicsFields.section(PhysicsKeys.CLOTH_FABRIC, "cloth.fabric",
+            this.mass, this.stiffness, this.damping, this.friction));
+        this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_ANIMATION, "cloth.animation",
+            UI.labelRow(PhysicsKeys.AUTHORITY, this.authority)));
+
     }
 
     @Override
