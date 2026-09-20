@@ -680,7 +680,7 @@ public class RagdollRig implements SceneRig
      * chasing a pose it will never reach. There is no way to tell these apart from the viewport, and
      * once the part is gone every number about it is infinity.</p>
      */
-    private void reportRunaway(BodyInterface bodies, Part part, int tick, float authority)
+    private void reportRunaway(BodyInterface bodies, Part part, int tick, float authority, float timeScale)
     {
         if (this.runaway)
         {
@@ -693,7 +693,7 @@ public class RagdollRig implements SceneRig
         float speed = length(velocity.getX(), velocity.getY(), velocity.getZ());
         float turn = length(spin.getX(), spin.getY(), spin.getZ());
 
-        if (speed < RUNAWAY_SPEED && turn < RUNAWAY_SPIN)
+        if (speed * timeScale < RUNAWAY_SPEED && turn * timeScale < RUNAWAY_SPIN)
         {
             return;
         }
@@ -732,6 +732,9 @@ public class RagdollRig implements SceneRig
     @Override
     public void update(RigUpdate update)
     {
+        this.drive.setDeltaTime(update.physics.getDeltaTime());
+        this.move.setDeltaTime(update.physics.getDeltaTime());
+
         PhysicsWorld physics = update.physics;
         FilmScene scene = update.scene;
         MatrixCache matrices = update.matrices;
@@ -1119,7 +1122,7 @@ public class RagdollRig implements SceneRig
                 continue;
             }
 
-            this.reportRunaway(bodies, part, tick, authority);
+            this.reportRunaway(bodies, part, tick, authority, physics.getDeltaTime() / PhysicsWorld.TICK);
 
             /* The recording remembers a tear as the bone's own authority: 0 from the tick it came
              * off, whatever the form's handle was doing — which is also how the drawn frame knows

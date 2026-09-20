@@ -1,17 +1,17 @@
 package wemppy.bbs_physics.client.chain;
 
+import wemppy.bbs_physics.client.forms.PhysicsUI;
 import mchorse.bbs_mod.cubic.data.model.Model;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
-import mchorse.bbs_mod.ui.framework.elements.utils.UIText;
 import mchorse.bbs_mod.ui.utils.UI;
-import mchorse.bbs_mod.utils.colors.Colors;
 import wemppy.bbs_physics.chain.FormChain;
 import wemppy.bbs_physics.chain.FormChains;
 import wemppy.bbs_physics.client.collision.ChainBones;
 import wemppy.bbs_physics.client.forms.PhysicsKeys;
+import wemppy.bbs_physics.client.forms.PhysicsFields;
 import wemppy.bbs_physics.client.forms.UIBoneSection;
 
 import java.util.LinkedHashSet;
@@ -20,30 +20,9 @@ import java.util.Set;
 import java.util.function.UnaryOperator;
 
 /**
- * The chain modifier's body: which bones hang, and what the strands are like.
- *
- * <p>Ticks in a bone list, deliberately the same gesture the ragdoll uses — an author who has ticked
- * "these bones fall" already knows how to tick "these bones hang". Unlike the ragdoll, an unmarked
- * bone can be ticked: a strand with no shape still hangs and swings, it simply meets nothing. Select
- * a run with Shift and one tick takes the whole run in, which is how a fringe of twenty hair bones
- * stops being twenty clicks.</p>
- *
- * <p>The knobs below describe the <em>modifier</em>, not a bone — one stiffness for all the strands
- * it owns — so unlike the ragdoll's they do not change with the selection. Hair that needs two
- * stiffnesses is two forms, the way it already is in BBS's own chain physics.</p>
- *
- * <p>🔴 <b>This modifier describes no shapes at all</b> — the Collision tab does. It briefly did the
- * opposite: a "thickness" knob here built a capsule per bone, which read as physics inventing
- * colliders on a model nobody had marked up (against Р6) and, worse, held the hair off the shoulders
- * it was meant to lie on, because the capsule was fatter than the strand it stood for.</p>
- *
- * <p><b>"Take the chains from the model" is an import, not a link.</b> BBS's own chain physics
- * already lists the strands of a model — from bone X down to bone Y — and that list is the obvious
- * starting point. It is copied in rather than followed live, because from the moment a bone is
- * ticked here the old solver is silenced on it ({@link ChainMute}): its own stiffness and gravity
- * would still be sitting in the model, doing nothing, and an author turning those knobs would be
- * turning knobs that no longer reach anything. Copied in, ownership is plain — the bones are ours,
- * the knobs are the ones on this panel.</p>
+ * Select bones in the list and enable them through the property below it.
+ * Stiffness and other physical parameters describe all enabled strands together.
+ * Collision shapes are configured separately in the Collision tab.
  */
 public class UIChainSection extends UIBoneSection
 {
@@ -57,9 +36,6 @@ public class UIChainSection extends UIBoneSection
     public UITrackpad falloff;
     public UITrackpad bend;
     public UIToggle selfCollision;
-
-    /** Says where a strand's shape comes from — see the class note on why it comes from there. */
-    private final UIText shapeHint;
 
     private FormChain chain = FormChain.EMPTY;
 
@@ -98,13 +74,12 @@ public class UIChainSection extends UIBoneSection
         });
         this.selfCollision.tooltip(PhysicsKeys.CHAIN_SELF_COLLISION_TOOLTIP);
 
-        this.shapeHint = new UIText(PhysicsKeys.CHAIN_SHAPE_HINT).color(Colors.LIGHTER_GRAY, true).padding(0, 2);
     }
 
     /* Editing */
 
     @Override
-    protected void setTicked(List<String> bones, boolean ticked)
+    protected void setParticipation(List<String> bones, boolean ticked)
     {
         this.editComposition((chain) ->
         {
@@ -120,7 +95,7 @@ public class UIChainSection extends UIBoneSection
     }
 
     @Override
-    protected boolean isTicked(String bone)
+    protected boolean isParticipating(String bone)
     {
         return this.chain.bones().contains(bone);
     }
@@ -183,16 +158,19 @@ public class UIChainSection extends UIBoneSection
     {
         this.chain = FormChains.get(form);
 
-        super.setForm(form, false);
+        super.setForm(form, true);
         this.updateLabels();
     }
 
     @Override
     protected void onBonePicked()
-    {}
+    {
+        this.syncEnabled();
+    }
 
     private void updateLabels()
     {
+        this.syncEnabled();
         this.syncKnobs();
         this.rebuild();
     }
@@ -232,14 +210,17 @@ public class UIChainSection extends UIBoneSection
     private void rebuild()
     {
         this.removeAll();
-        this.add(this.bonesSearch, UI.row(this.takeFromModel, this.clear));
+        this.add(PhysicsFields.boneSection("physics.chain.bones", this.bonesSearch, this.enabled, UI.row(this.takeFromModel, this.clear)));
 
         if (!this.chain.bones().isEmpty())
         {
-            this.add(this.stiffness, this.damping);
-            this.add(UI.row(this.falloff, this.bend));
-            this.add(UI.row(this.mass, this.gravity));
-            this.add(this.selfCollision, this.shapeHint);
+            this.add(PhysicsFields.section(PhysicsKeys.SECTION_PROPERTIES, "physics.chain.properties",
+                PhysicsUI.labelRow(PhysicsKeys.CHAIN_STIFFNESS_LABEL, this.stiffness),
+                PhysicsUI.labelRow(PhysicsKeys.CHAIN_DAMPING_LABEL, this.damping),
+                PhysicsUI.labelRow(PhysicsKeys.CHAIN_FALLOFF_LABEL, this.falloff),
+                PhysicsUI.labelRow(PhysicsKeys.CHAIN_BEND_LABEL, this.bend),
+                PhysicsUI.labelRow(PhysicsKeys.MASS, this.mass),
+                PhysicsUI.labelRow(PhysicsKeys.BODY_GRAVITY, this.gravity), this.selfCollision));
         }
 
         this.relayout();

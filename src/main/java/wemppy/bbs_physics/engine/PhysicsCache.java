@@ -127,6 +127,36 @@ public class PhysicsCache
         return tick >= 0 && tick < this.computed;
     }
 
+    /** An independent display-only copy of one committed frame, addressed as tick zero. */
+    public PhysicsCache copyFrame(int tick)
+    {
+        if (!this.has(tick)) return null;
+
+        PhysicsCache frame = new PhysicsCache();
+        frame.channels = this.channels;
+        frame.offsets = Arrays.copyOf(this.offsets, this.channels);
+        frame.widths = Arrays.copyOf(this.widths, this.channels);
+        frame.stride = this.stride;
+        frame.data = new float[this.stride];
+        for (int channel = 0; channel < this.channels; channel++)
+        {
+            int at = this.at(tick, channel);
+            if (at >= 0)
+            {
+                System.arraycopy(this.data, at, frame.data, frame.offsets[channel], frame.widths[channel]);
+            }
+            else
+            {
+                frame.data[frame.offsets[channel] + frame.widths[channel] - 1] = SILENT;
+            }
+        }
+        frame.capacity = 1;
+        frame.computed = 1;
+        frame.sealed = true;
+        frame.readOnly = true;
+        return frame;
+    }
+
     /** The last tick this recording can ever hold, given the memory ceiling. */
     public int getLimit()
     {

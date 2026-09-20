@@ -567,6 +567,9 @@ public class BoneChainRig implements SceneRig
     @Override
     public void update(RigUpdate update)
     {
+        this.drive.setDeltaTime(update.physics.getDeltaTime());
+        this.move.setDeltaTime(update.physics.getDeltaTime());
+
         PhysicsWorld physics = update.physics;
         FilmScene scene = update.scene;
         MatrixCache matrices = update.matrices;

@@ -21,6 +21,7 @@ import wemppy.bbs_physics.chain.FormChains;
 import wemppy.bbs_physics.client.collision.CollisionCollector;
 import wemppy.bbs_physics.client.ragdoll.RagdollWelds;
 import wemppy.bbs_physics.cloth.ClothForm;
+import wemppy.bbs_physics.collision.FormCollisions;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsWorld;
 import wemppy.bbs_physics.forms.FormTreeWalk;
@@ -152,7 +153,9 @@ final class SceneBuilder
     {
         Form root = entity.getForm();
 
-        if (root == null)
+        /* Ordinary actors remain in SceneCast for animation and anchors, but do not need
+         * collision matrices, model-load watches or a Jolt collision group of their own. */
+        if (!FormTreeWalk.any(root, (form) -> PhysicsForms.isSimulated(form) || FormCollisions.has(form)))
         {
             return null;
         }

@@ -150,6 +150,8 @@ public class BoneRig implements SceneRig
     @Override
     public void update(RigUpdate update)
     {
+        this.move.setDeltaTime(update.physics.getDeltaTime());
+
         MatrixCache matrices = update.matrices;
 
         if (this.parts.isEmpty() || matrices == null)

@@ -40,6 +40,14 @@ import org.joml.Vector3f;
  */
 public final class SwingWindow
 {
+    private float deltaTime = PhysicsWorld.TICK;
+
+    public void setDeltaTime(float deltaTime)
+    {
+        if (!Float.isFinite(deltaTime) || deltaTime <= 0F) throw new IllegalArgumentException("Invalid physics step");
+        this.deltaTime = deltaTime;
+    }
+
     /**
      * How many ticks back the swing is looked for — a fifth of a second. Long enough to reach past
      * the tail of an eased keyframe, which is where the speed went; short enough that it is still
@@ -118,9 +126,9 @@ public final class SwingWindow
             int to = (this.written - 1 - i) % this.positions.length;
             int from = (this.written - 2 - i) % this.positions.length;
 
-            float x = (this.positions[to].x - this.positions[from].x) / PhysicsWorld.TICK;
-            float y = (this.positions[to].y - this.positions[from].y) / PhysicsWorld.TICK;
-            float z = (this.positions[to].z - this.positions[from].z) / PhysicsWorld.TICK;
+            float x = (this.positions[to].x - this.positions[from].x) / this.deltaTime;
+            float y = (this.positions[to].y - this.positions[from].y) / this.deltaTime;
+            float z = (this.positions[to].z - this.positions[from].z) / this.deltaTime;
             float speed = (float) Math.sqrt(x * x + y * y + z * z);
 
             if (speed > fastest)
@@ -150,7 +158,7 @@ public final class SwingWindow
                 continue;
             }
 
-            float spin = 2F * (float) Math.acos(w) / PhysicsWorld.TICK;
+            float spin = 2F * (float) Math.acos(w) / this.deltaTime;
 
             if (spin > quickest)
             {
@@ -169,14 +177,16 @@ public final class SwingWindow
 
         /* Capped exactly as the pull is: a cut ought to have thrown the window away already, but a
          * release is not the place to find out that one slipped through. */
-        if (fastest > BodyDrive.MAX_PULL_SPEED)
+        float maxSpeed = BodyDrive.MAX_PULL_SPEED * PhysicsWorld.TICK / this.deltaTime;
+        float maxSpin = BodyDrive.MAX_PULL_SPIN * PhysicsWorld.TICK / this.deltaTime;
+        if (fastest > maxSpeed)
         {
-            this.linear.mul(BodyDrive.MAX_PULL_SPEED / fastest);
+            this.linear.mul(maxSpeed / fastest);
         }
 
-        if (quickest > BodyDrive.MAX_PULL_SPIN)
+        if (quickest > maxSpin)
         {
-            this.angular.mul(BodyDrive.MAX_PULL_SPIN / quickest);
+            this.angular.mul(maxSpin / quickest);
         }
 
         this.scratchLinear.set(this.linear.x, this.linear.y, this.linear.z);
