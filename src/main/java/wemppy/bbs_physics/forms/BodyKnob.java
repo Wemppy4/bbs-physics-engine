@@ -7,12 +7,12 @@ package wemppy.bbs_physics.forms;
  */
 public enum BodyKnob
 {
-    MASS("bbs_physics_body_mass", FormBody.DEFAULT_MASS, 0.01F, 10000F),
-    FRICTION("bbs_physics_body_friction", FormBody.DEFAULT_FRICTION, 0F, 1F),
-    RESTITUTION("bbs_physics_body_restitution", FormBody.DEFAULT_RESTITUTION, 0F, 1F),
-    LINEAR_DAMPING("bbs_physics_body_linear_damping", FormBody.DEFAULT_LINEAR_DAMPING, 0F, 1F),
-    ANGULAR_DAMPING("bbs_physics_body_angular_damping", FormBody.DEFAULT_ANGULAR_DAMPING, 0F, 1F),
-    GRAVITY("bbs_physics_body_gravity", FormBody.DEFAULT_GRAVITY, -2F, 2F);
+    MASS("bbs_physics:body_mass", FormBody.DEFAULT_MASS, 0.01F, 10000F),
+    FRICTION("bbs_physics:body_friction", FormBody.DEFAULT_FRICTION, 0F, 1F),
+    RESTITUTION("bbs_physics:body_restitution", FormBody.DEFAULT_RESTITUTION, 0F, 1F),
+    LINEAR_DAMPING("bbs_physics:body_linear_damping", FormBody.DEFAULT_LINEAR_DAMPING, 0F, 1F),
+    ANGULAR_DAMPING("bbs_physics:body_angular_damping", FormBody.DEFAULT_ANGULAR_DAMPING, 0F, 1F),
+    GRAVITY("bbs_physics:body_gravity", FormBody.DEFAULT_GRAVITY, -2F, 2F);
 
     public final String id;
     public final float fallback;

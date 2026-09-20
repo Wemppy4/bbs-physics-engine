@@ -36,6 +36,17 @@ public final class PhysicsCacheCheck
             require(cache.read(tick, parent, position, rotation) && position.x == tick, "committed data");
         }
 
+        PhysicsCache preview = cache.copyFrame(100);
+        require(preview != null && preview.has(0) && !preview.has(1), "preview stores exactly one frame");
+        require(preview.read(0, parent, position, rotation) && position.x == 100, "preview retains requested pose");
+        require(preview.readAuthority(0, parent) == 0.25F, "preview retains authority");
+        require(!preview.read(0, child, position, rotation), "preview preserves silent channels");
+        float[] previewVertices = new float[4];
+        require(preview.readFloats(0, cloth, previewVertices) && previewVertices[3] == 0.5F, "preview retains cloth");
+        require(cache.copyFrame(600) == null, "uncomputed frames cannot become previews");
+        preview.write(0, parent, new Vector3f(-100), rotation, 1F);
+        require(preview.read(0, parent, position, rotation) && position.x == 100, "preview cannot be rewritten");
+
         cache.clear();
         PhysicsCache pending = cache.beginFrame(0);
         require(!pending.read(0, parent, position, rotation), "reset must not expose old recording");
@@ -48,6 +59,7 @@ public final class PhysicsCacheCheck
         cache.commit(0);
         require(!cache.read(0, parent, position, rotation), "unwritten channel stays silent after commit");
         require(cache.read(0, child, position, rotation) && position.x == 12, "child survives reset");
+        require(preview.read(0, parent, position, rotation) && position.x == 100, "preview survives source recomputation");
         System.out.println("PhysicsCacheCheck: passed (600 frames, staging, reset, wide channels)");
     }
 

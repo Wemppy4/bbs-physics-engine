@@ -4,6 +4,7 @@ import mchorse.bbs_mod.forms.forms.BodyPart;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.utils.StringUtils;
+import java.util.function.Predicate;
 
 /**
  * Walking a form and everything nested inside it, once, in the one order that matters.
@@ -33,6 +34,30 @@ public final class FormTreeWalk
 {
     private FormTreeWalk()
     {}
+
+    /** Presence checks need neither path strings nor a visit to siblings after a match. */
+    public static boolean any(Form form, Predicate<Form> predicate)
+    {
+        if (form == null)
+        {
+            return false;
+        }
+
+        if (predicate.test(form))
+        {
+            return true;
+        }
+
+        for (BodyPart part : form.parts.getAllTyped())
+        {
+            if (any(part.getForm(), predicate))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /** What a walk tells its caller about each form it reaches. */
     public interface Visitor

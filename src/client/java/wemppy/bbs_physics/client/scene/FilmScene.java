@@ -123,6 +123,8 @@ public class FilmScene implements AutoCloseable
      * {@link FilmScenes#onFilmEdited}) and answered on the next tick by starting over.
      */
     private boolean stale;
+    private PhysicsCache impulsePreview;
+    private int impulsePreviewTick = -1;
 
     /** When the last edit arrived — the background catch-up keeps clear for a moment after one. */
     private long editedAt;
@@ -135,6 +137,7 @@ public class FilmScene implements AutoCloseable
 
     /** The scene-wide knobs this recording was made under — see {@link #applyWorldSettings()}. */
     private float gravity = PhysicsWorld.EARTH_GRAVITY;
+    private float speed = 1F;
     private int collisionSteps = PhysicsWorld.COLLISION_STEPS;
 
     /** The tick the film last asked for, against which the simulation's own tick is reported. */
@@ -469,7 +472,7 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
-     * Picks up the scene-wide knobs — gravity and collision steps — and throws the recording away
+     * Picks up the scene-wide knobs — gravity, speed and collision steps — and throws the recording away
      * when either has moved.
      *
      * <p>They are part of the simulation's arithmetic, not a display option: half gravity is a
@@ -482,15 +485,19 @@ public class FilmScene implements AutoCloseable
         float gravity = BBSPhysicsSettings.gravity == null ? PhysicsWorld.EARTH_GRAVITY : BBSPhysicsSettings.gravity.get();
         int steps = BBSPhysicsSettings.collisionSteps == null ? PhysicsWorld.COLLISION_STEPS : BBSPhysicsSettings.collisionSteps.get();
 
-        if (gravity == this.gravity && steps == this.collisionSteps)
+        float speed = BBSPhysicsSettings.speed == null ? 1F : BBSPhysicsSettings.speed.get();
+
+        if (gravity == this.gravity && steps == this.collisionSteps && speed == this.speed)
         {
             return;
         }
 
         this.gravity = gravity;
+        this.speed = speed;
         this.collisionSteps = steps;
 
         this.world.setGravity(gravity);
+        this.world.setSpeed(speed);
         this.world.setCollisionSteps(steps);
 
         this.invalidate();
@@ -668,6 +675,21 @@ public class FilmScene implements AutoCloseable
     /** Restores the displayed frame pair after the simulation borrowed the runtime slots. */
     private void distribute(int tick)
     {
+        if (this.impulsePreview != null)
+        {
+            if (tick == this.impulsePreviewTick && !this.cache.has(tick) && !this.full && this.lostAt < 0)
+            {
+                /* Reapply after computation, which borrows the same render slots. This frame is
+                 * only a visual placeholder; it never enters simulation or baking caches. */
+                for (SceneBody body : this.bodies) body.readCache(this.impulsePreview, 0, true);
+                for (SceneActor actor : this.actors) actor.readCache(this.impulsePreview, 0, true);
+                this.drawnTick = tick;
+                this.teleport = true;
+                return;
+            }
+            this.impulsePreview = null;
+        }
+
         /* A jump is anything but the one step forward that playback makes: across one there is no
          * meaningful previous tick, and interpolating out of it would draw bodies sliding the whole
          * way. Asking for the same tick again — a paused editor — is not a jump and needs nothing
@@ -728,6 +750,21 @@ public class FilmScene implements AutoCloseable
      */
     public void invalidate()
     {
+        this.invalidate(false);
+    }
+
+    /** Keep the last displayed result only for impulse edits at the unchanged cursor. */
+    public void invalidate(boolean impulseEdit)
+    {
+        if (!impulseEdit)
+        {
+            this.impulsePreview = null;
+        }
+        else if (!this.stale && this.drawnTick == this.filmTick && this.cache.has(this.filmTick))
+        {
+            this.impulsePreview = this.cache.copyFrame(this.filmTick);
+            this.impulsePreviewTick = this.filmTick;
+        }
         this.stale = true;
         this.editedAt = System.nanoTime();
     }
@@ -744,7 +781,7 @@ public class FilmScene implements AutoCloseable
      * the bake out has stood every rig's state on every tick in turn.</p>
      *
      * @param replay   the replay whose keyframes receive the bake
-     * @param formPath where the form sits in the replay's form tree, by the walk's convention
+     * @param formPath where the form sits in the replay's form tree, or null for the whole actor
      * @return what was written, or null when this scene has no actor playing that replay
      */
     public PhysicsBake.Result bake(Replay replay, String formPath)
@@ -791,9 +828,9 @@ public class FilmScene implements AutoCloseable
 
                 bake.at(tick);
 
-                if (formPath.isEmpty()) bake.anchorFrame(root, new Matrix4f());
+                if (formPath == null || formPath.isEmpty()) bake.anchorFrame(root, new Matrix4f());
 
-                if (formPath.isEmpty() && SceneActor.releaseAnchor(root.anchor.get()) != root.anchor.get())
+                if ((formPath == null || formPath.isEmpty()) && SceneActor.releaseAnchor(root.anchor.get()) != root.anchor.get())
                 {
                     for (SceneActor other : this.actors) other.readCache(this.cache, tick, true);
                     Matrix4f effective = this.actorWorld(member.entity);
@@ -825,6 +862,12 @@ public class FilmScene implements AutoCloseable
         }
 
         return bake.write();
+    }
+
+    /** Bakes all supported physics in the actor's form tree in a single transaction. */
+    public PhysicsBake.Result bake(Replay replay)
+    {
+        return this.bake(replay, null);
     }
 
     /**

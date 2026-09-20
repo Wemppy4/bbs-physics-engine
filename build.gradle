@@ -97,8 +97,9 @@ dependencies {
 	include "com.github.stephengold:jolt-jni-Windows64:${project.jolt_version}"
 
 	joltPlatforms.each { platform ->
-		runtimeOnly "com.github.stephengold:jolt-jni-${platform}:${project.jolt_version}:ReleaseSp"
-		include "com.github.stephengold:jolt-jni-${platform}:${project.jolt_version}:ReleaseSp"
+		def nativeVersion = platform == 'Linux_ARM64' ? project.jolt_linux_arm64_version : project.jolt_version
+		runtimeOnly "com.github.stephengold:jolt-jni-${platform}:${nativeVersion}:ReleaseSp"
+		include "com.github.stephengold:jolt-jni-${platform}:${nativeVersion}:ReleaseSp"
 	}
 }
 
@@ -127,8 +128,8 @@ java {
 
 sourceSets {
 	physicsChecks {
-		compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
-		runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+		compileClasspath += sourceSets.main.output + sourceSets.client.output + sourceSets.client.compileClasspath
+		runtimeClasspath += sourceSets.main.output + sourceSets.client.output + sourceSets.client.runtimeClasspath
 	}
 }
 
@@ -144,8 +145,39 @@ tasks.register('physicsPoseCheck', JavaExec) {
 	mainClass = 'wemppy.bbs_physics.engine.PoseFrameCheck'
 }
 
+tasks.register('physicsSettingsCheck', JavaExec) {
+    dependsOn physicsChecksClasses
+    classpath = sourceSets.physicsChecks.runtimeClasspath
+    mainClass = 'wemppy.bbs_physics.engine.PhysicsSettingsCheck'
+}
+
 tasks.named('check') {
-	dependsOn physicsCacheCheck, physicsPoseCheck
+	dependsOn 'physicsSpeedCheck'
+	dependsOn physicsCacheCheck, physicsPoseCheck, physicsSettingsCheck, physicsSceneCheck, physicsDestructionCheck
+}
+
+tasks.register('physicsSpeedCheck', JavaExec) {
+    dependsOn physicsChecksClasses
+    classpath = sourceSets.physicsChecks.runtimeClasspath
+    mainClass = 'wemppy.bbs_physics.client.scene.PhysicsSpeedCheck'
+    workingDir layout.buildDirectory.dir('physicsSpeedCheck')
+    doFirst { workingDir.mkdirs() }
+}
+
+tasks.register('physicsDestructionCheck', JavaExec) {
+    dependsOn physicsChecksClasses
+    classpath = sourceSets.physicsChecks.runtimeClasspath
+    mainClass = 'wemppy.bbs_physics.client.scene.StructureDestructionCheck'
+    workingDir layout.buildDirectory.dir('physicsDestructionCheck')
+    doFirst { workingDir.mkdirs() }
+}
+
+tasks.register('physicsSceneCheck', JavaExec) {
+	dependsOn physicsChecksClasses
+	classpath = sourceSets.physicsChecks.runtimeClasspath
+	mainClass = 'wemppy.bbs_physics.client.scene.PhysicsSceneCheck'
+	workingDir layout.buildDirectory.dir('physicsSceneCheck')
+	doFirst { workingDir.mkdirs() }
 }
 
 publishing {

@@ -15,6 +15,8 @@ import mchorse.bbs_mod.ui.utils.presets.UIDataContextMenu;
 import mchorse.bbs_mod.utils.colors.Colors;
 import wemppy.bbs_physics.client.collision.PhysicsPresets;
 import wemppy.bbs_physics.client.forms.PhysicsKeys;
+import wemppy.bbs_physics.client.forms.PhysicsFields;
+import mchorse.bbs_mod.ui.framework.elements.UISection;
 import wemppy.bbs_physics.client.forms.UIBoneSection;
 import wemppy.bbs_physics.ragdoll.FormRagdoll;
 import wemppy.bbs_physics.ragdoll.FormRagdolls;
@@ -218,7 +220,7 @@ public class UIRagdollSection extends UIBoneSection
      * the markup cannot keep.
      */
     @Override
-    protected void setTicked(List<String> bones, boolean ticked)
+    protected void setParticipation(List<String> bones, boolean ticked)
     {
         FormRagdoll ragdoll = this.ragdoll;
 
@@ -232,13 +234,13 @@ public class UIRagdollSection extends UIBoneSection
     }
 
     @Override
-    protected boolean canTick(String bone)
+    protected boolean canParticipate(String bone)
     {
         return this.form != null && this.model != null && this.isMarked(bone);
     }
 
     @Override
-    protected boolean isTicked(String bone)
+    protected boolean isParticipating(String bone)
     {
         return this.ragdoll.isPart(bone);
     }
@@ -362,6 +364,7 @@ public class UIRagdollSection extends UIBoneSection
             return;
         }
 
+        this.syncEnabled();
         RagdollJoint joint = this.joint();
 
         this.syncing = true;
@@ -402,7 +405,7 @@ public class UIRagdollSection extends UIBoneSection
         boolean editable = this.model != null && !this.bone.isEmpty() && this.isMarked(this.bone) && this.ragdoll.isPart(this.bone);
 
         this.removeAll();
-        this.add(this.bonesSearch);
+        this.add(PhysicsFields.boneSection("physics.ragdoll.bones", this.bonesSearch, this.enabled));
 
         if (!editable)
         {
@@ -411,23 +414,24 @@ public class UIRagdollSection extends UIBoneSection
             return;
         }
 
-        this.add(this.boneTitle, this.kindRow);
+        UISection settings = PhysicsFields.section(PhysicsKeys.SECTION_JOINT, "physics.ragdoll.joint", this.boneTitle, this.kindRow);
+        this.add(settings);
 
         if (joint.kind() == RagdollJointKind.CONE)
         {
-            this.add(this.swingRow, this.twistRow);
+            settings.fields.add(this.swingRow, this.twistRow);
         }
         else if (joint.kind() == RagdollJointKind.HINGE)
         {
-            this.add(this.hingeAxisRow, this.hingeRow);
+            settings.fields.add(this.hingeAxisRow, this.hingeRow);
         }
 
         if (joint.kind() != RagdollJointKind.FREE)
         {
-            this.add(this.attachRow);
+            settings.fields.add(this.attachRow);
         }
 
-        this.add(this.resetBone);
+        settings.fields.add(this.resetBone);
         this.relayout();
     }
 
