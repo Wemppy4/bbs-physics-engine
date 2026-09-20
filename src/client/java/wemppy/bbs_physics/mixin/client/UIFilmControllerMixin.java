@@ -16,6 +16,10 @@ import wemppy.bbs_physics.client.scene.FilmScenes;
 import wemppy.bbs_physics.client.scene.SceneStatus;
 import wemppy.bbs_physics.client.scene.SceneStatusHUD;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
+import wemppy.bbs_physics.client.clips.ImpulseRadiusHandle;
+import mchorse.bbs_mod.ui.film.UIFilmPanel;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -36,10 +40,46 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(UIFilmController.class)
 public class UIFilmControllerMixin
 {
+    @Unique private ImpulseRadiusHandle bbs_physics$radius;
+
+    @Inject(method = "<init>", at = @At("TAIL"))
+    private void bbs_physics$attachRadius(UIFilmPanel panel, CallbackInfo info)
+    {
+        UIFilmController self = (UIFilmController) (Object) this;
+        this.bbs_physics$radius = new ImpulseRadiusHandle(self);
+        self.add(this.bbs_physics$radius);
+    }
+
+    @Inject(method = "subMouseClicked", at = @At("HEAD"), cancellable = true)
+    private void bbs_physics$radiusClick(UIContext context, CallbackInfoReturnable<Boolean> info)
+    {
+        if (this.bbs_physics$radius.click(context)) info.setReturnValue(true);
+    }
+
+    @Inject(method = "subMouseReleased", at = @At("HEAD"), cancellable = true)
+    private void bbs_physics$radiusRelease(UIContext context, CallbackInfoReturnable<Boolean> info)
+    {
+        if (this.bbs_physics$radius.release(context)) info.setReturnValue(true);
+    }
+
+    @Inject(method = "subKeyPressed", at = @At("HEAD"), cancellable = true)
+    private void bbs_physics$radiusKey(UIContext context, CallbackInfoReturnable<Boolean> info)
+    {
+        if (this.bbs_physics$radius.key(context)) info.setReturnValue(true);
+    }
+
+    @Inject(method = "renderFrame", at = @At("TAIL"))
+    private void bbs_physics$radiusRender(WorldRenderContext context, CallbackInfo info)
+    {
+        this.bbs_physics$radius.render(context);
+    }
+
     @Inject(method = "renderHUD", at = @At("TAIL"))
     private void bbs_physics$onRenderHUD(UIContext context, Area area, CallbackInfo info)
     {
         UIFilmController self = (UIFilmController) (Object) this;
+
+        this.bbs_physics$radius.update(context);
 
         /* The impulse gizmo is never mounted, so nothing else would advance its drag. */
         if (ImpulseGizmo.isDragging())

@@ -57,7 +57,7 @@ public final class SceneClips
 
                 if (clip instanceof ImpulseActionClip impulse)
                 {
-                    this.impulse(impulse);
+                    this.impulse(member, impulse);
                 }
                 else if (clip instanceof TearActionClip tear)
                 {
@@ -97,10 +97,9 @@ public final class SceneClips
 
     /**
      * One firing of an impulse clip: the push is worked out once and offered to everything simulated
-     * in the scene — every actor's bodies, not only the clip's own. An explosion has no respect for
-     * whose timeline it was authored on.
+     * in the scene, or only to the clip's own actor when restricted to its recording.
      */
-    private void impulse(ImpulseActionClip clip)
+    private void impulse(SceneCast.Member member, ImpulseActionClip clip)
     {
         Point point = clip.point.get();
         Point direction = clip.direction.get();
@@ -120,6 +119,11 @@ public final class SceneClips
 
         for (SceneActor actor : this.scene.getActors())
         {
+            if (clip.onlyThisReplay.get() && actor.getEntity() != member.entity)
+            {
+                continue;
+            }
+
             for (SceneRig rig : actor.getRigs())
             {
                 rig.impulse(this.scene.getWorld(), push);

@@ -28,7 +28,6 @@ import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UISearchList;
 import mchorse.bbs_mod.ui.framework.elements.input.list.UIStringList;
 import mchorse.bbs_mod.ui.framework.elements.utils.UILabel;
-import mchorse.bbs_mod.ui.framework.elements.utils.UIText;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
@@ -43,6 +42,7 @@ import wemppy.bbs_physics.client.forms.PhysicsKeys;
 import wemppy.bbs_physics.client.forms.PhysicsBoneList;
 import wemppy.bbs_physics.client.forms.PhysicsModels;
 import wemppy.bbs_physics.client.forms.PickedBone;
+import wemppy.bbs_physics.client.forms.PhysicsFields;
 import wemppy.bbs_physics.client.forms.UIPhysicsBoneList;
 import wemppy.bbs_physics.collision.CollisionIO;
 import wemppy.bbs_physics.collision.CollisionKind;
@@ -141,12 +141,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
     public UIButton fitBounds;
     public UIButton clearAll;
 
-    /** Marked-up = solid, no modifier needed: the answer to "where is the obstacle modifier". */
-    private final UIText solid;
-
-    /** Which sections were left folded, for as long as the game runs. */
     private static final java.util.Map<String, Boolean> FOLDS = new java.util.HashMap<>();
-
     private final UISection primitives;
 
     private FormCollision collision = FormCollision.EMPTY;
@@ -290,7 +285,6 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
         this.fitBounds = new UIButton(PhysicsKeys.COLLISION_FIT, (b) -> this.fitBounds());
         this.fitBounds.tooltip(PhysicsKeys.COLLISION_FIT_TOOLTIP);
         this.clearAll = new UIButton(PhysicsKeys.COLLISION_CLEAR, (b) -> this.clearAll());
-        this.solid = new UIText(PhysicsKeys.COLLISION_SOLID).color(Colors.LIGHTER_GRAY, true).padding(0, 2);
 
         /* Folded, and below the automatic pass: automation is the answer for the common case, hand
          * placement is the correction. One level of folding and no deeper — a panel with sections
@@ -746,7 +740,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
         if (model)
         {
-            this.options.add(this.bonesSearch, this.slotTitle);
+            this.options.add(PhysicsFields.boneSection("collision.bones", this.bonesSearch, this.slotTitle));
         }
 
         this.options.add(this.modeRow);
@@ -763,14 +757,13 @@ public class UICollisionFormPanel extends UIFormPanel<Form>
 
         if (model)
         {
-            this.options.add(this.thresholdRow, this.autoMark);
+            this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_SETUP, "collision.setup.model", this.thresholdRow, this.autoMark, this.clearAll, this.preview));
         }
         else
         {
-            this.options.add(this.fitBounds);
+            this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_SETUP, "collision.setup.form", this.fitBounds, this.clearAll, this.preview));
         }
 
-        this.options.add(this.clearAll, this.preview, this.solid);
         this.options.resize();
     }
 

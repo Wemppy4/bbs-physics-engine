@@ -161,10 +161,11 @@ public class ClothRig extends SoftBodyRig
         /* Contact happens at the vertices, and a vertex is a point: give it a little thickness so
          * the sheet rests on surfaces instead of z-fighting them, scaled to the mesh so a fine sheet
          * does not look inflated. */
-        shared.setVertexRadius(Math.min(form.width.get() / (columns - 1), form.height.get() / (rows - 1)) / 4F);
+        float vertexRadius = Math.min(form.width.get() / (columns - 1), form.height.get() / (rows - 1)) / 4F;
         shared.optimize();
 
         SoftBodyCreationSettings settings = new SoftBodyCreationSettings(shared, new RVec3(0D, 0D, 0D), Quat.sIdentity(), PhysicsLayers.CLOTH);
+        settings.setVertexRadius(vertexRadius);
 
         /* The body stays at the origin; only vertices move. That makes vertex-local and scene-space
          * the same thing, which the drive and the recording both lean on. */

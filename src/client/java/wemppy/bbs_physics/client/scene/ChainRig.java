@@ -375,7 +375,7 @@ public class ChainRig implements SceneRig
          * is needed — where the tip is held is wherever the pin is driven, and the pin is ours. */
         PointConstraintSettings pinJointSettings = new PointConstraintSettings();
 
-        pinJointSettings.setSpace(EConstraintSpace.LocalToBodyCOM);
+        pinJointSettings.setSpace(EConstraintSpace.LocalToBodyCom);
         pinJointSettings.setPoint1(new RVec3(0D, -segmentLength / 2D, 0D));
         pinJointSettings.setPoint2(new RVec3(0D, 0D, 0D));
 
@@ -441,7 +441,7 @@ public class ChainRig implements SceneRig
              * crate by its middle" is the deal — named in the UI hint rather than discovered. */
             PointConstraintSettings settings = new PointConstraintSettings();
 
-            settings.setSpace(EConstraintSpace.LocalToBodyCOM);
+            settings.setSpace(EConstraintSpace.LocalToBodyCom);
             settings.setPoint1(new RVec3(0D, -this.segmentLength / 2D, 0D));
             settings.setPoint2(new RVec3(0D, 0D, 0D));
 
@@ -477,6 +477,9 @@ public class ChainRig implements SceneRig
     @Override
     public void update(RigUpdate update)
     {
+        this.drive.setDeltaTime(update.physics.getDeltaTime());
+        this.move.setDeltaTime(update.physics.getDeltaTime());
+
         PhysicsWorld physics = update.physics;
         FilmScene scene = update.scene;
         boolean reset = update.reset;

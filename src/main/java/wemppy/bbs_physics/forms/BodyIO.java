@@ -66,7 +66,7 @@ public final class BodyIO
     {
         MapType map = new MapType();
 
-        if (body == null || body.isEmpty())
+        if (body == null)
         {
             return map;
         }

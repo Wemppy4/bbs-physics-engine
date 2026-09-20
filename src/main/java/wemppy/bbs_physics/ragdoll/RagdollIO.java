@@ -95,7 +95,7 @@ public final class RagdollIO
     {
         MapType map = new MapType();
 
-        if (ragdoll == null || ragdoll.isEmpty())
+        if (ragdoll == null)
         {
             return map;
         }

@@ -139,10 +139,10 @@ public class BalloonRig extends SoftBodyRig
         float around = 2F * (float) Math.PI * form.radius.get() / segments;
         float down = (float) Math.PI * form.radius.get() / (rings + 1);
 
-        shared.setVertexRadius(Math.min(around, down) / 4F);
         shared.optimize();
 
         SoftBodyCreationSettings settings = new SoftBodyCreationSettings(shared, new RVec3(0D, 0D, 0D), Quat.sIdentity(), PhysicsLayers.CLOTH);
+        settings.setVertexRadius(Math.min(around, down) / 4F);
 
         settings.setUpdatePosition(false);
         settings.setMakeRotationIdentity(true);

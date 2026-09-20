@@ -16,53 +16,33 @@ import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.client.scene.FilmScene;
 import wemppy.bbs_physics.client.scene.FilmScenes;
 import mchorse.bbs_mod.ui.forms.editors.panels.UIFormPanel;
-import mchorse.bbs_mod.ui.framework.UIContext;
 import mchorse.bbs_mod.ui.framework.elements.UIElement;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UICirculate;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIIcon;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
-import mchorse.bbs_mod.ui.framework.elements.utils.UIText;
 import mchorse.bbs_mod.ui.utils.UI;
 import mchorse.bbs_mod.ui.utils.UIConstants;
 import mchorse.bbs_mod.ui.utils.icons.Icons;
-import mchorse.bbs_mod.utils.colors.Colors;
-import wemppy.bbs_physics.chain.FormChain;
 import wemppy.bbs_physics.chain.FormChains;
 import wemppy.bbs_physics.client.chain.UIChainSection;
 import wemppy.bbs_physics.client.ragdoll.UIRagdollSection;
-import wemppy.bbs_physics.collision.FormCollisions;
 import wemppy.bbs_physics.forms.FormBody;
 import wemppy.bbs_physics.forms.PhysicsForms;
+import wemppy.bbs_physics.forms.PhysicsType;
 import wemppy.bbs_physics.ragdoll.FormRagdoll;
 import wemppy.bbs_physics.ragdoll.FormRagdolls;
 
 import java.util.function.UnaryOperator;
 
-/**
- * The physics tab: Blender's physics tab, in BBS.
- *
- * <p>A form has no physics until a modifier is added, and a modifier is a panel with a cross — the
- * arrangement Blender's Force Field / Collision / Cloth / Rigid Body row has. What the tab does
- * <em>not</em> do any more is describe shape: that moved back out to the collision tab, which is a
- * job done once per model and forgotten, while this one is where an author returns every shot.</p>
- *
- * <p><b>A modifier does not touch the markup at all</b> (Р11). Adding one used to run the automatic
- * pass and removing the last one used to wipe the result, which made shape a thing the physics tab
- * quietly owned — and an author who had marked a model up by hand in the other tab watched it
- * vanish under a click here. Collision is now set up on its own, once, and physics only reads it.
- * The cost of that is a form that can carry a modifier and no shape, which is exactly the state the
- * notice at the top of the tab is for.</p>
- *
- * <p>One handle drives both modifiers (§4), so it sits inside whichever modifier is present rather
- * than being duplicated into each — a form is a body or a ragdoll, never both.</p>
- */
+/** Selects one physics type and edits its settings without changing collision markup. */
 public class UIPhysicsFormPanel extends UIFormPanel<Form>
 {
-    private final UIButton addModifier;
+    private final UIButton physicsType;
+    private final UIElement physicsTypeRow;
 
-    private final UIModifierSection bodySection;
+
     private final UICirculate type;
     private final UIElement typeRow;
     private final UITrackpad mass;
@@ -96,25 +76,17 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
     private final UIElement musclesRow;
     public UIToggle ragdollSelfCollide;
 
-    private final UIModifierSection ragdollSection;
     private final UIRagdollSection ragdollBones;
 
-    private final UIModifierSection chainSection;
     private final UIChainSection chainBones;
     private final UITrackpad chainAuthority;
     private final UIElement chainAuthorityRow;
 
-    /** One per modifier, because the same element cannot hang under two parents. */
+    /** One per type, because the same element cannot hang under two parents. */
     private final UITrackpad bodyAuthority;
     private final UIElement bodyAuthorityRow;
     private final UITrackpad ragdollAuthority;
     private final UIElement ragdollAuthorityRow;
-
-    /** Shown when a modifier is on and there is no shape for it to work with — see {@link #marked}. */
-    private final UIText unmarked;
-
-    /** What the tab was last built against, so an edit made in the collision tab is noticed. */
-    private boolean marked;
 
     private boolean syncing;
 
@@ -122,7 +94,8 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
     {
         super(editor);
 
-        this.addModifier = new UIButton(PhysicsKeys.PHYSICS_ADD, (b) -> this.openModifierMenu());
+        this.physicsType = new UIButton(PhysicsKeys.PHYSICS_NONE, (b) -> this.openTypeMenu());
+        this.physicsTypeRow = PhysicsUI.labelRow(PhysicsKeys.PHYSICS_TYPE, this.physicsType);
 
         /* Type, as three-way as it needs to be: Blender's Active/Passive, no more. */
         this.type = new UICirculate((b) -> this.editBody((body) -> body.withPassive(b.getValue() == 1)));
@@ -143,8 +116,10 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
 
         UIElement massGroup = new UIElement();
 
-        massGroup.row(UIConstants.MARGIN).preferred(0).height(UIConstants.CONTROL_HEIGHT);
-        massGroup.add(this.mass, material.w(16));
+        massGroup.h(UIConstants.CONTROL_HEIGHT);
+        this.mass.relative(massGroup).w(1F, -16 - UIConstants.MARGIN).h(UIConstants.CONTROL_HEIGHT);
+        material.relative(massGroup).x(1F).y(0.5F).wh(16, 16).anchor(1F, 0.5F);
+        massGroup.add(this.mass, material);
 
         this.massRow = PhysicsUI.labelRow(PhysicsKeys.MASS, PhysicsUI.VALUE_WIDTH, massGroup);
 
@@ -226,55 +201,41 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.ragdollAuthority = PhysicsFields.authority(this::setAuthority);
         this.ragdollAuthorityRow = PhysicsUI.labelRow(PhysicsKeys.AUTHORITY, this.ragdollAuthority);
 
-        this.bodySection = new UIModifierSection(PhysicsKeys.BODY_TITLE, "physics.body", () -> this.toggleBody(false));
-        this.bodySection.fields.add(this.typeRow, this.massRow, this.frictionRow, this.restitutionRow, this.dampingRow, this.gravityRow, this.lockMoveRow, this.lockSpinRow, this.asleep, this.bodyAuthorityRow);
-
         this.ragdollBones = new UIRagdollSection(() -> this.options.resize());
-        this.ragdollSection = new UIModifierSection(PhysicsKeys.RAGDOLL_TITLE, "physics.ragdoll", () -> this.toggleRagdoll(false));
-        this.ragdollSection.fields.add(this.ragdollAuthorityRow, this.ragdollMassRow, this.ragdollDampingRow, this.ragdollFrictionRow, this.ragdollGravityRow, this.musclesRow, this.ragdollSelfCollide, this.ragdollBones);
 
         this.chainAuthority = PhysicsFields.authority(this::setAuthority);
         this.chainAuthorityRow = PhysicsUI.labelRow(PhysicsKeys.AUTHORITY, this.chainAuthority);
         this.chainBones = new UIChainSection(() -> this.options.resize());
-        this.chainSection = new UIModifierSection(PhysicsKeys.CHAIN_MODIFIER_TITLE, "physics.chain", () -> this.toggleChain(false));
-        this.chainSection.fields.add(this.chainAuthorityRow, this.chainBones);
 
-        /* Wrapped rather than a one-line label: the column is narrow, and the sentence that has to
-         * be read here is the one a single line cuts in half. */
-        this.unmarked = new UIText(PhysicsKeys.PHYSICS_UNMARKED).color(Colors.LIGHTER_GRAY, true).padding(0, 2);
     }
 
     /* Editing */
 
-    /**
-     * The modifiers on offer. The two that do not work yet are listed rather than hidden: a menu
-     * that hides what is coming teaches the author this tab is only about crates.
-     */
-    private void openModifierMenu()
+    private void openTypeMenu()
     {
         if (this.form == null)
         {
             return;
         }
 
-        boolean model = this.form instanceof ModelForm;
-
         this.getContext().replaceContextMenu((menu) ->
         {
-            menu.action(Icons.BLOCK, PhysicsKeys.PHYSICS_ADD_BODY, () -> this.toggleBody(true));
+            menu.action(Icons.CLOSE, PhysicsKeys.PHYSICS_NONE, () -> this.selectType(PhysicsType.NONE));
+            menu.action(Icons.BLOCK, PhysicsKeys.BODY_TITLE, () -> this.selectType(PhysicsType.BODY));
 
-            if (model)
+
+            if (this.form instanceof ModelForm)
             {
-                menu.action(Icons.LIMB, PhysicsKeys.PHYSICS_ADD_RAGDOLL, () -> this.toggleRagdoll(true));
-                menu.action(Icons.CURVES, PhysicsKeys.PHYSICS_ADD_CHAIN, () -> this.toggleChain(true));
+                menu.action(Icons.LIMB, PhysicsKeys.RAGDOLL_TITLE, () -> this.selectType(PhysicsType.RAGDOLL));
+                menu.action(Icons.CURVES, PhysicsKeys.PHYSICS_CHAINS, () -> this.selectType(PhysicsType.CHAIN));
             }
-
-            /* Two things are deliberately not on this menu. Cloth became a form of its own (Р12),
-             * picked from the palette's Physics section like any other form. And there is no
-             * "obstacle": a form the animation moves is already solid the moment it is marked up in
-             * the Collision tab — its markup becomes kinematic bodies whether or not it carries a
-             * modifier — so a button for it would only promise what is already the case. */
         });
+    }
+
+    private void selectType(PhysicsType type)
+    {
+        PhysicsForms.setType(this.form, type);
+        this.sync();
     }
 
     /** Fills the mass in from a material's density and the volume of what is marked up. */
@@ -301,55 +262,6 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
                 });
             }
         });
-    }
-
-    private void toggleBody(boolean add)
-    {
-        if (this.form == null)
-        {
-            return;
-        }
-
-        PhysicsForms.setBody(this.form, add ? FormBody.added() : FormBody.EMPTY);
-        this.sync();
-    }
-
-    private void toggleRagdoll(boolean add)
-    {
-        if (!(this.form instanceof ModelForm))
-        {
-            return;
-        }
-
-        FormRagdolls.set(this.form, FormRagdolls.get(this.form).withEnabled(add));
-        this.sync();
-    }
-
-    /**
-     * Adds or removes the chain modifier.
-     *
-     * <p>Adding one also drops the handle to 0, and that is not a liberty: hair is not a thing an
-     * author "releases" the way a crate is — it hangs, always — so a strand left at the resting 1
-     * would be a modifier that visibly does nothing until the author finds an unrelated slider.
-     * The chain form does the same on the palette entry it is copied from, for the same reason.
-     * Only when nothing else on the form uses the handle, though: the ragdoll shares it (§4), and
-     * dropping it there would floor the character on the spot.</p>
-     */
-    private void toggleChain(boolean add)
-    {
-        if (!(this.form instanceof ModelForm))
-        {
-            return;
-        }
-
-        FormChains.set(this.form, add ? FormChain.added() : FormChain.EMPTY);
-
-        if (add && !FormRagdolls.isEnabled(this.form) && !PhysicsForms.getBody(this.form).enabled())
-        {
-            PhysicsForms.setAuthority(this.form, 0F);
-        }
-
-        this.sync();
     }
 
     private void setAuthority(float value)
@@ -425,6 +337,13 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         boolean chain = FormChains.isEnabled(this.form);
         float authority = PhysicsForms.getAuthority(this.form);
 
+        this.physicsType.label = switch (PhysicsForms.getType(this.form))
+        {
+            case NONE -> PhysicsKeys.PHYSICS_NONE;
+            case BODY -> PhysicsKeys.BODY_TITLE;
+            case RAGDOLL -> PhysicsKeys.RAGDOLL_TITLE;
+            case CHAIN -> PhysicsKeys.PHYSICS_CHAINS;
+        };
         this.type.setValue(body.passive() ? 1 : 0);
         this.mass.setValue(body.mass());
         this.friction.setValue(body.friction());
@@ -470,74 +389,35 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
         this.syncing = false;
     }
 
-    /**
-     * Puts the tab together out of the modifiers this form actually has.
-     *
-     * <p>Rebuilt rather than hidden, and that is not a style choice: {@code setVisible} in BBS stops
-     * an element from drawing but leaves it holding its place in the column, so a tab that hid the
-     * halves it did not need was a tab full of unexplained gaps.</p>
-     */
     private void rebuild(boolean body, boolean ragdoll, boolean chain)
     {
-        this.marked = FormCollisions.has(this.form);
-
         this.options.removeAll();
+        this.options.add(this.physicsTypeRow);
 
-        /* First, above the modifier it blocks: a modifier with nothing to collide as does nothing
-         * at all, and since Р11 nothing marks the form up on the author's behalf. Read before the
-         * settings, it is an instruction; read under them, it is an epitaph.
-         *
-         * The chain modifier is deliberately not in this test: a strand brings a shape of its own
-         * (a capsule sized by the thickness knob), so hair works on a model nobody marked up —
-         * which is the common case, since nobody marks up a scalp. */
-        if ((body || ragdoll) && !this.marked)
-        {
-            this.options.add(this.unmarked);
-        }
-
-        /* A form is a body or a ragdoll, never both: welding a model into one falling lump and
-         * jointing its bones are two answers to the same question. The chain modifier is not in
-         * that quarrel — it claims bones neither of them touches — so it may sit alongside either,
-         * and the add button stays while it is the only one still available. */
-        if (!body && !ragdoll || !chain && this.form instanceof ModelForm)
-        {
-            this.options.add(this.addModifier);
-        }
 
         if (body)
         {
-            this.options.add(this.bodySection);
+            this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_MOTION, "physics.body.motion",
+                this.typeRow, this.massRow, this.gravityRow, this.dampingRow, this.asleep, this.bodyAuthorityRow));
+            this.options.add(this.frictionRow, this.restitutionRow);
+            this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_LIMITS, "physics.body.limits",
+                this.lockMoveRow, this.lockSpinRow));
+        }
+        else if (ragdoll)
+        {
+            this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_MOTION, "physics.ragdoll.motion",
+                this.ragdollAuthorityRow, this.ragdollMassRow, this.ragdollDampingRow,
+                this.ragdollGravityRow, this.musclesRow));
+            this.options.add(this.ragdollFrictionRow, this.ragdollSelfCollide);
+            this.options.add(this.ragdollBones);
+        }
+        else if (chain)
+        {
+            this.options.add(PhysicsFields.section(PhysicsKeys.SECTION_MOTION, "physics.chain.motion", this.chainAuthorityRow), this.chainBones);
         }
 
-        if (ragdoll)
-        {
-            this.options.add(this.ragdollSection);
-        }
-
-        if (chain)
-        {
-            this.options.add(this.chainSection);
-        }
 
         this.options.resize();
-    }
-
-    /**
-     * The markup is edited in the <em>other</em> tab, and switching tabs does not rebuild this one —
-     * so without this the notice would still be sitting there after the author had gone and answered
-     * it. {@link FormCollisions#has} is the cheap form of the question (empty slots are never
-     * written, so "has anything stored" and "has anything that collides" are the same question), and
-     * the rebuild only fires on the frame the answer changes.
-     */
-    @Override
-    public void render(UIContext context)
-    {
-        if (this.form != null && FormCollisions.has(this.form) != this.marked)
-        {
-            this.rebuild(PhysicsForms.getBody(this.form).enabled(), FormRagdolls.isEnabled(this.form), FormChains.isEnabled(this.form));
-        }
-
-        super.render(context);
     }
 
     protected float getDefaultOptionsWidth()
