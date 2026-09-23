@@ -334,14 +334,21 @@ public class RagdollRig implements SceneRig
             ragdoll.worldMatrix.set(actorWorld).mul(entry.matrix());
             ragdoll.worldMatrix.getTranslation(ragdoll.translation);
             ragdoll.worldMatrix.getUnnormalizedRotation(ragdoll.orientation);
+            ragdoll.scratchPosition.set(
+                ragdoll.translation.x - scene.getOriginX(),
+                ragdoll.translation.y - scene.getOriginY(),
+                ragdoll.translation.z - scene.getOriginZ());
+            ragdoll.scratchRotation.set(ragdoll.orientation.x, ragdoll.orientation.y, ragdoll.orientation.z, ragdoll.orientation.w);
+
+            if (!ragdoll.targetFinite(piece.label()))
+            {
+                continue;
+            }
 
             BodyCreationSettings settings = new BodyCreationSettings(
                 shape,
-                new RVec3(
-                    ragdoll.translation.x - scene.getOriginX(),
-                    ragdoll.translation.y - scene.getOriginY(),
-                    ragdoll.translation.z - scene.getOriginZ()),
-                new Quat(ragdoll.orientation.x, ragdoll.orientation.y, ragdoll.orientation.z, ragdoll.orientation.w),
+                new RVec3(ragdoll.scratchPosition.xx(), ragdoll.scratchPosition.yy(), ragdoll.scratchPosition.zz()),
+                new Quat(ragdoll.scratchRotation.getX(), ragdoll.scratchRotation.getY(), ragdoll.scratchRotation.getZ(), ragdoll.scratchRotation.getW()),
                 EMotionType.Kinematic,
                 PhysicsLayers.BONE);
 
@@ -819,7 +826,7 @@ public class RagdollRig implements SceneRig
                 this.translation.z - scene.getOriginZ());
             this.scratchRotation.set(this.orientation.x, this.orientation.y, this.orientation.z, this.orientation.w);
 
-            if (!this.targetFinite(part))
+            if (!this.targetFinite(part.bone))
             {
                 continue;
             }
@@ -1057,7 +1064,7 @@ public class RagdollRig implements SceneRig
         }
     }
 
-    private boolean targetFinite(Part part)
+    private boolean targetFinite(String bone)
     {
         if (PhysicsMath.finite(this.scratchPosition.xx()) && PhysicsMath.finite(this.scratchPosition.yy()) && PhysicsMath.finite(this.scratchPosition.zz())
             && PhysicsMath.finite(this.scratchRotation.getX()) && PhysicsMath.finite(this.scratchRotation.getY()) && PhysicsMath.finite(this.scratchRotation.getZ()) && PhysicsMath.finite(this.scratchRotation.getW()))
@@ -1071,7 +1078,7 @@ public class RagdollRig implements SceneRig
 
             BBSPhysics.LOGGER.warn(
                 "The target pose for bone '{}' of a ragdoll on '{}' is unusable — position ({}, {}, {}), rotation ({}, {}, {}, {}) — so the part is left to itself. The pose it is pulled towards is broken.",
-                part.bone, this.form.getDisplayName(),
+                bone, this.form.getDisplayName(),
                 this.scratchPosition.xx(), this.scratchPosition.yy(), this.scratchPosition.zz(),
                 this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW());
         }
