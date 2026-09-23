@@ -819,6 +819,11 @@ public class RagdollRig implements SceneRig
                 this.translation.z - scene.getOriginZ());
             this.scratchRotation.set(this.orientation.x, this.orientation.y, this.orientation.z, this.orientation.w);
 
+            if (!this.targetFinite(part))
+            {
+                continue;
+            }
+
             if (put && !torn)
             {
                 this.move.place(bodies, part.id, this.scratchPosition, this.scratchRotation);
@@ -831,7 +836,7 @@ public class RagdollRig implements SceneRig
             }
             else if (effective > 0F)
             {
-                this.drive(bodies, part, effective);
+                this.drive(bodies, part, PhysicsMath.grip(effective));
             }
         }
     }
@@ -1050,6 +1055,28 @@ public class RagdollRig implements SceneRig
                 "The drive for bone '{}' of a ragdoll on '{}' came out unusable — {}, handle {} — so the part falls free instead. The pose it is pulled towards is broken.",
                 part.bone, this.form.getDisplayName(), this.drive.describe(), authority);
         }
+    }
+
+    private boolean targetFinite(Part part)
+    {
+        if (PhysicsMath.finite(this.scratchPosition.xx()) && PhysicsMath.finite(this.scratchPosition.yy()) && PhysicsMath.finite(this.scratchPosition.zz())
+            && PhysicsMath.finite(this.scratchRotation.getX()) && PhysicsMath.finite(this.scratchRotation.getY()) && PhysicsMath.finite(this.scratchRotation.getZ()) && PhysicsMath.finite(this.scratchRotation.getW()))
+        {
+            return true;
+        }
+
+        if (!this.misfed)
+        {
+            this.misfed = true;
+
+            BBSPhysics.LOGGER.warn(
+                "The target pose for bone '{}' of a ragdoll on '{}' is unusable — position ({}, {}, {}), rotation ({}, {}, {}, {}) — so the part is left to itself. The pose it is pulled towards is broken.",
+                part.bone, this.form.getDisplayName(),
+                this.scratchPosition.xx(), this.scratchPosition.yy(), this.scratchPosition.zz(),
+                this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW());
+        }
+
+        return false;
     }
 
 
