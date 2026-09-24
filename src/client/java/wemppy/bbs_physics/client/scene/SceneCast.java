@@ -4,6 +4,7 @@ import mchorse.bbs_mod.film.BaseFilmController;
 import mchorse.bbs_mod.film.replays.Replay;
 import mchorse.bbs_mod.forms.entities.IEntity;
 import mchorse.bbs_mod.forms.forms.Form;
+import mchorse.bbs_mod.forms.renderers.utils.RenderFrame;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -136,6 +137,11 @@ public final class SceneCast implements Iterable<SceneCast.Member>
      */
     public void apply(int tick)
     {
+        /* Track runtime writes do not bump the form's pose version. A catch-up evaluates many
+         * film ticks in one render frame, so both channel and anchor-matrix caches must forget
+         * the previous sample. This also covers restore(), before the viewport reads its pose. */
+        RenderFrame.invalidate();
+
         for (Member member : this.members)
         {
             if (member.replay == null)
