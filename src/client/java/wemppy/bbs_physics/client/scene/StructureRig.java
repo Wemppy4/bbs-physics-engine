@@ -107,7 +107,7 @@ public final class StructureRig implements SceneRig
             settings.setMotionQuality(EMotionQuality.LinearCast);
             ids[i] = physics.getBodies().createAndAddBody(settings, EActivation.DontActivate);
             if (ids[i] == -1) throw new IllegalStateException("Jolt could not allocate a structure block body.");
-            channels[i] = scene.addChannel();
+            channels[i] = scene.addChannel("structure/" + path + "/" + i);
         }
         DestructionState state = new DestructionState(form.structure.get(), positions, offset, scale);
         ((IStructurePhysicsForm) form).bbs_physics$setDestructionState(state);

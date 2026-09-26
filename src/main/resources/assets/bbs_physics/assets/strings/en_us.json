@@ -1,4 +1,17 @@
 {
+    "bbs_physics.status.click_calculate": "Left click to recalculate physics",
+    "bbs_physics.status.ready": "Physics · ready",
+    "bbs_physics.status.warning": "Physics · needs attention",
+    "bbs_physics.config.general.manual_calculation": "Manual calculation",
+    "bbs_physics.config.general.manual_calculation-comment": "Keep calculated physics when editing the film. Replace it only with Calculate physics. World playback and baking are unchanged.",
+    "bbs_physics.calculate": "Calculate physics",
+    "bbs_physics.status.manual": "Physics is waiting for manual calculation",
+    "bbs_physics.death.section": "Physics",
+    "bbs_physics.status.computing": "Physics · %s%%",
+    "bbs_physics.status.waiting": "Physics · waiting",
+    "bbs_physics.status.full": "Physics · cache full",
+    "bbs_physics.status.lost": "Physics · simulation error",
+
     "bbs_physics.death.debug_part": "Hit: %s — collider at contact",
     "bbs_physics.death.debug_point": "Yellow: contact · White: to center of mass",
     "bbs_physics.death.debug_arrow": "Orange: body kick · 1 block = 4 blocks/s",

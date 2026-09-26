@@ -18,6 +18,8 @@ public class BBSPhysicsSettings
 {
     public static ValueBoolean enabled;
     public static ValueBoolean debug;
+    public static ValueBoolean manualCalculation;
+    public static ValueBoolean calculationShortcutMigrated;
 
     /**
      * Whether the collision markup is drawn over the model it belongs to. Its own switch rather
@@ -100,6 +102,9 @@ public class BBSPhysicsSettings
 
         enabled = builder.getBoolean("enabled", true);
         debug = builder.getBoolean("debug", false);
+        manualCalculation = builder.getBoolean("manual_calculation", false);
+        calculationShortcutMigrated = builder.getBoolean("calculation_shortcut_migrated", false);
+        calculationShortcutMigrated.invisible();
         collisionPreview = builder.getBoolean("collision_preview", true);
         debugLineWidth = builder.getFloat("debug_line_width", 1F, 0.25F, 6F);
         debugFlatPlates = builder.getBoolean("debug_flat_plates", true);

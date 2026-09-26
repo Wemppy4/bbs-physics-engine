@@ -289,7 +289,7 @@ public class ChainRig implements SceneRig
 
             built[i] = body;
             ids[i] = body.getId();
-            channels[i] = scene.addChannel();
+            channels[i] = scene.addChannel("chain/" + path + "/" + i);
 
             SceneBody debug = new SceneBody(body.getId(), 0.35F, 0.9F, 0.6F);
 

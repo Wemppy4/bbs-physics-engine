@@ -35,6 +35,13 @@ import java.util.Set;
 public class FilmScenes
 {
     private static final Map<BaseFilmController, FilmScene> SCENES = new IdentityHashMap<>();
+    private static final Map<String, FilmScene.Recording> RETAINED = new java.util.HashMap<>();
+
+    private static boolean manual(BaseFilmController controller)
+    {
+        return controller instanceof mchorse.bbs_mod.ui.film.controller.FilmEditorController
+            && BBSPhysicsSettings.manualCalculation != null && BBSPhysicsSettings.manualCalculation.get();
+    }
 
     /** Films with no simulation: do not rescan their form trees on every tick. */
     private static final Set<BaseFilmController> EMPTY = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -63,6 +70,14 @@ public class FilmScenes
     /** The film's cast was assembled or rebuilt: the old simulation no longer describes it. */
     public static void onSetup(BaseFilmController controller)
     {
+        if (manual(controller) && controller.film != null)
+        {
+            for (var entry : SCENES.entrySet())
+            {
+                if (manual(entry.getKey()) && sameFilm(entry.getKey().film, controller.film))
+                    RETAINED.putIfAbsent(controller.film.getId(), entry.getValue().recording());
+            }
+        }
         drop(controller);
         dropOthersOf(controller);
 
@@ -88,7 +103,8 @@ public class FilmScenes
                 return;
             }
 
-            FilmScene scene = new FilmScene(controller);
+            FilmScene scene = new FilmScene(controller,
+                manual(controller) ? RETAINED.get(controller.film.getId()) : null);
 
             SCENES.put(controller, scene);
 
@@ -109,6 +125,9 @@ public class FilmScenes
     /** The film reached {@code tick} and every actor is already updated to it. */
     public static void onTick(BaseFilmController controller, int tick)
     {
+        if (controller instanceof mchorse.bbs_mod.ui.film.controller.FilmEditorController
+            && !manual(controller) && controller.film != null)
+            RETAINED.remove(controller.film.getId());
         if (BBSPhysicsSettings.enabled == null || !BBSPhysicsSettings.enabled.get())
         {
             /* Switched off while a film was running. The scene goes now rather than at shutdown:
@@ -224,7 +243,7 @@ public class FilmScenes
              * same film object, but a controller rebuilt around a reloaded film would not. */
             if (sameFilm(other, film))
             {
-                if (hasSimulation(other))
+                if (manual(entry.getKey()) || hasSimulation(other))
                 {
                     entry.getValue().invalidate(impulseEdit);
                 }
@@ -262,6 +281,18 @@ public class FilmScenes
              * again — the same crawl as a scene that cannot be assembled. */
             fail(controller);
         }
+    }
+
+    public static void requestCalculation(BaseFilmController controller)
+    {
+        if (controller == null || !isEnabled()) return;
+        // Only an explicit calculation replaces the retained recording.
+        if (controller.film != null) RETAINED.remove(controller.film.getId());
+        drop(controller);
+        dropOthersOf(controller);
+        create(controller);
+        FilmScene scene = SCENES.get(controller);
+        if (scene != null) scene.requestCalculation(controller.getTick());
     }
 
     /** The live scene of this controller, or null when it has none. */
@@ -319,6 +350,7 @@ public class FilmScenes
     /** The film is gone. */
     public static void onShutdown(BaseFilmController controller)
     {
+        if (manual(controller) && controller.film != null) RETAINED.remove(controller.film.getId());
         drop(controller);
     }
 
@@ -427,6 +459,7 @@ public class FilmScenes
 
         FAILED.clear();
         EMPTY.clear();
+        RETAINED.clear();
     }
 
     public static int getSceneCount()

@@ -279,7 +279,7 @@ public class BoneChainRig implements SceneRig
 
             bodies.addBody(body.getId(), EActivation.Activate);
 
-            Segment segment = new Segment(bone, path, body.getId(), body, sub, scene.addChannel(), collides);
+            Segment segment = new Segment(bone, path, body.getId(), body, sub, scene.addChannel("bone_chain/" + path), collides);
 
             chain.segments.add(segment);
             byBone.put(bone, segment);

@@ -257,9 +257,9 @@ public class BodyRig implements SceneRig
 
         PhysicsForms.setState(form, new PhysicsBodyState());
 
-        BodyRig rig = new BodyRig(form, path, id, scene.addChannel(), ghost ? List.of() : pieces, kinematic, debug, body);
+        BodyRig rig = new BodyRig(form, path, id, scene.addChannel("body/" + path), ghost ? List.of() : pieces, kinematic, debug, body);
 
-        rig.frames = new RecordedFrame(scene, PhysicsForms.getState(form).frame);
+        rig.frames = new RecordedFrame(scene, "body/" + path, PhysicsForms.getState(form).frame);
 
         compose(rig.pieces, path, matrices, rig.inverse, rig.builtFrom);
 

@@ -138,6 +138,7 @@ final class SceneBuilder
 
         for (SceneCast.Member member : cast)
         {
+            this.scene.channelActor(member.replay.getId());
             SceneActor actor = this.buildActor(member);
 
             if (actor != null)

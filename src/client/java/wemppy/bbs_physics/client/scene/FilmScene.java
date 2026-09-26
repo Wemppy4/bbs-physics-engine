@@ -94,6 +94,27 @@ public class FilmScene implements AutoCloseable
      * This, and not the Jolt world, is what a drawn frame reads (§6).
      */
     private final PhysicsCache cache = new PhysicsCache();
+    private final Map<String, Integer> channelKeys = new java.util.HashMap<>();
+    private String channelActor = "";
+    private final Recording retained;
+
+    record Recording(PhysicsCache cache, Map<String, Integer> keys, double x, double y, double z, boolean complete, boolean full, int lostAt) {}
+
+    Recording recording()
+    {
+        return new Recording(this.cache, Map.copyOf(this.channelKeys), this.originX, this.originY, this.originZ, this.calculationComplete, this.full, this.lostAt);
+    }
+
+    void channelActor(String id) { this.channelActor = id; }
+
+    public int addChannel(String key, int floats)
+    {
+        int channel = this.cache.addChannel(floats);
+        this.channelKeys.put(this.channelActor + "/" + key, channel);
+        return channel;
+    }
+
+    public int addChannel(String key) { return this.addChannel(key, PhysicsCache.FLOATS); }
 
     /** The film's cast, borrowed by the simulation and handed back every time. */
     private final SceneCast cast;
@@ -123,6 +144,10 @@ public class FilmScene implements AutoCloseable
      * {@link FilmScenes#onFilmEdited}) and answered on the next tick by starting over.
      */
     private boolean stale;
+    private final boolean editor;
+    private boolean calculationRequested;
+    private boolean calculationComplete;
+    private int requestedEnd;
     private PhysicsCache impulsePreview;
     private int impulsePreviewTick = -1;
 
@@ -167,6 +192,13 @@ public class FilmScene implements AutoCloseable
 
     public FilmScene(BaseFilmController controller)
     {
+        this(controller, null);
+    }
+
+    FilmScene(BaseFilmController controller, Recording retained)
+    {
+        this.retained = retained;
+        this.editor = controller instanceof mchorse.bbs_mod.ui.film.controller.FilmEditorController;
         this.world = new PhysicsWorld();
         this.timeline = new PhysicsTimeline(this.world);
         this.entities = controller.getEntities();
@@ -178,6 +210,17 @@ public class FilmScene implements AutoCloseable
         try
         {
             this.assemble(controller.getTick());
+            if (retained != null)
+            {
+                int[] channels = new int[this.cache.getChannelCount()];
+                java.util.Arrays.fill(channels, -1);
+                this.channelKeys.forEach((key, channel) -> channels[channel] = retained.keys().getOrDefault(key, -1));
+                this.cache.restore(retained.cache(), channels);
+                this.calculationComplete = retained.complete() && this.cache.getComputed() == retained.cache().getComputed();
+                this.full = retained.full();
+                this.lostAt = retained.lostAt();
+                this.stale = true;
+            }
 
             built = true;
         }
@@ -248,6 +291,13 @@ public class FilmScene implements AutoCloseable
      */
     private void pickOrigin()
     {
+        if (this.retained != null)
+        {
+            this.originX = this.retained.x();
+            this.originY = this.retained.y();
+            this.originZ = this.retained.z();
+            return;
+        }
         IEntity first = this.cast.first();
 
         if (first != null)
@@ -396,9 +446,9 @@ public class FilmScene implements AutoCloseable
         return new SceneStatus(
             this.filmTick,
             this.cache.getComputed() - 1,
-            this.recordingEnd(this.filmTick),
+            this.manualCalculation() && this.calculationComplete ? this.cache.getComputed() - 1 : this.recordingEnd(this.filmTick),
             this.cache.has(this.filmTick),
-            this.stale || !this.backgroundAllowed(),
+            this.manualCalculation() ? this.waitingForCalculation() : this.stale || !this.backgroundAllowed(),
             this.full,
             this.lostAt,
             this.world.getBodyCount(),
@@ -465,6 +515,12 @@ public class FilmScene implements AutoCloseable
          * the tick after. */
         this.applyWorldSettings();
 
+        if (this.manualCalculation() && !this.calculationRequested)
+        {
+            this.distribute(tick);
+            return;
+        }
+
         if (this.stale)
         {
             this.stale = false;
@@ -473,6 +529,10 @@ public class FilmScene implements AutoCloseable
         }
 
         this.compute(tick);
+        this.calculationComplete = this.cache.getComputed()
+            > (this.manualCalculation() ? this.requestedEnd : this.recordingEnd(tick));
+        if (this.calculationRequested && (this.full || this.cache.getComputed() > this.requestedEnd))
+            this.calculationRequested = false;
         this.distribute(tick);
     }
 
@@ -520,7 +580,7 @@ public class FilmScene implements AutoCloseable
      */
     private void compute(int cursor)
     {
-        int end = this.recordingEnd(cursor);
+        int end = this.manualCalculation() ? this.requestedEnd : this.recordingEnd(cursor);
 
         if (this.cache.getComputed() > end)
         {
@@ -735,6 +795,27 @@ public class FilmScene implements AutoCloseable
         return Math.max(cursor, duration + LOOKAHEAD_PAST_END);
     }
 
+    private boolean manualCalculation()
+    {
+        return this.editor && BBSPhysicsSettings.manualCalculation != null && BBSPhysicsSettings.manualCalculation.get();
+    }
+
+    public boolean waitingForCalculation()
+    {
+        return this.manualCalculation() && !this.calculationComplete && !this.calculationRequested && !this.full
+            && (this.stale || this.cache.getComputed() <= this.recordingEnd(this.filmTick));
+    }
+
+    public void requestCalculation(int tick)
+    {
+        this.filmTick = Math.max(0, tick);
+        this.applyWorldSettings();
+        this.invalidate();
+        this.calculationComplete = false;
+        this.requestedEnd = this.recordingEnd(this.filmTick);
+        this.calculationRequested = true;
+    }
+
     /**
      * Whether the recording may run ahead of the cursor right now. It may not for a moment after an
      * edit: the author is probably still dragging, and every batch of changes throws the recording
@@ -762,6 +843,12 @@ public class FilmScene implements AutoCloseable
     /** Keep the last displayed result only for impulse edits at the unchanged cursor. */
     public void invalidate(boolean impulseEdit)
     {
+        if (this.manualCalculation())
+        {
+            this.stale = true;
+            this.calculationRequested = false;
+            return;
+        }
         this.clips.clearDeathImpacts();
         if (!impulseEdit)
         {
@@ -773,6 +860,8 @@ public class FilmScene implements AutoCloseable
             this.impulsePreviewTick = this.filmTick;
         }
         this.stale = true;
+        this.calculationRequested = false;
+        this.calculationComplete = false;
         this.editedAt = System.nanoTime();
     }
 
@@ -1181,6 +1270,7 @@ public class FilmScene implements AutoCloseable
      */
     public boolean needsRebuild()
     {
+        if (this.manualCalculation()) return false;
         return this.window == null
             || this.window.radius() != BBSPhysicsSettings.worldRadius.get()
             || this.window.below() != BBSPhysicsSettings.worldBelow.get()

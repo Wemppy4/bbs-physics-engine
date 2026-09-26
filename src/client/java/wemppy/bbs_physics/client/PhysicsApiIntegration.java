@@ -35,12 +35,6 @@ public final class PhysicsApiIntegration
         FormPoseEvents.ANCHOR.register(SceneActor::releaseAnchor);
         FormPoseEvents.ACTOR_BEFORE.register(context -> SceneActor.prepareRender(
             context.entity, context.entities, context.transition, context.replay == null || !context.relative));
-        TimelineEvents.OVERLAY.register((film, context, area, toX) ->
-        {
-            if (BBSPhysicsSettings.enabled == null || !BBSPhysicsSettings.enabled.get()) return;
-            SceneStatus status = FilmScenes.getStatus(film);
-            if (status != null) CacheBar.render(context, area, status, tick -> toX.applyAsInt(tick));
-        });
         FormPreviewEvents.OVERLAY.register((renderer, context) ->
         {
             UIFormEditor editor = renderer instanceof UIPickableFormRenderer ? renderer.getParent(UIFormEditor.class) : null;

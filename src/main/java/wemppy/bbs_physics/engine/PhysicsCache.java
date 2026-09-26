@@ -116,6 +116,29 @@ public class PhysicsCache
         this.sealed = true;
     }
 
+    public int getChannelCount() { return this.channels; }
+
+    /** Restore an existing recording into rebuilt runtime channels without simulating. */
+    public void restore(PhysicsCache source, int[] sourceChannels)
+    {
+        if (this.readOnly || source == this || sourceChannels.length != this.channels)
+            throw new IllegalArgumentException("Invalid recording mapping");
+        this.clear();
+        int ticks = Math.min(source.computed, this.getLimit());
+        for (int tick = 0; tick < ticks; tick++)
+        {
+            this.beginFrame(tick);
+            for (int channel = 0; channel < this.channels; channel++)
+            {
+                int from = sourceChannels[channel];
+                if (from < 0 || from >= source.channels || source.widths[from] != this.widths[channel]) continue;
+                System.arraycopy(source.data, tick * source.stride + source.offsets[from],
+                    this.data, tick * this.stride + this.offsets[channel], this.widths[channel]);
+            }
+            this.commit(tick);
+        }
+    }
+
     /** How many ticks are recorded — ticks {@code 0} to {@code getComputed() - 1}. */
     public int getComputed()
     {

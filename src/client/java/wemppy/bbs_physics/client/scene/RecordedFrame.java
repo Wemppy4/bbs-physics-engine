@@ -13,9 +13,9 @@ final class RecordedFrame
     private final Matrix4f matrix = new Matrix4f();
     private boolean recorded;
 
-    RecordedFrame(FilmScene scene, PoseFrame pose)
+    RecordedFrame(FilmScene scene, String key, PoseFrame pose)
     {
-        this.channel = scene.addChannel(17);
+        this.channel = scene.addChannel("frame/" + key, 17);
         this.pose = pose;
     }
 

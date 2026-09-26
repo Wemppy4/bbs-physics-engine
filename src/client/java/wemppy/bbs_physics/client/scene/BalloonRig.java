@@ -159,7 +159,7 @@ public class BalloonRig extends SoftBodyRig
 
         form.state = new BalloonState(count);
 
-        return new BalloonRig(form, path, body.getId(), scene.addChannel(count * 3 + 1),
+        return new BalloonRig(form, path, body.getId(), scene.addChannel("balloon/" + path, count * 3 + 1),
             (SoftBodyMotionProperties) body.getMotionProperties());
     }
 

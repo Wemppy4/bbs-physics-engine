@@ -48,6 +48,8 @@ import wemppy.bbs_physics.ragdoll.RagdollKnob;
 import wemppy.bbs_physics.chain.ChainKnob;
 
 import java.util.Collections;
+import mchorse.bbs_mod.ui.film.UIFilmPanel;
+import wemppy.bbs_physics.client.scene.FilmScenes;
 
 /**
  * The client half of {@link BBSPhysicsAddon}, declared under the
@@ -74,8 +76,7 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
     @Subscribe
     public void onRegisterReplayActions(RegisterReplayActionsEvent event)
     {
-        event.register(FilmBake::button);
-        event.register(wemppy.bbs_physics.client.ragdoll.DeathSetup::controls);
+        event.register(wemppy.bbs_physics.client.ragdoll.DeathSetup::section);
     }
 
     @Subscribe
@@ -155,10 +156,17 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
     @Subscribe
     public void onRegisterDashboard(RegisterDashboardPanelsEvent event)
     {
+        PhysicsKeybinds.migrateCalculationShortcut();
         event.dashboard.overlay.keys().register(PhysicsKeybinds.TOGGLE_DEBUG, () ->
         {
             BBSPhysicsSettings.debug.toggle();
         }).strict().active(() -> BBSPhysicsSettings.debug != null);
+        event.dashboard.overlay.keys().register(PhysicsKeybinds.CALCULATE, () ->
+        {
+            if (event.dashboard.getPanels().panel instanceof UIFilmPanel panel)
+                FilmScenes.requestCalculation(panel.getController().editorController);
+        }).strict().active(() -> event.dashboard.getPanels().panel instanceof UIFilmPanel
+            && BBSPhysicsSettings.enabled != null && BBSPhysicsSettings.enabled.get());
     }
 
     /**

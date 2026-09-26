@@ -47,6 +47,21 @@ public final class PhysicsCacheCheck
         preview.write(0, parent, new Vector3f(-100), rotation, 1F);
         require(preview.read(0, parent, position, rotation) && position.x == 100, "preview cannot be rewritten");
 
+        PhysicsCache rebuilt = new PhysicsCache();
+        int movedCloth = rebuilt.addChannel(4);
+        int added = rebuilt.addChannel();
+        int movedParent = rebuilt.addChannel();
+        int incompatible = rebuilt.addChannel(5);
+        rebuilt.seal();
+        rebuilt.restore(cache, new int[] {cloth, -1, parent, cloth});
+        require(rebuilt.getComputed() == 600, "rebuild retains every recorded frame");
+        require(rebuilt.read(599, movedParent, position, rotation) && position.x == 599,
+            "reordered channels keep their original owner");
+        require(rebuilt.readAuthority(599, movedParent) == 0.25F, "rebuild preserves authority");
+        require(rebuilt.readFloats(599, movedCloth, new float[4]), "rebuild preserves soft bodies");
+        require(!rebuilt.read(599, added, position, rotation), "new actors have no fabricated physics");
+        require(!rebuilt.readFloats(599, incompatible, new float[5]), "incompatible topology stays silent");
+
         cache.clear();
         PhysicsCache pending = cache.beginFrame(0);
         require(!pending.read(0, parent, position, rotation), "reset must not expose old recording");
@@ -60,6 +75,8 @@ public final class PhysicsCacheCheck
         require(!cache.read(0, parent, position, rotation), "unwritten channel stays silent after commit");
         require(cache.read(0, child, position, rotation) && position.x == 12, "child survives reset");
         require(preview.read(0, parent, position, rotation) && position.x == 100, "preview survives source recomputation");
+        require(rebuilt.read(599, movedParent, position, rotation) && position.x == 599,
+            "retained recording survives source edits and recomputation");
         System.out.println("PhysicsCacheCheck: passed (600 frames, staging, reset, wide channels)");
     }
 

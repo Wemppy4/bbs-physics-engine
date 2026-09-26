@@ -202,7 +202,7 @@ public class ClothRig extends SoftBodyRig
 
         form.state = new ClothState(columns, rows);
 
-        return new ClothRig(form, path, body.getId(), scene.addChannel(columns * rows * 3 + 1), held, freeInvMass, motion, proxy);
+        return new ClothRig(form, path, body.getId(), scene.addChannel("cloth/" + path + "/" + columns + "/" + rows, columns * rows * 3 + 1), held, freeInvMass, motion, proxy);
     }
 
     @Override

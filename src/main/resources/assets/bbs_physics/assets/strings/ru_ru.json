@@ -1,4 +1,17 @@
 {
+    "bbs_physics.status.click_calculate": "ЛКМ — пересчитать физику",
+    "bbs_physics.status.ready": "Физика · готово",
+    "bbs_physics.status.warning": "Физика · есть проблемы",
+    "bbs_physics.config.general.manual_calculation": "Ручной расчёт",
+    "bbs_physics.config.general.manual_calculation-comment": "В редакторе сохранять рассчитанную физику при изменениях фильма. Заменять результат только по команде «Рассчитать физику». Воспроизведение в мире и запекание не меняются.",
+    "bbs_physics.calculate": "Рассчитать физику",
+    "bbs_physics.status.manual": "Физика ожидает ручного расчёта",
+    "bbs_physics.death.section": "Физика",
+    "bbs_physics.status.computing": "Физика · %s%%",
+    "bbs_physics.status.waiting": "Физика · ожидание",
+    "bbs_physics.status.full": "Физика · кэш заполнен",
+    "bbs_physics.status.lost": "Физика · ошибка расчёта",
+
     "bbs_physics.death.debug_part": "Удар: %s — коллайдер в момент попадания",
     "bbs_physics.death.debug_point": "Жёлтый: попадание · Белый: до центра массы",
     "bbs_physics.death.debug_arrow": "Оранжевый: толчок тела · 1 блок = 4 блока/с",

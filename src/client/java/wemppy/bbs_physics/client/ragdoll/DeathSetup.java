@@ -26,6 +26,16 @@ import java.util.function.Supplier;
 /** One-click preparation on the actor's own form; authored collision and joints survive. */
 public final class DeathSetup
 {
+    private static final java.util.Map<UIFilmPanel, java.util.Map<String, Boolean>> FOLDS = new java.util.WeakHashMap<>();
+
+    public static UIElement section(UIFilmPanel panel, Supplier<Replay> selected)
+    {
+        var section = new mchorse.bbs_mod.ui.framework.elements.UISection(L10n.lang("bbs_physics.death.section"))
+            .remember(FOLDS.computeIfAbsent(panel, key -> new java.util.HashMap<>()), "physics", false);
+        section.fields.add(controls(panel, selected), wemppy.bbs_physics.client.scene.FilmBake.button(panel, selected));
+        return section;
+    }
+
     public static UIElement controls(UIFilmPanel panel, Supplier<Replay> selected)
     {
         UIElement controls = new UIElement();
@@ -55,8 +65,26 @@ public final class DeathSetup
         toggle.tooltip(L10n.lang("bbs_physics.death.enabled_tooltip"));
         UITrackpad strength = new UITrackpad(value ->
         {
-            if (selected.get() instanceof DeathReplay settings)
-                BaseValue.edit(settings.bbs_physics$deathStrength(), v -> v.set(value.floatValue()));
+            Replay active = selected.get();
+            if (!(active instanceof DeathReplay)) return;
+            var targets = new java.util.ArrayList<>(panel.replayEditor.replaysList.replays.getSelectedReplays());
+            if (targets.isEmpty()) targets.add(active);
+            float multiplier = value.floatValue();
+            if (targets.size() == 1)
+            {
+                if (targets.get(0) instanceof DeathReplay settings)
+                    BaseValue.edit(settings.bbs_physics$deathStrength(), v -> v.set(multiplier));
+            }
+            else if (panel.getData() != null)
+            {
+                // One parent notification captures every selected replay in the same undo edit.
+                BaseValue.edit(panel.getData().replays, replays ->
+                {
+                    for (Replay replay : targets)
+                        if (replay instanceof DeathReplay settings)
+                            settings.bbs_physics$deathStrength().set(multiplier);
+                });
+            }
         });
         strength.limit(0).increment(0.1);
         strength.tooltip(L10n.lang("bbs_physics.death.multiplier_tooltip"));

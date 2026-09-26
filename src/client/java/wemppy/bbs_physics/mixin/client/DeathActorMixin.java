@@ -26,6 +26,10 @@ public class DeathActorMixin
         var actors = controller.getActors();
         Integer id = actors == null ? null : actors.get(replay.getId());
         if (id != null) BBSModClient.getFilms().markActorDrawn(id);
+        // The recorded impact must flash even when editor playback fires no real bullet.
+        int sinceHit = replay.getTick(controller.getTick()) - death.tick.get();
+        if (sinceHit >= 0 && sinceHit < 10)
+            entity.setHurtTimer(Math.max(entity.getHurtTimer(), 10 - sinceHit));
         entity.setDeathTime(0);
         cir.setReturnValue(true);
     }

@@ -340,7 +340,7 @@ public class RagdollRig implements SceneRig
         FormRagdoll config = FormRagdolls.get(form);
         BodyInterface bodies = physics.getBodies();
         RagdollRig ragdoll = new RagdollRig(form, formPath);
-        ragdoll.frames = new RecordedFrame(scene, ragdoll.state.frame);
+        ragdoll.frames = new RecordedFrame(scene, "ragdoll/" + formPath, ragdoll.state.frame);
         Map<String, Part> byBone = new HashMap<>();
 
         ragdoll.groups = groups;
@@ -429,7 +429,7 @@ public class RagdollRig implements SceneRig
 
             bodies.addBody(body.getId(), EActivation.Activate);
 
-            Part part = new Part(piece.label(), piece.path(), body.getId(), body, sub, scene.addChannel());
+            Part part = new Part(piece.label(), piece.path(), body.getId(), body, sub, scene.addChannel("ragdoll/" + piece.path()));
 
             ragdoll.parts.add(part);
             byBone.put(piece.label(), part);
