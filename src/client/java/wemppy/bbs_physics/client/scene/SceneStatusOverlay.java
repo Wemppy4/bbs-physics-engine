@@ -49,7 +49,9 @@ public class SceneStatusOverlay extends UIElement
 
         if (status != null)
         {
-            SceneStatusHUD.render(context, this.preview.getViewport(), status);
+            UIFilmPanel panel = this.getAncestor(UIFilmPanel.class);
+            FilmScene scene = panel == null ? null : FilmScenes.get(panel.getController().editorController);
+            SceneStatusHUD.render(context, this.preview.getViewport(), status, scene);
         }
     }
 

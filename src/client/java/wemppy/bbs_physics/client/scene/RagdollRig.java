@@ -125,6 +125,60 @@ public class RagdollRig implements SceneRig
     private final String formPath;
     private final List<Part> parts = new ArrayList<>();
     private final RagdollState state = new RagdollState();
+    private boolean dead;
+    private boolean armed;
+
+    public void setDeathControl(boolean armed, boolean dead) { this.armed = armed; this.dead = dead; }
+
+    private float authority() { return this.dead ? 0F : this.armed ? 1F : PhysicsForms.getAuthority(this.form); }
+
+    /** Apply a directed impact to the nearest simulated part, at the actual contact point. */
+    public double impactDistance(PhysicsWorld physics, float x, float y, float z)
+    {
+        double nearest = Double.POSITIVE_INFINITY;
+        for (Part part : this.parts)
+        {
+            RVec3 p = physics.getBodies().getCenterOfMassPosition(part.id);
+            double dx = p.xx() - x, dy = p.yy() - y, dz = p.zz() - z;
+            nearest = Math.min(nearest, dx * dx + dy * dy + dz * dz);
+        }
+        return nearest;
+    }
+
+    /** A frozen hit pose for debugging; never read live Jolt bodies from the renderer. */
+    public record Impact(int bodyId, String bone, Vector3f position, Quaternionf rotation, Vector3f center) {}
+
+    public Impact impact(PhysicsWorld physics, float x, float y, float z, Vector3f velocity)
+    {
+        if (!velocity.isFinite()) return null;
+        BodyInterface bodies = physics.getBodies();
+        Part nearest = null;
+        double distance = Double.POSITIVE_INFINITY;
+        for (Part part : this.parts)
+        {
+            if (bodies.getMotionType(part.id) != EMotionType.Dynamic) continue;
+            RVec3 p = bodies.getCenterOfMassPosition(part.id);
+            double dx = p.xx() - x, dy = p.yy() - y, dz = p.zz() - z;
+            double candidate = dx * dx + dy * dy + dz * dz;
+            if (candidate < distance) { nearest = part; distance = candidate; }
+            // A common translation carries the whole body; a local impact adds the twist.
+            Vec3 current = bodies.getLinearVelocity(part.id);
+            bodies.setLinearVelocity(part.id, current.getX() + velocity.x, current.getY() + velocity.y, current.getZ() + velocity.z);
+            bodies.activateBody(part.id);
+        }
+        if (nearest != null)
+        {
+            this.scratchPosition.set(x, y, z);
+            wemppy.bbs_physics.engine.PointImpact.apply(bodies, nearest.body, this.scratchPosition, new Vector3f(velocity).mul(0.5F));
+            bodies.getPositionAndRotation(nearest.id, this.scratchPosition, this.scratchRotation);
+            RVec3 center = bodies.getCenterOfMassPosition(nearest.id);
+            return new Impact(nearest.id, nearest.bone,
+                new Vector3f((float) this.scratchPosition.xx(), (float) this.scratchPosition.yy(), (float) this.scratchPosition.zz()),
+                new Quaternionf(this.scratchRotation.getX(), this.scratchRotation.getY(), this.scratchRotation.getZ(), this.scratchRotation.getW()),
+                new Vector3f((float) center.xx(), (float) center.yy(), (float) center.zz()));
+        }
+        return null;
+    }
 
     /**
      * The joints with both their ends, which Jolt holds by pointer. Kept in a field so the Java
@@ -752,6 +806,7 @@ public class RagdollRig implements SceneRig
 
         FormRagdoll config = FormRagdolls.get(this.form);
 
+        if (this.dead) config = config.withMuscles(0F);
         this.applySettings(physics, config);
 
         BodyInterface bodies = physics.getBodies();
@@ -763,7 +818,7 @@ public class RagdollRig implements SceneRig
             this.untear(bodies);
         }
 
-        float authority = PhysicsForms.getAuthority(this.form);
+        float authority = this.authority();
         boolean wanted = authority >= 1F;
         boolean put = reset;
 
@@ -799,7 +854,7 @@ public class RagdollRig implements SceneRig
 
         if (!this.kinematic)
         {
-            this.aimMuscles(matrices, actorWorld, config.muscles());
+            this.aimMuscles(matrices, actorWorld, this.dead ? 0F : config.muscles());
         }
 
         for (Part part : this.parts)
@@ -1120,7 +1175,7 @@ public class RagdollRig implements SceneRig
 
         this.frames.write(cache, tick, this.base);
         BodyInterface bodies = physics.getBodies();
-        float authority = PhysicsForms.getAuthority(this.form);
+        float authority = this.authority();
 
         for (Part part : this.parts)
         {

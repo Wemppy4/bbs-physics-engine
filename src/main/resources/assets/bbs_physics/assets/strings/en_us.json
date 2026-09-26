@@ -1,4 +1,20 @@
 {
+    "bbs_physics.death.debug_part": "Hit: %s — collider at contact",
+    "bbs_physics.death.debug_point": "Yellow: contact · White: to center of mass",
+    "bbs_physics.death.debug_arrow": "Orange: body kick · 1 block = 4 blocks/s",
+    "bbs_physics.death.enabled_tooltip": "Record fatal hits as ragdoll events. Prepares player models and enables the actor body. Existing death events can be disabled on the action timeline.",
+    "bbs_physics.death.multiplier_tooltip": "Multiplies all death impacts of this actor. 1 is normal, 0 lets the body fall without a push. Also affects previously recorded deaths.",
+
+    "bbs_physics.death.baked": "Use baked animation",
+
+    "bbs_physics.death.enabled": "Ragdoll on death",
+    "bbs_physics.death.multiplier": "Impact multiplier",
+    "bbs_physics.death.strength": "Impact speed",
+    "bbs_physics.death.point": "Hit point",
+    "bbs_physics.death.direction": "Hit direction",
+    "bbs_physics.death.unsupported": "Choose a loaded cubic player model, or prepare bone collisions on your cubic model in the Physics editor first.",
+    "bbs.ui.camera.clips.bbs_physics:death": "Death impact",
+
     "bbs_physics.forms.destruction.title": "Destruction",
     "bbs_physics.forms.destruction.strength": "Strength",
     "bbs_physics.forms.destruction.strength_tooltip": "A block breaks off when the impulse speed at its position exceeds this threshold (blocks/s). Unaffected blocks stay in place. Up to 1024 solid blocks per structure. Scale is fixed when simulation starts. No support collapse or baking to keys yet.",

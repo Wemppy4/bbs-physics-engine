@@ -39,6 +39,7 @@ public final class ActorState
     private float velocityY;
     private float velocityZ;
     private float fallDistance;
+    private int deathTime;
 
     public void capture(IEntity entity)
     {
@@ -64,6 +65,7 @@ public final class ActorState
         this.velocityY = (float) velocity.y;
         this.velocityZ = (float) velocity.z;
         this.fallDistance = entity.getFallDistance();
+        this.deathTime = entity.getDeathTime();
     }
 
     public void restore(IEntity entity)
@@ -84,5 +86,6 @@ public final class ActorState
 
         entity.setVelocity(this.velocityX, this.velocityY, this.velocityZ);
         entity.setFallDistance(this.fallDistance);
+        entity.setDeathTime(this.deathTime);
     }
 }

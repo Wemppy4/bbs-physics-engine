@@ -23,7 +23,44 @@ import java.util.Set;
  */
 public final class SceneClips
 {
+    /** Release before the drives; impacts follow them, so no drive can overwrite the kick. */
+    public void prepareDeaths(SceneCast cast, int tick)
+    {
+        for (SceneCast.Member member : cast)
+        {
+            for (SceneActor actor : this.scene.getActors())
+            {
+                if (actor.getEntity() != member.entity) continue;
+                prepareDeath(actor, member, tick);
+            }
+        }
+    }
+
+    static void prepareDeath(SceneActor actor, SceneCast.Member member, int tick)
+    {
+        if (member.replay == null) return;
+        var death = wemppy.bbs_physics.ragdoll.DeathReplay.at(member.replay, member.replay.getTick(tick));
+        boolean dead = death != null && !death.baked.get();
+        boolean armed = member.replay instanceof wemppy.bbs_physics.ragdoll.DeathReplay settings
+            && settings.bbs_physics$deathEnabled().get();
+        for (SceneRig rig : actor.getRigs())
+            if (rig instanceof RagdollRig ragdoll) ragdoll.setDeathControl(armed, dead);
+    }
+
     private final FilmScene scene;
+
+    private final java.util.Map<wemppy.bbs_physics.actions.DeathActionClip, java.util.NavigableMap<Integer, RagdollRig.Impact>> deathImpacts = new java.util.IdentityHashMap<>();
+
+    public void clearDeathImpacts() { this.deathImpacts.clear(); }
+
+    /** Only show an actual hit near its occurrence, including when the film loops. */
+    public RagdollRig.Impact deathImpact(wemppy.bbs_physics.actions.DeathActionClip clip, int tick)
+    {
+        var hits = this.deathImpacts.get(clip);
+        if (hits == null) return null;
+        var hit = hits.floorEntry(tick);
+        return hit != null && tick - hit.getKey() <= 20 ? hit.getValue() : null;
+    }
 
     /**
      * Bone names a tear clip asked for that no ragdoll of the actor has, so the fact is reported
@@ -47,6 +84,9 @@ public final class SceneClips
             }
 
             int local = member.replay.getTick(tick);
+
+            var death = wemppy.bbs_physics.ragdoll.DeathReplay.at(member.replay, local);
+            if (death != null && !death.baked.get() && death.tick.get() == local) this.death(member, death, tick);
 
             for (Clip clip : member.replay.actions.getClips(local))
             {
@@ -128,6 +168,39 @@ public final class SceneClips
             {
                 rig.impulse(this.scene.getWorld(), push);
             }
+        }
+    }
+
+    private void death(SceneCast.Member member, wemppy.bbs_physics.actions.DeathActionClip clip, int tick)
+    {
+        Point p = clip.point.get();
+        Point d = clip.direction.get();
+        float x = (float) (p.x - this.scene.getOriginX());
+        float y = (float) (p.y - this.scene.getOriginY());
+        float z = (float) (p.z - this.scene.getOriginZ());
+        Vector3f direction = new Vector3f((float) d.x, (float) d.y, (float) d.z);
+        if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z)
+            || !direction.isFinite() || direction.lengthSquared() < 1e-12F
+            || !Float.isFinite(clip.strength.get())) return;
+        float multiplier = member.replay instanceof wemppy.bbs_physics.ragdoll.DeathReplay settings
+            ? settings.bbs_physics$deathStrength().get() : 1F;
+        direction.normalize().mul(clip.strength.get() * multiplier);
+        RagdollRig nearest = null;
+        double distance = Double.POSITIVE_INFINITY;
+        for (SceneActor actor : this.scene.getActors())
+        {
+            if (actor.getEntity() != member.entity) continue;
+            for (SceneRig rig : actor.getRigs())
+            {
+                if (!(rig instanceof RagdollRig ragdoll)) continue;
+                double candidate = ragdoll.impactDistance(this.scene.getWorld(), x, y, z);
+                if (candidate < distance) { distance = candidate; nearest = ragdoll; }
+            }
+        }
+        if (nearest != null)
+        {
+            var impact = nearest.impact(this.scene.getWorld(), x, y, z, direction);
+            if (impact != null) this.deathImpacts.computeIfAbsent(clip, key -> new java.util.TreeMap<>()).put(tick, impact);
         }
     }
 

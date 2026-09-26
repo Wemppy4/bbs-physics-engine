@@ -17,6 +17,7 @@ public final class PhysicsSpeedCheck
         require(Math.abs(normal - fall(2F, 20)) < 0.01, "Equal physical time must match at 2x");
         require(Math.abs(normal - fall(0.5F, 80)) < 0.2, "Equal physical time must match at 0.5x within integration tolerance");
         for (float speed : new float[] {0.1F, 0.5F, 1F, 2F, 4F}) follow(speed);
+        impact();
         System.out.println("PhysicsSpeedCheck passed: time scaling, kinematic following, dynamic drive and release at 0.1x–4x.");
     }
 
@@ -69,6 +70,29 @@ public final class PhysicsSpeedCheck
         settings.setLinearDamping(0F);
         settings.setAngularDamping(0F);
         return world.getBodies().createAndAddBody(settings, EActivation.Activate);
+    }
+
+    private static void impact()
+    {
+        try (PhysicsWorld world = new PhysicsWorld())
+        {
+            world.setGravity(0F);
+            BodyInterface bodies = world.getBodies();
+            BodyCreationSettings settings = new BodyCreationSettings(new BoxShape(0.5F, 0.5F, 0.5F),
+                new RVec3(), Quat.sIdentity(), EMotionType.Kinematic, PhysicsLayers.MOVING);
+            settings.setAllowDynamicOrKinematic(true);
+            Body body = bodies.createBody(settings);
+            bodies.addBody(body.getId(), EActivation.Activate);
+            PointImpact.apply(bodies, body, new RVec3(0, 0.5, 0), new org.joml.Vector3f(3, 0, 0));
+            require(bodies.getLinearVelocity(body.getId()).getX() == 0F, "Held body must ignore impact");
+            bodies.setMotionType(body.getId(), EMotionType.Dynamic, EActivation.Activate);
+            bodies.setLinearVelocity(body.getId(), 2F, 0F, 0F);
+            PointImpact.apply(bodies, body, new RVec3(0, 0.5, 0), new org.joml.Vector3f(3, 0, 0));
+            require(Math.abs(bodies.getLinearVelocity(body.getId()).getX() - 5F) < 1e-5F, "Impact must retain prior motion");
+            require(bodies.getAngularVelocity(body.getId()).getZ() < -0.01F, "Off-centre hit must produce the expected spin");
+            PointImpact.apply(bodies, body, new RVec3(), new org.joml.Vector3f(Float.NaN, 0, 0));
+            require(Float.isFinite(bodies.getLinearVelocity(body.getId()).getX()), "Invalid input must not poison the solver");
+        }
     }
 
     private static void require(boolean condition, String message)

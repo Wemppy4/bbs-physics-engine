@@ -138,7 +138,7 @@ final class SceneBuilder
 
         for (SceneCast.Member member : cast)
         {
-            SceneActor actor = this.buildActor(member.entity);
+            SceneActor actor = this.buildActor(member);
 
             if (actor != null)
             {
@@ -151,8 +151,9 @@ final class SceneBuilder
         return actors;
     }
 
-    private SceneActor buildActor(IEntity entity)
+    private SceneActor buildActor(SceneCast.Member member)
     {
+        IEntity entity = member.entity;
         Form root = entity.getForm();
 
         /* Ordinary actors remain in SceneCast for animation and anchors, but do not need
@@ -268,6 +269,7 @@ final class SceneBuilder
         actorGroup.seal();
 
         SceneActor actor = new SceneActor(entity, rigs, actorGroup, new RigUpdate(this.world, this.scene));
+        SceneClips.prepareDeath(actor, member, 0);
 
         /* Placed outright rather than steered: bodies are created at the origin, and letting them
          * travel to their real spots would sweep them through the scene on the first tick. Simulated

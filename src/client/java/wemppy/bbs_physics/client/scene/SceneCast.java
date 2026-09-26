@@ -154,6 +154,10 @@ public final class SceneCast implements Iterable<SceneCast.Member>
 
             member.replay.keyframes.apply(local, member.entity);
 
+            // Physics owns the death pose. Vanilla's death tilt must not enter sampled matrices.
+            if (wemppy.bbs_physics.ragdoll.DeathReplay.at(member.replay, Integer.MAX_VALUE) != null)
+                member.entity.setDeathTime(0);
+
             if (root != null)
             {
                 member.replay.properties.applyProperties(root, local);

@@ -3,7 +3,7 @@
     "package": "wemppy.bbs_physics.mixin.client",
     "compatibilityLevel": "JAVA_17",
     "client": [
-        "UIClipsMixin",
+        "UIClipsMixin", "DeathActorMixin",
         "UILandingScreenMixin"
     ],
     "injectors": {

@@ -304,6 +304,11 @@ public class FilmScene implements AutoCloseable
         return this.cache;
     }
 
+    public RagdollRig.Impact getDeathImpact(wemppy.bbs_physics.actions.DeathActionClip clip)
+    {
+        return this.clips.deathImpact(clip, this.filmTick);
+    }
+
     public List<SceneBody> getBodies()
     {
         return this.bodies;
@@ -586,6 +591,7 @@ public class FilmScene implements AutoCloseable
     private void poseTick(int tick)
     {
         this.cast.apply(tick);
+        this.clips.prepareDeaths(this.cast, tick);
 
         /* The viewport may be anywhere. Every drive must instead see the last completed physics
          * tick, including while computing a long batch or starting over after an edit. */
@@ -756,6 +762,7 @@ public class FilmScene implements AutoCloseable
     /** Keep the last displayed result only for impulse edits at the unchanged cursor. */
     public void invalidate(boolean impulseEdit)
     {
+        this.clips.clearDeathImpacts();
         if (!impulseEdit)
         {
             this.impulsePreview = null;
@@ -805,6 +812,7 @@ public class FilmScene implements AutoCloseable
             for (int tick = 0; tick <= last; tick++)
             {
                 this.cast.apply(tick);
+                this.clips.prepareDeaths(this.cast, tick);
 
                 Form root = member.entity.getForm();
 
@@ -926,11 +934,13 @@ public class FilmScene implements AutoCloseable
      */
     private void rewind()
     {
+        this.clips.clearDeathImpacts();
         this.cast.borrow();
 
         try
         {
             this.cast.apply(0);
+            this.clips.prepareDeaths(this.cast, 0);
 
             for (SceneActor actor : this.actors)
             {

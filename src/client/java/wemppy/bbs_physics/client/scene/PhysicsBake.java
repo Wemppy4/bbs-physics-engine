@@ -455,6 +455,13 @@ public final class PhysicsBake
                     authority.removeAll();
                 }
             }
+
+            // The death marker still keeps the body visible, but must not release the baked pose.
+            if (keys[0] > 0 && (this.formPath == null || this.formPath.isEmpty()) && this.baked.contains(""))
+            {
+                for (var death : this.replay.actions.getClips(wemppy.bbs_physics.actions.DeathActionClip.class))
+                    death.baked.set(true);
+            }
         });
 
         return new Result(this.ticks, keys[0], this.staged.size());

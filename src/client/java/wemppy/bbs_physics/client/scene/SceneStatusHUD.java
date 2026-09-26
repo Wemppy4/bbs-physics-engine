@@ -35,11 +35,42 @@ public final class SceneStatusHUD
 
     public static void render(UIContext context, Area area, SceneStatus status)
     {
+        render(context, area, status, null);
+    }
+
+    public static void render(UIContext context, Area area, SceneStatus status, FilmScene scene)
+    {
         List<String> lines = new ArrayList<>();
         List<Integer> colors = new ArrayList<>();
 
         lines.add(PhysicsKeys.HUD_TICK.format(status.filmTick(), status.bodies(), Math.max(0, status.computed()), status.end()).get());
         colors.add(Colors.WHITE);
+
+        if (scene != null && scene.getFilm() != null)
+        {
+            for (var replay : scene.getFilm().replays.getList())
+            {
+                if (!replay.enabled.get()) continue;
+                var clip = wemppy.bbs_physics.ragdoll.DeathReplay.at(replay, Integer.MAX_VALUE);
+                if (clip == null || clip.baked.get()) continue;
+                var hit = scene.getDeathImpact(clip);
+                if (hit == null) continue;
+                lines.add(mchorse.bbs_mod.l10n.L10n.lang("bbs_physics.death.debug_part").format(hit.bone()).get());
+                colors.add(0xff19ffe6);
+            }
+            boolean hasDeath = scene.getFilm().replays.getList().stream().anyMatch(replay ->
+            {
+                var clip = wemppy.bbs_physics.ragdoll.DeathReplay.at(replay, Integer.MAX_VALUE);
+                return replay.enabled.get() && clip != null && !clip.baked.get();
+            });
+            if (hasDeath)
+            {
+                lines.add(mchorse.bbs_mod.l10n.L10n.lang("bbs_physics.death.debug_point").get());
+                colors.add(0xffffdd35);
+                lines.add(mchorse.bbs_mod.l10n.L10n.lang("bbs_physics.death.debug_arrow").get());
+                colors.add(0xffff6619);
+            }
+        }
 
         if (!status.ready())
         {

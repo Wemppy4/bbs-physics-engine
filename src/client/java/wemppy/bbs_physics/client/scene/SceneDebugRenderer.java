@@ -100,6 +100,7 @@ public final class SceneDebugRenderer
         }
 
         drawImpulses(scene, stack, camera);
+        DeathImpactRenderer.draw(scene, stack, camera);
     }
 
     /**

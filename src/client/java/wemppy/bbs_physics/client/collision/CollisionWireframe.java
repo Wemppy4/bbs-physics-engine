@@ -305,7 +305,7 @@ public final class CollisionWireframe
     }
 
     /** A line with the same world-space thickness as the box outlines. */
-    static void line(BufferBuilder builder, MatrixStack stack, float x1, float y1, float z1, float x2, float y2, float z2, float red, float green, float blue, float alpha)
+    public static void line(BufferBuilder builder, MatrixStack stack, float x1, float y1, float z1, float x2, float y2, float z2, float red, float green, float blue, float alpha)
     {
         if (x1 == x2 && y1 == y2 && z1 == z2)
         {

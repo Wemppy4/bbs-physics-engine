@@ -75,6 +75,7 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
     public void onRegisterReplayActions(RegisterReplayActionsEvent event)
     {
         event.register(FilmBake::button);
+        event.register(wemppy.bbs_physics.client.ragdoll.DeathSetup::controls);
     }
 
     @Subscribe
@@ -206,6 +207,7 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
     public void onRegisterClipPanels(RegisterClipPanelsEvent event)
     {
         event.register(ImpulseActionClip.class, UIImpulseActionClip::new);
+        event.register(wemppy.bbs_physics.actions.DeathActionClip.class, wemppy.bbs_physics.client.clips.UIDeathActionClip::new);
         event.register(TearActionClip.class, UITearActionClip::new);
     }
 }

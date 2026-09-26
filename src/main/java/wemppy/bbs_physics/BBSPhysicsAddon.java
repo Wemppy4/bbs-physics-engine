@@ -109,6 +109,7 @@ public class BBSPhysicsAddon implements BBSAddonMod
     public void onRegisterActionClips(RegisterActionClipsEvent event)
     {
         event.factory
+            .register(new Link(BBSPhysics.MOD_ID, "death"), wemppy.bbs_physics.actions.DeathActionClip.class, new ClipFactoryData(Icons.PHYSICS, 0xb28be0))
             .register(new Link(BBSPhysics.MOD_ID, "impulse"), ImpulseActionClip.class, new ClipFactoryData(Icons.SHARD, 0xff9500))
             .register(new Link(BBSPhysics.MOD_ID, "tear"), TearActionClip.class, new ClipFactoryData(Icons.CUT, 0xff4444));
     }

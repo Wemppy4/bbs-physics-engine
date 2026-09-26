@@ -1,4 +1,20 @@
 {
+    "bbs_physics.death.debug_part": "Удар: %s — коллайдер в момент попадания",
+    "bbs_physics.death.debug_point": "Жёлтый: попадание · Белый: до центра массы",
+    "bbs_physics.death.debug_arrow": "Оранжевый: толчок тела · 1 блок = 4 блока/с",
+    "bbs_physics.death.enabled_tooltip": "Записывать смертельные попадания как падение. Подготавливает модель игрока и включает игровое тело актёра. Уже записанную смерть можно отключить на дорожке действий.",
+    "bbs_physics.death.multiplier_tooltip": "Усиливает все смертельные удары по этому актёру. 1 — обычный отлёт, 0 — падение без толчка. Меняет и уже записанные падения.",
+
+    "bbs_physics.death.baked": "Использовать запечённую анимацию",
+
+    "bbs_physics.death.enabled": "Рэгдолл при смерти",
+    "bbs_physics.death.multiplier": "Сила отлёта",
+    "bbs_physics.death.strength": "Скорость отлёта",
+    "bbs_physics.death.point": "Точка попадания",
+    "bbs_physics.death.direction": "Направление удара",
+    "bbs_physics.death.unsupported": "Выберите загруженную кубическую модель игрока или сначала настройте коллизии костей своей модели в редакторе физики.",
+    "bbs.ui.camera.clips.bbs_physics:death": "Смерть от удара",
+
     "bbs_physics.forms.destruction.title": "Разрушение",
     "bbs_physics.forms.destruction.strength": "Прочность",
     "bbs_physics.forms.destruction.strength_tooltip": "Блок отделяется, когда сила импульса в его точке превышает этот порог (блоков/с). Остальные блоки остаются на месте. До 1024 твёрдых блоков на структуру. Масштаб фиксируется в начале расчёта. Обрушение при потере опор и запекание в ключи пока не поддерживаются.",
