@@ -3,9 +3,14 @@
     "package": "wemppy.bbs_physics.mixin",
     "compatibilityLevel": "JAVA_17",
     "mixins": [
-        "FormMixin", "ReplayMixin",
+        "FormMixin",
+        "ReplayMixin",
         "ModelFormMixin",
-        "StructureFormMixin"
+        "StructureFormMixin",
+        "ActorDeathMixin",
+        "ActionManagerAccessor",
+        "ActionRecorderAccessor",
+        "DeathRecordingMixin"
     ],
     "injectors": {
         "defaultRequire": 1

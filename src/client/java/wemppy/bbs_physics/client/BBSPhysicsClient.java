@@ -23,6 +23,7 @@ public class BBSPhysicsClient implements ClientModInitializer
          * is a library load; the alternative is finding out that physics is missing at the worst
          * possible moment. */
         JoltEngine.available();
+        wemppy.bbs_physics.client.ragdoll.PhysicsDeaths.init();
 
         /* The four moments a simulation needs out of a running film. BBS posts them for every way
          * of running one — playback in the world, the editor's live scene, the frozen frame it

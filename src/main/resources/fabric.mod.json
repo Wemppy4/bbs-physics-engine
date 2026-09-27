@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "custom": { "bbs_physics:death_api": 1 },
+    "custom": { "bbs_physics:death_api": 2 },
     "id": "bbs_physics",
     "version": "${version}",
     "name": "BBS Physics Engine",
