@@ -105,7 +105,7 @@ One branch per target, each building against its own BBS.
 
 | Branch | Minecraft | Built against |
 |---|---|---|
-| `master` | 1.20.1 – 1.20.4 | BBS 2.7 / API 2 |
+| `master` | 1.20.1 – 1.20.4 | BBS 2.8 / API 2 |
 | `1.21.1` | 1.21.1 | BBS 2.7 / API 2 |
 | `1.21.11` | 1.21.11 | BBS 2.7 / API 2 |
 | `cml-1.21.1` | 1.21.1 | BBS CML 2.1-RC4 |
@@ -146,7 +146,7 @@ libs/bbs-<version>-<minecraft>.jar
 libs/bbs-<version>-<minecraft>-sources.jar   # optional, for reading what you build against
 ```
 
-`bbs_version` in `gradle.properties` picks which of them is used — `2.7-1.20.4` on this branch —
+`bbs_version` in `gradle.properties` picks which of them is used — `2.8-1.20.4` on this branch —
 and the build stops with a clear message if that file is not there. The folder is git-ignored, so
 the jars are never committed; take them from a BBS release, or from `build/libs/` of a BBS
 checkout after `gradlew build`.
@@ -217,8 +217,8 @@ MIT.
 
 ## BBS API integration
 
-This checkout now requires **BBS 2.7 with addon API 2**. Build the matching BBS first and put
-`bbs-2.7-1.20.4.jar` (and optionally its sources jar) in `libs/`. Older 2.6 builds do not provide
+This checkout now requires **BBS 2.8 with addon API 2**. Build the matching BBS first and put
+`bbs-2.8-1.20.4.jar` (and optionally its sources jar) in `libs/`. Older 2.6 builds do not provide
 the editor/pose/structure hooks this version uses; the addon rejects them on initialization.
 
 Physics values now use `bbs_physics:` names. BBS reads the registered old `bbs_physics_` names
