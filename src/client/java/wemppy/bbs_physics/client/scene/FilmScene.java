@@ -717,11 +717,10 @@ public class FilmScene implements AutoCloseable
             return;
         }
 
-        Form root = entity.getForm();
+        Anchor anchor = FilmMatrices.getAnchor(entity);
 
-        if (root != null)
+        if (anchor != null)
         {
-            Anchor anchor = root.anchor.get();
             this.recordActor(this.entities.get(anchor.replay), pending, tick, visited);
 
             if (anchor.previous != null)
@@ -927,13 +926,14 @@ public class FilmScene implements AutoCloseable
 
                 if (formPath == null || formPath.isEmpty()) bake.anchorFrame(root, new Matrix4f());
 
-                if ((formPath == null || formPath.isEmpty()) && SceneActor.releaseAnchor(root.anchor.get()) != root.anchor.get())
+                Anchor anchor = FilmMatrices.getAnchor(member.entity);
+                if ((formPath == null || formPath.isEmpty()) && SceneActor.releaseAnchor(anchor) != anchor)
                 {
                     for (SceneActor other : this.actors) other.readCache(this.cache, tick, true);
                     Matrix4f effective = this.actorWorld(member.entity);
-                    Anchor authored = root.anchor.get().copy();
-                    authored.previous = root.anchor.get().previous == null ? null : root.anchor.get().previous.copy();
-                    authored.x = root.anchor.get().x;
+                    Anchor authored = anchor.copy();
+                    authored.previous = anchor.previous == null ? null : anchor.previous.copy();
+                    authored.x = anchor.x;
                     Matrix4f plain = FilmMatrices.getMatrixForRenderWithRotation(member.entity, 0D, 0D, 0D, 1F);
                     Pair<Matrix4f, Float> resolved = FilmMatrices.getTotalMatrix(
                         this.entities, authored, plain, 0D, 0D, 0D, 1F, 0, false, null);
@@ -1204,7 +1204,7 @@ public class FilmScene implements AutoCloseable
         }
 
         Pair<Matrix4f, Float> anchored = FilmMatrices.getTotalMatrix(
-            this.entities, root.anchor.get(), matrix, 0D, 0D, 0D, transition, 0, false, null);
+            this.entities, FilmMatrices.getAnchor(entity), matrix, 0D, 0D, 0D, transition, 0, false, null);
 
         return anchored.a == null ? matrix : anchored.a;
     }

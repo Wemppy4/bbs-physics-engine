@@ -5,6 +5,7 @@ import mchorse.bbs_mod.cubic.ModelInstance;
 import mchorse.bbs_mod.film.BaseFilmController;
 import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_mod.forms.forms.Form;
+import mchorse.bbs_mod.forms.entities.IEntity;
 import mchorse.bbs_mod.forms.renderers.utils.RenderFrame;
 import mchorse.bbs_mod.settings.values.numeric.ValueBoolean;
 import mchorse.bbs_mod.settings.values.numeric.ValueInt;
@@ -15,6 +16,7 @@ import wemppy.bbs_physics.forms.FormTreeWalk;
 import wemppy.bbs_physics.forms.PhysicsForms;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,6 +45,7 @@ public final class PhysicsSceneCheck
         require(!attemptedJolt(), "Empty film must not initialize Jolt, even with debug enabled");
 
         Form root = new Form() {};
+        checkUnanchoredRender(root);
         checkPoseCache(controller, root);
         require(PhysicsForms.isSimulatedTree(new ChainForm()), "Rope must be detected as physics");
         require(!PhysicsForms.isSimulatedTree(new Form() {}), "Plain form must not be simulated");
@@ -62,6 +65,20 @@ public final class PhysicsSceneCheck
         require(SceneEdits.matters(List.of("replays", "actor", "properties", "nested/transform", "0")), "Transform affects physics");
         FilmScenes.clear();
         System.out.println("PhysicsSceneCheck passed: absent films, form presence, lifecycle cleanup and edit filtering.");
+    }
+
+    /** BBS stores anchors on replays; a plain preview entity has no anchor at all. */
+    private static void checkUnanchoredRender(Form form)
+    {
+        IEntity entity = (IEntity) Proxy.newProxyInstance(IEntity.class.getClassLoader(),
+            new Class<?>[] {IEntity.class}, (proxy, method, args) ->
+            {
+                if (method.getName().equals("getForm")) return form;
+                throw new AssertionError("Unexpected entity access: " + method.getName());
+            });
+        SceneActor.prepareRender(entity, Map.of(), 0.5F);
+        SceneActor.prepareRender(entity, Map.of(), 0.5F, false);
+        require(SceneActor.releaseAnchor(null) == null, "An absent replay anchor must stay absent");
     }
 
     /** Catch-up ticks share a render frame and silent track writes keep the pose version. */

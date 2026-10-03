@@ -1,6 +1,7 @@
 package wemppy.bbs_physics.client.scene;
 
 import mchorse.bbs_mod.forms.entities.IEntity;
+import mchorse.bbs_mod.film.FilmMatrices;
 import mchorse.bbs_mod.forms.FormUtilsClient;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
@@ -191,11 +192,11 @@ public final class SceneActor
     /** Detaching must not pull a partially released body towards the actor's unrelated free pose. */
     public static Anchor releaseAnchor(Anchor anchor)
     {
-        if (!anchor.isFadeOut()) return anchor;
+        if (anchor == null || !anchor.isFadeOut()) return anchor;
         for (SceneActor actor : LIVE.values())
         {
             Form root = actor.entity.getForm();
-            if (root == null || root.anchor.get() != anchor) continue;
+            if (root == null || FilmMatrices.getAnchor(actor.entity) != anchor) continue;
             var body = PhysicsForms.getState(root);
             var ragdoll = root instanceof ModelForm model ? FormRagdolls.getState(model) : null;
             boolean physical = body != null && body.isSimulated() || ragdoll != null && ragdoll.isActive();
@@ -223,9 +224,12 @@ public final class SceneActor
         boolean anchored, Set<IEntity> visited)
     {
         if (entity == null || entity.getForm() == null || !visited.add(entity)) return;
-        var anchor = entity.getForm().anchor.get();
-        prepareRender(entities.get(anchor.replay), entities, transition, true, visited);
-        if (anchor.previous != null) prepareRender(entities.get(anchor.previous.replay), entities, transition, true, visited);
+        var anchor = anchored ? FilmMatrices.getAnchor(entity) : null;
+        if (anchor != null)
+        {
+            prepareRender(entities.get(anchor.replay), entities, transition, true, visited);
+            if (anchor.previous != null) prepareRender(entities.get(anchor.previous.replay), entities, transition, true, visited);
+        }
         SceneActor actor = LIVE.get(entity);
         if (actor == null) return;
         try
