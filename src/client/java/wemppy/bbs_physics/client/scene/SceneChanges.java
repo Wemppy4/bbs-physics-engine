@@ -29,11 +29,39 @@ import java.util.Set;
  *
  * <p>Anything else an edit can touch — a form, its physics, the film's own physics knobs, the list of
  * replays — changes the film from its first tick, and says so.</p>
+ *
+ * <p>Each answer also says what the edit does to the poses kept between runs ({@link ScenePoses}):
+ * a physics edit leaves them all standing, a key takes back its replay's from the same tick as the
+ * recording, a form handed over whole is compared, and anything else forgets its replay's.</p>
  */
 final class SceneChanges
 {
     /** What {@link #affected} answers for an edit that changes nothing the simulation reads. */
     static final int NONE = Integer.MAX_VALUE;
+
+    /** What an edit does to the poses walked so far — see {@link ScenePoses}. */
+    enum Poses
+    {
+        /** Nothing: the animation is as it was. */
+        STAND,
+        /** The replay's animation is different from the change's tick on. */
+        FROM,
+        /** The replay's form was handed over whole: its poses stand if its looks did not change. */
+        FORM,
+        /** None of the replay's poses can be trusted. */
+        REPLAY,
+        /** None of anyone's. */
+        ALL
+    }
+
+    /**
+     * What one edit changes: the recording from {@code tick} on, and the poses walked so far as
+     * {@code poses} says — of {@code replay}'s actor, or of everyone when there is no replay.
+     */
+    record Change(int tick, Replay replay, Poses poses)
+    {
+        static final Change NOTHING = new Change(NONE, null, Poses.STAND);
+    }
 
     /** One key as it was: where it sits, whether it plays at all, and everything it says. */
     record Key(float tick, boolean enabled, BaseType data)
@@ -106,31 +134,97 @@ final class SceneChanges
     }
 
     /**
-     * The first tick an edit to {@code value} can change, or {@link #NONE} when it changes nothing the
-     * simulation reads. The copy of the edited channel or clips is brought up to date either way.
+     * What an edit to {@code value} changes: the first tick of the recording ({@link #NONE} when it
+     * changes nothing the simulation reads), and what becomes of the poses walked so far (see
+     * {@link ScenePoses}). The copy of the edited channel or clips is brought up to date either way.
      *
      * @param reach the replays a step reads — the animation of any other replay changes nothing here
      */
-    int affected(Film film, BaseValue value, Set<String> reach)
+    Change affected(Film film, BaseValue value, Set<String> reach)
+    {
+        Change change = classify(film, value);
+
+        if (change.replay() == null || change.tick() == NONE)
+        {
+            /* Nothing the simulation reads, the film's physics knobs — or the film as a whole, or the
+             * list of its replays, after which the keys may all be new. */
+            if (change.poses() == Poses.ALL)
+            {
+                this.resync = true;
+            }
+
+            return change;
+        }
+
+        Replay replay = change.replay();
+        BaseValue part = partOf(value, replay);
+
+        if (part == null)
+        {
+            /* The replay as a whole — which is how a recording overwrites it: its keys may all be
+             * new. */
+            this.resync = true;
+
+            return change;
+        }
+
+        if (part == replay.actions)
+        {
+            return new Change(this.clipsChanged(replay.actions), replay, Poses.STAND);
+        }
+
+        if (part != replay.keyframes && part != replay.properties)
+        {
+            /* The form, the anchor as authored, the replay's own settings. */
+            return change;
+        }
+
+        if (!reach.contains(replay.getId()))
+        {
+            return Change.NOTHING;
+        }
+
+        for (BaseValue current = value; current != null && current != replay; current = current.getParent())
+        {
+            if (current instanceof KeyframeChannel<?> channel)
+            {
+                int tick = this.channelChanged(channel, value instanceof Keyframe<?> keyframe ? keyframe : null);
+
+                return new Change(tick, replay, change.poses() == Poses.STAND ? Poses.STAND : Poses.FROM);
+            }
+        }
+
+        /* The channels as a whole — a track added or taken away: the copy starts again from here. */
+        for (KeyframeChannel<?> channel : channelsOf(replay))
+        {
+            this.channels.put(channel, copy(channel, null, null));
+        }
+
+        return new Change(0, replay, Poses.REPLAY);
+    }
+
+    /**
+     * What an edit to {@code value} changes, told from where the value sits alone — no copy to compare
+     * against, so a key changes its replay from the start and its poses all. What {@link #affected}
+     * refines; and what an edit comes to when no scene is there to compare it.
+     */
+    static Change classify(Film film, BaseValue value)
     {
         if (value == film)
         {
-            this.resync = true;
-
-            return 0;
+            return new Change(0, null, Poses.ALL);
         }
 
         List<String> path = value.getPath().strings;
 
         if (!SceneEdits.matters(path))
         {
-            return NONE;
+            return Change.NOTHING;
         }
 
-        BaseValue part = null;
         Replay replay = null;
 
-        for (BaseValue current = value; current != null; part = current, current = current.getParent())
+        for (BaseValue current = value; current != null; current = current.getParent())
         {
             if (current instanceof Replay found)
             {
@@ -141,56 +235,66 @@ final class SceneChanges
 
         if (replay == null)
         {
-            /* The film's physics knobs, the list of replays: all of it from the start. Anything above
-             * the replays but the knobs may have brought keys the copy never saw. */
-            if (!path.contains(FilmPhysics.KEY))
-            {
-                this.resync = true;
-            }
-
-            return 0;
+            /* The film's physics knobs move no one's animation; the list of replays may move anyone's. */
+            return new Change(0, null, path.contains(FilmPhysics.KEY) ? Poses.STAND : Poses.ALL);
         }
+
+        BaseValue part = partOf(value, replay);
 
         if (part == null)
         {
-            /* The replay as a whole — which is how a recording overwrites it: its keys may all be
-             * new. */
-            this.resync = true;
-
-            return 0;
+            return new Change(0, replay, Poses.REPLAY);
         }
 
         if (part == replay.actions)
         {
-            return this.clipsChanged(replay.actions);
+            /* A push changes where things fly, never how anyone is animated. */
+            return new Change(0, replay, Poses.STAND);
         }
 
-        if (part != replay.keyframes && part != replay.properties)
+        if (part == replay.keyframes || part == replay.properties)
         {
-            /* The form, the anchor as authored, the replay's own settings. */
-            return 0;
+            /* A track of a physics knob moves no bone; any other key moves the replay's actor. */
+            String property = part == replay.properties ? SceneEdits.trackProperty(path) : null;
+
+            return new Change(0, replay, property != null && ScenePoses.isPhysics(property) ? Poses.STAND : Poses.REPLAY);
         }
 
-        if (!reach.contains(replay.getId()))
+        if (part == replay.form)
         {
-            return NONE;
+            if (value == replay.form)
+            {
+                /* The form put back whole, which is how the form editor hands it over: its looks
+                 * may or may not have changed, and only a comparison can say. */
+                return new Change(0, replay, Poses.FORM);
+            }
+
+            for (BaseValue current = value; current != null && current != replay.form; current = current.getParent())
+            {
+                if (ScenePoses.isPhysics(current.getId()))
+                {
+                    return new Change(0, replay, Poses.STAND);
+                }
+            }
+
+            return new Change(0, replay, Poses.REPLAY);
         }
+
+        /* The replay's own settings: its death switches are physics, the rest places the actor. */
+        return new Change(0, replay, ScenePoses.isPhysics(part.getId()) ? Poses.STAND : Poses.REPLAY);
+    }
+
+    /** The child of {@code replay} that {@code value} sits under, or null for the replay itself. */
+    private static BaseValue partOf(BaseValue value, Replay replay)
+    {
+        BaseValue part = null;
 
         for (BaseValue current = value; current != null && current != replay; current = current.getParent())
         {
-            if (current instanceof KeyframeChannel<?> channel)
-            {
-                return this.channelChanged(channel, value instanceof Keyframe<?> keyframe ? keyframe : null);
-            }
+            part = current;
         }
 
-        /* The channels as a whole — a track added or taken away: the copy starts again from here. */
-        for (KeyframeChannel<?> channel : channelsOf(replay))
-        {
-            this.channels.put(channel, copy(channel, null, null));
-        }
-
-        return 0;
+        return part;
     }
 
     /**

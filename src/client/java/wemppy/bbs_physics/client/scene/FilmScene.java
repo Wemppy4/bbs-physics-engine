@@ -55,6 +55,11 @@ import java.util.Map;
  * the editor and the video agreeing — and the development build checks it as it goes
  * ({@link #verify}).</p>
  *
+ * <p><b>The animation is walked once.</b> A pose walk that takes in nothing simulated is what the
+ * keyframes alone say, and is kept per tick for the film ({@link ScenePoses}), outliving the scene:
+ * a physics edit — even one that comes in through a form editor, after which BBS rebuilds the cast
+ * and this scene with it — records the film again without walking its animation again.</p>
+ *
  * <p><b>Everything is simulated around an origin</b> rather than in raw world coordinates. Jolt is
  * built here in single precision, where a float's resolution at a hundred thousand blocks out is
  * coarse enough to see, and Minecraft worlds go much further than that. So the scene picks a block
@@ -209,6 +214,18 @@ public class FilmScene implements AutoCloseable
     /** Counts the steps, so a pose walked for one step is never taken for the next one's. */
     private long step;
 
+    /** The film tick the cast is standing on for the step being taken — see {@link #posedTick}. */
+    private int posed;
+
+    /**
+     * The poses the film's walks came to when they took in nothing simulated, kept between runs and
+     * between scenes of the film — see {@link ScenePoses}.
+     */
+    private final ScenePoses poses;
+
+    /** Whether this scene has compared the kept poses with its replays in full — see {@link #reach}. */
+    private boolean posesChecked;
+
     /** The older half of the pair {@link #distribute} last handed out, and whether it was a cut. */
     private int shownPrevious = -1;
     private boolean shownJumped = true;
@@ -268,6 +285,7 @@ public class FilmScene implements AutoCloseable
         this.timeline = new PhysicsTimeline(this.world);
         this.entities = controller.getEntities();
         this.film = controller.film;
+        this.poses = FilmScenes.posesFor(this.film);
         this.cast = new SceneCast(controller);
 
         boolean built = false;
@@ -315,6 +333,7 @@ public class FilmScene implements AutoCloseable
              * when it was assembled — including the origin it is centred on, which is a rounding of
              * an actor's position and would otherwise land on a different block for the same film
              * opened at a different moment. */
+            this.posed = 0;
             this.cast.apply(0);
             this.pickOrigin();
 
@@ -459,6 +478,12 @@ public class FilmScene implements AutoCloseable
         return this.step;
     }
 
+    /** The film tick the cast is standing on for this step, which is where its walks are kept. */
+    int posedTick()
+    {
+        return this.posed;
+    }
+
     /**
      * Works out what a step reads — see {@link SceneReach} — and tells every actor how much of its
      * pose work a step may share: an actor that hangs off nothing walks its pose once and reads it
@@ -474,8 +499,11 @@ public class FilmScene implements AutoCloseable
         {
             SceneCast.Member member = this.cast.find(actor.getEntity());
 
-            actor.plan(member == null || SceneReach.anchored(member));
+            actor.plan(member == null || SceneReach.anchored(member),
+                member == null ? null : this.poses.actor(member.replay, actor.getEntity().getForm(), !this.posesChecked));
         }
+
+        this.posesChecked = true;
 
         this.changes.follow(this.film, this.reach);
     }
@@ -496,7 +524,10 @@ public class FilmScene implements AutoCloseable
 
         for (BaseValue value : values)
         {
-            first = Math.min(first, this.changes.affected(film, value, this.reach));
+            SceneChanges.Change change = this.changes.affected(film, value, this.reach);
+
+            first = Math.min(first, change.tick());
+            this.poses.edited(change);
         }
 
         if (first != SceneChanges.NONE)
@@ -938,6 +969,7 @@ public class FilmScene implements AutoCloseable
     private void poseTick(int tick)
     {
         this.step += 1;
+        this.posed = tick;
         this.cast.applyReached(tick);
         this.clips.prepareDeaths(this.cast, tick);
 
@@ -1618,6 +1650,7 @@ public class FilmScene implements AutoCloseable
              * worked out again before anything is stepped. A new step, too, so that nothing walked
              * before the edit is ever taken for a walk of this run. */
             this.step += 1;
+            this.posed = 0;
             this.reach();
             this.checkpoints.clear();
             this.cast.apply(0);

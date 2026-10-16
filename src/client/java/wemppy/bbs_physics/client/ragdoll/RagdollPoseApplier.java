@@ -123,6 +123,7 @@ public final class RagdollPoseApplier
          * to write — its anchor walk skips them by default (the IK stretch rule), so a strand's
          * anchor would be read where the animation had it. */
         chainStretch = true;
+        PoseEvaluation.noteTakenIn();
 
         Walker walker = new Walker(state, transition);
 

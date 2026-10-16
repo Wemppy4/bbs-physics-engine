@@ -52,6 +52,7 @@ public final class PhysicsApiIntegration
             || !PoseEvaluation.allows(form, PoseEvaluation.Kind.BODY)) return;
         float weight = state.getWeight(transition);
         if (weight <= 0F) return;
+        PoseEvaluation.noteTakenIn();
         Vector3f position = state.getPosition(transition, new Vector3f());
         Quaternionf rotation = state.getRotation(transition, new Quaternionf());
         if (weight < 1F)

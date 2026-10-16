@@ -121,4 +121,30 @@ public final class SceneEdits
 
         return !FORM_COSMETIC.contains(slash < 0 ? named : named.substring(slash + 1));
     }
+
+    /** Whether a replay's own value of this id is one physics never reads. */
+    static boolean isCosmeticReplayValue(String id)
+    {
+        return REPLAY_COSMETIC.contains(id);
+    }
+
+    /**
+     * The property an edit inside a track is to — what follows the last slash of the track's id, as
+     * {@link #matters} reads it — or null when {@code path} is not inside a track.
+     */
+    static String trackProperty(List<String> path)
+    {
+        int replays = path.indexOf("replays");
+        int what = replays + 2;
+
+        if (replays < 0 || what + 1 >= path.size() || !path.get(what).equals("properties"))
+        {
+            return null;
+        }
+
+        String named = path.get(what + 1);
+        int slash = named.lastIndexOf('/');
+
+        return slash < 0 ? named : named.substring(slash + 1);
+    }
 }

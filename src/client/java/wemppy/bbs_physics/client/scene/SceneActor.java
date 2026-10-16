@@ -19,6 +19,7 @@ import wemppy.bbs_physics.forms.PhysicsBodyState;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import wemppy.bbs_physics.forms.PhysicsAnchor;
 import wemppy.bbs_physics.ragdoll.FormRagdolls;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Set;
 import java.util.ArrayList;
@@ -64,6 +65,25 @@ public final class SceneActor
 
     /** The rigs whose walk after the step is the same as before it — see {@link #plan}. */
     private final Set<SceneRig> settled = Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /**
+     * This actor's poses as kept between runs of the recording, or null when it may keep none — see
+     * {@link #plan} and {@link ScenePoses}.
+     */
+    private ScenePoses.Actor poses;
+
+    /** Every form of this actor's tree, for asking whether a walk takes in anything simulated. */
+    private final List<Form> forms = new ArrayList<>();
+
+    /** The forms a walk leaves a parent frame on — those with a body state — by path and by state. */
+    private String[] framePaths = new String[0];
+    private PhysicsBodyState[] frameStates = new PhysicsBodyState[0];
+
+    /** This step's walk that took in nothing simulated — see {@link #shared}. */
+    private final SharedWalk shared = new SharedWalk();
+
+    /** Set once a walk said to take in nothing took something in after all — see {@link #shared}. */
+    private boolean unshared;
 
     /**
      * Whether this actor's last evaluation failed, so the failure is reported once instead of sixty
@@ -117,17 +137,25 @@ public final class SceneActor
      * only for a rig that inherits nothing that falls: no simulated form above it, and nothing simulated
      * on its own form that its pose takes in (see {@link PoseEvaluation#allows}).</p>
      *
+     * <p>Beyond that, a walk that takes in nothing simulated is the animation alone, the same for
+     * every rig that asks for it, and is taken once a step and kept between runs — see
+     * {@link #shared}.</p>
+     *
      * <p>An actor that hangs off another actor shares nothing: its placement goes through that
      * actor's pose, and through the release of its own anchor, which reads what its own bodies just
      * published. Its walks are taken three times, as they always were.</p>
      *
      * @param anchored whether this actor hangs off another at any point of the film
+     * @param poses    this actor's poses kept between runs, or null when it may keep none
      */
-    void plan(boolean anchored)
+    void plan(boolean anchored, ScenePoses.Actor poses)
     {
         this.walks.clear();
         this.settled.clear();
         this.steady = !anchored;
+        this.shared.step = Long.MIN_VALUE;
+        this.poses = anchored ? null : poses;
+        this.forms.clear();
 
         if (anchored)
         {
@@ -135,12 +163,27 @@ public final class SceneActor
         }
 
         Map<Form, String> paths = new IdentityHashMap<>();
+        List<String> framePaths = new ArrayList<>();
+        List<PhysicsBodyState> frameStates = new ArrayList<>();
 
         FormTreeWalk.walk(this.entity.getForm(), (form, path, bone) ->
         {
             paths.put(form, path);
+            this.forms.add(form);
+
+            PhysicsBodyState state = PhysicsForms.getState(form);
+
+            if (state != null)
+            {
+                framePaths.add(path);
+                frameStates.add(state);
+            }
+
             return true;
         });
+
+        this.framePaths = framePaths.toArray(new String[0]);
+        this.frameStates = frameStates.toArray(new PhysicsBodyState[0]);
 
         for (SceneRig rig : this.rigs)
         {
@@ -222,7 +265,9 @@ public final class SceneActor
         {
             for (SceneRig rig : this.rigs)
             {
-                if (reset || !this.reuse(scene, rig))
+                boolean walked = reset ? this.shared(scene, rig, true) : this.reuse(scene, rig);
+
+                if (!walked)
                 {
                     this.sample(scene, rig, reset);
                 }
@@ -260,10 +305,14 @@ public final class SceneActor
             {
                 if (staging)
                 {
-                    this.sample(scene, rig, false);
+                    if (!this.shared(scene, rig, false))
+                    {
+                        this.sample(scene, rig, false);
+                    }
+
                     this.keep(scene, rig);
                 }
-                else if (!this.settled.contains(rig) || !this.reuse(scene, rig))
+                else if ((!this.settled.contains(rig) || !this.reuse(scene, rig)) && !this.shared(scene, rig, false))
                 {
                     this.sample(scene, rig, false);
                 }
@@ -351,6 +400,115 @@ public final class SceneActor
         private final Matrix4f actorWorld = new Matrix4f();
         private final Matrix4f parentFrame = new Matrix4f();
         private PhysicsBodyState body;
+    }
+
+    /**
+     * Hands {@code rig} this step's walk that took in nothing simulated, when its own walk would take
+     * in nothing either: the two are then the same walk, the animation alone, whoever it is walked
+     * for. The step's first such walk is read from the poses kept between runs, or walked and kept —
+     * which is what spares a recording made again after a physics edit nearly every walk it has.
+     *
+     * <p>Along with the matrices goes the parent frame a walk leaves on every form with a body state,
+     * which the rigs read right after their walk.</p>
+     *
+     * @param reset whether the scene is starting over — a walk that takes in nothing by construction
+     * @return false when {@code rig} has to walk for itself
+     */
+    private boolean shared(FilmScene scene, SceneRig rig, boolean reset)
+    {
+        if (!this.steady || this.unshared || rig.getForm() == null)
+        {
+            return false;
+        }
+
+        PoseEvaluation evaluation = this.evaluations.get(rig);
+
+        if (!reset && evaluation.takesIn(this.forms))
+        {
+            return false;
+        }
+
+        SharedWalk walk = this.shared;
+
+        if (walk.step != scene.stepIndex())
+        {
+            int tick = scene.posedTick();
+            ScenePoses.Pose kept = this.poses == null ? null : this.poses.get(tick);
+
+            walk.frames(this.framePaths.length);
+
+            if (kept != null && Arrays.equals(kept.frames, this.framePaths))
+            {
+                walk.matrices = kept.matrices();
+                kept.actorWorld(walk.actorWorld);
+
+                for (int i = 0; i < this.framePaths.length; i++)
+                {
+                    kept.parentFrame(i, walk.parentFrames[i]);
+                }
+            }
+            else
+            {
+                this.sample(scene, rig, reset);
+
+                if (evaluation.tookIn())
+                {
+                    /* Asked before the walk, the substitutions said they would draw nothing, and one
+                     * drew all the same: the question has gone out of step with them. The walk is the
+                     * rig's own and right for it; this actor shares no more walks. */
+                    this.unshared = true;
+                    BBSPhysics.LOGGER.warn("A pose walk expected to be the animation alone took in the simulation; this actor's walks are no longer shared.");
+
+                    return true;
+                }
+
+                walk.matrices = this.update.matrices;
+                walk.actorWorld.set(this.update.actorWorld);
+
+                for (int i = 0; i < this.frameStates.length; i++)
+                {
+                    walk.parentFrames[i].set(this.frameStates[i].getWalkParentFrame());
+                }
+
+                if (this.poses != null)
+                {
+                    this.poses.put(tick, walk.matrices, walk.actorWorld, this.framePaths, walk.parentFrames);
+                }
+            }
+
+            walk.step = scene.stepIndex();
+        }
+
+        this.update.on(walk.matrices, walk.actorWorld, reset);
+
+        for (int i = 0; i < this.frameStates.length; i++)
+        {
+            this.frameStates[i].captureWalkParentFrame(walk.parentFrames[i]);
+        }
+
+        return true;
+    }
+
+    /** The step's walk that took in nothing simulated, as {@link #shared} hands it out. */
+    private static final class SharedWalk
+    {
+        private long step = Long.MIN_VALUE;
+        private MatrixCache matrices;
+        private final Matrix4f actorWorld = new Matrix4f();
+        private Matrix4f[] parentFrames = new Matrix4f[0];
+
+        private void frames(int count)
+        {
+            if (this.parentFrames.length != count)
+            {
+                this.parentFrames = new Matrix4f[count];
+
+                for (int i = 0; i < count; i++)
+                {
+                    this.parentFrames[i] = new Matrix4f();
+                }
+            }
+        }
     }
 
     private void sample(FilmScene scene, SceneRig rig, boolean reset, float transition, boolean anchored)

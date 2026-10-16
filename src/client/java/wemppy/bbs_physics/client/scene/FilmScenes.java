@@ -41,6 +41,10 @@ public class FilmScenes
     private static final Map<BaseFilmController, FilmScene> SCENES = new IdentityHashMap<>();
     private static final Map<String, FilmScene.Recording> RETAINED = new java.util.HashMap<>();
 
+    /** The kept poses of the one film whose scenes were built last — see {@link #posesFor}. */
+    private static ScenePoses poses;
+    private static WeakReference<Film> posesFilm = new WeakReference<>(null);
+
     private static boolean manual(BaseFilmController controller)
     {
         return controller instanceof mchorse.bbs_mod.ui.film.controller.FilmEditorController
@@ -392,6 +396,7 @@ public class FilmScenes
         EMPTY.removeIf(controller -> sameFilm(controller.film, film));
 
         Iterator<Map.Entry<BaseFilmController, FilmScene>> scenes = SCENES.entrySet().iterator();
+        boolean followed = false;
 
         while (scenes.hasNext())
         {
@@ -406,6 +411,7 @@ public class FilmScenes
                 {
                     /* Only as much of the recording as the edit changed is taken back. */
                     entry.getValue().edited(film, values, impulseEdit);
+                    followed = true;
                 }
                 else
                 {
@@ -415,6 +421,53 @@ public class FilmScenes
                     EMPTY.add(controller);
                 }
             }
+        }
+
+        if (!followed)
+        {
+            editedUnfollowed(film, values);
+        }
+    }
+
+    /**
+     * The poses kept for {@code film}, outliving its scenes — see {@link ScenePoses}.
+     *
+     * <p>Outliving them is the point: BBS rebuilds the cast on every undo and every closed form
+     * editor, a physics edit included, and the scene goes with it — while the walks of the film it is
+     * rebuilt for are still the walks they were. One film at a time, the one being worked on: a film
+     * left behind lets go of its poses as soon as another builds a scene.</p>
+     */
+    static ScenePoses posesFor(Film film)
+    {
+        if (film == null)
+        {
+            return new ScenePoses();
+        }
+
+        if (poses == null || posesFilm.get() != film)
+        {
+            poses = new ScenePoses();
+            posesFilm = new WeakReference<>(film);
+        }
+
+        return poses;
+    }
+
+    /**
+     * An edit no scene was there to compare — between a rebuilt cast and its new scene, say. The kept
+     * poses take back what it may have changed, judged from where it sits alone (see
+     * {@link SceneChanges#classify}): coarser, never wrong.
+     */
+    private static void editedUnfollowed(Film film, List<BaseValue> values)
+    {
+        if (poses == null || posesFilm.get() != film)
+        {
+            return;
+        }
+
+        for (BaseValue value : values)
+        {
+            poses.edited(SceneChanges.classify(film, value));
         }
     }
 
@@ -468,7 +521,7 @@ public class FilmScenes
     /** One change to a watched film, as it happens — see {@link #watch}. */
     private static void onLiveEdit(BaseValue value)
     {
-        if (SCENES.isEmpty() || value == null)
+        if (value == null || (SCENES.isEmpty() && poses == null))
         {
             return;
         }
@@ -480,12 +533,16 @@ public class FilmScenes
             return;
         }
 
+        boolean followed = false;
+
         for (Map.Entry<BaseFilmController, FilmScene> entry : new ArrayList<>(SCENES.entrySet()))
         {
             if (!sameFilm(entry.getKey().film, film))
             {
                 continue;
             }
+
+            followed = true;
 
             try
             {
@@ -497,6 +554,11 @@ public class FilmScenes
 
                 fail(entry.getKey());
             }
+        }
+
+        if (!followed)
+        {
+            editedUnfollowed(film, List.of(value));
         }
     }
 
@@ -702,6 +764,8 @@ public class FilmScenes
         FAILED.clear();
         EMPTY.clear();
         RETAINED.clear();
+        poses = null;
+        posesFilm = new WeakReference<>(null);
     }
 
     public static int getSceneCount()
