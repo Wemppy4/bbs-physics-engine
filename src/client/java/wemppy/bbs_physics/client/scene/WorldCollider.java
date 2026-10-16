@@ -55,9 +55,11 @@ public final class WorldCollider
      * <p>Along with the shape the blocks came to, or null when there were none: a scene built for
      * the same film after BBS rebuilt its cast stands on the same blocks without collecting them
      * again (see {@link #adopt}). A shape belongs to no world, so it outlives the one it was built
-     * for.</p>
+     * for. And with a digest of every box in it, in the order they went in: two windows with the
+     * same digest are the same ground to the last box, which is what a recording kept on disk is
+     * checked against (see {@link RecordingStore}).</p>
      */
-    public record Window(int radius, int below, int above, int boxes, List<int[]> areas, ConstShape shape)
+    public record Window(int radius, int below, int above, int boxes, List<int[]> areas, ConstShape shape, byte[] ground)
     {
         /**
          * Lets go of the shape, once no scene will stand on it again: a scene going without handing
@@ -145,10 +147,11 @@ public final class WorldCollider
         int radius, int below, int above)
     {
         List<int[]> areas = new ArrayList<>(1);
+        Fingerprint ground = new Fingerprint().put(radius).put(below).put(above);
 
         if (world == null)
         {
-            return new Window(radius, below, above, 0, areas, null);
+            return new Window(radius, below, above, 0, areas, null, ground.put("no world").digest());
         }
 
         /* Which centres deserve a region of their own: [baseX, baseY, baseZ, minY, maxY] each. */
@@ -176,7 +179,7 @@ public final class WorldCollider
 
         if (accepted.isEmpty())
         {
-            return new Window(radius, below, above, 0, areas, null);
+            return new Window(radius, below, above, 0, areas, null, ground.put("nothing accepted").digest());
         }
 
         StaticCompoundShapeSettings compound = new StaticCompoundShapeSettings();
@@ -260,7 +263,7 @@ public final class WorldCollider
 
                         for (Box box : parts)
                         {
-                            if (addBox(compound, box, x - originX, y - originY, z - originZ))
+                            if (addBox(compound, ground, box, x - originX, y - originY, z - originZ))
                             {
                                 boxes += 1;
                             }
@@ -276,7 +279,7 @@ public final class WorldCollider
         {
             JoltRelease.release(compound);
 
-            return new Window(radius, below, above, 0, areas, null);
+            return new Window(radius, below, above, 0, areas, null, ground.put("no boxes").digest());
         }
 
         ShapeResult result = compound.create();
@@ -286,7 +289,7 @@ public final class WorldCollider
             BBSPhysics.LOGGER.error("Could not build world collision for a physics scene: {}", result.getError());
             JoltRelease.release(result, compound);
 
-            return new Window(radius, below, above, 0, new ArrayList<>(0), null);
+            return new Window(radius, below, above, 0, new ArrayList<>(0), null, ground.put("failed").digest());
         }
 
         /* A hold of its own on the compound, kept by the window for as long as some scene stands
@@ -301,7 +304,7 @@ public final class WorldCollider
         BBSPhysics.LOGGER.debug("World collision built from {} boxes in {} area(s), the first around ({}, {}, {}).",
             boxes, accepted.size(), first[0], first[1], first[2]);
 
-        return new Window(radius, below, above, boxes, areas, shape);
+        return new Window(radius, below, above, boxes, areas, shape, ground.put(boxes).digest());
     }
 
     /**
@@ -418,7 +421,7 @@ public final class WorldCollider
         return true;
     }
 
-    private static boolean addBox(StaticCompoundShapeSettings compound, Box box, double blockX, double blockY, double blockZ)
+    private static boolean addBox(StaticCompoundShapeSettings compound, Fingerprint ground, Box box, double blockX, double blockY, double blockZ)
     {
         float halfX = (float) (box.maxX - box.minX) * 0.5F;
         float halfY = (float) (box.maxY - box.minY) * 0.5F;
@@ -434,6 +437,8 @@ public final class WorldCollider
         float centerX = (float) (blockX + (box.minX + box.maxX) * 0.5D);
         float centerY = (float) (blockY + (box.minY + box.maxY) * 0.5D);
         float centerZ = (float) (blockZ + (box.minZ + box.maxZ) * 0.5D);
+
+        ground.put(centerX).put(centerY).put(centerZ).put(halfX).put(halfY).put(halfZ).put(radius);
 
         BoxShape leaf = new BoxShape(new Vec3(halfX, halfY, halfZ), radius);
 

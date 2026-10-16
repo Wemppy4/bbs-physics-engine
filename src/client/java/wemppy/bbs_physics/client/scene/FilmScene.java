@@ -155,6 +155,34 @@ public class FilmScene implements AutoCloseable
      */
     private boolean groundHandedOver;
 
+    /**
+     * How much of the film is recorded afresh and compared, bit for bit, with a recording kept on
+     * disk before that recording is taken — see {@link #takeStored}.
+     */
+    private static final int STORED_CHECK = 20;
+
+    /**
+     * The recording kept on disk for this film, when it passed every check but the last: the first
+     * second of the film recorded afresh, and compared — see {@link #takeStored}.
+     */
+    private RecordingStore.Stored stored;
+
+    /** Whether the scene was built whole: only such a scene keeps its recording on disk. */
+    private boolean built;
+
+    /**
+     * Which world the film belongs to, taken as the scene is built: by the time a scene closes on
+     * leaving the world, the world may be gone, and the recording would be kept under no name.
+     */
+    private final String worldKey = RecordingStore.worldKey();
+
+    /**
+     * Where the world and every rig stood before the film's first step, as built — what starting
+     * over goes back to (see {@link #rewind}), so that a recording made after any number of edits is
+     * the recording a scene built afresh makes, to the bit.
+     */
+    private SceneCheckpoints.Checkpoint initial;
+
     record Recording(PhysicsCache cache, Map<String, Integer> keys, double x, double y, double z, boolean complete, boolean full, int lostAt) {}
 
     Recording recording()
@@ -338,8 +366,13 @@ public class FilmScene implements AutoCloseable
             {
                 this.adopt(handover);
             }
+            else if (!this.manualCalculation())
+            {
+                this.stored = this.storedCandidate();
+            }
 
             built = true;
+            this.built = true;
         }
         finally
         {
@@ -393,6 +426,21 @@ public class FilmScene implements AutoCloseable
              * channel after it, which is why a change to the set of bodies rebuilds the scene. */
             this.cache.seal();
 
+            /* The opening frame stood exactly as starting over stands it (see rewind): the deaths
+             * the film opens with, every body at its animated pose and stopped, with everything
+             * built. */
+            this.clips.prepareDeaths(this.cast, 0);
+
+            for (SceneActor actor : this.actors)
+            {
+                actor.readCache(this.cache, -1, true);
+            }
+
+            for (SceneActor actor : this.actors)
+            {
+                actor.drive(this, true);
+            }
+
             /* The world as assembled is tick 0 of the film — the opening frame, whatever the cursor
              * happened to be on — and that is the recording's first entry. A physics clip sitting on
              * frame 0 fires here: the stepping loop only ever poses tick 1 onwards, so without this
@@ -405,11 +453,26 @@ public class FilmScene implements AutoCloseable
             this.timeline.start();
             this.clips.apply(this.cast, 0);
             this.record(0);
+
+            this.initial = this.standing(0);
         }
         finally
         {
             this.cast.restore(cursor);
         }
+    }
+
+    /** Where the world and every rig stand now, as a checkpoint of {@code tick}. */
+    private SceneCheckpoints.Checkpoint standing(int tick)
+    {
+        RigMemory memory = new RigMemory();
+
+        for (SceneActor actor : this.actors)
+        {
+            actor.remember(memory);
+        }
+
+        return new SceneCheckpoints.Checkpoint(tick, this.world.saveState(), memory.trim(), this.lostAt);
     }
 
     /**
@@ -1026,6 +1089,11 @@ public class FilmScene implements AutoCloseable
         {
             this.checkpoint(tick);
         }
+
+        if (this.stored != null && !this.verifying && tick >= STORED_CHECK)
+        {
+            this.takeStored();
+        }
     }
 
     /**
@@ -1307,6 +1375,9 @@ public class FilmScene implements AutoCloseable
      */
     public void invalidateFrom(int tick, boolean impulseEdit)
     {
+        /* The film is not what the recording kept on disk was checked against any more. */
+        this.stored = null;
+
         if (this.manualCalculation())
         {
             this.stale = true;
@@ -1495,14 +1566,7 @@ public class FilmScene implements AutoCloseable
 
         if (standing)
         {
-            RigMemory memory = new RigMemory();
-
-            for (SceneActor actor : this.actors)
-            {
-                actor.remember(memory);
-            }
-
-            this.checkpoints.add(new SceneCheckpoints.Checkpoint(tick, this.world.saveState(), memory.trim(), this.lostAt));
+            this.checkpoints.add(this.standing(tick));
         }
 
         SceneHandover handover = new SceneHandover(this.film, this.originX, this.originY, this.originZ, this.window,
@@ -1569,6 +1633,254 @@ public class FilmScene implements AutoCloseable
         BBSPhysics.LOGGER.info("Physics scene for film \"{}\" took over the recording of the one before it: {} ticks, standing on tick {}{}.",
             this.film == null ? "?" : this.film.getId(), this.cache.getComputed(), given.tick,
             this.staleFrom == FRESH ? "" : ", recording again from tick " + this.staleFrom);
+    }
+
+    /**
+     * The recording kept on disk for this film, read back and checked against everything it was made
+     * from that can be checked without recording anything — see {@link RecordingStore}. Null when
+     * there is none, or when anything differs; the reason is said once, in the log.
+     */
+    private RecordingStore.Stored storedCandidate()
+    {
+        if (this.film == null || this.film.getId() == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            RecordingStore.Stored stored = RecordingStore.load(this.film.getId(), this.worldKey);
+
+            if (stored == null)
+            {
+                return null;
+            }
+
+            String why = this.unlike(stored);
+
+            if (why != null)
+            {
+                BBSPhysics.LOGGER.info("The physics recording kept on disk for film \"{}\" is not used: {}. The film is recorded afresh.", this.film.getId(), why);
+
+                return null;
+            }
+
+            return stored;
+        }
+        catch (Throwable e)
+        {
+            BBSPhysics.LOGGER.warn("The physics recording kept on disk could not be checked; the film is recorded afresh.", e);
+
+            return null;
+        }
+    }
+
+    /** What makes {@code stored} not this film's recording, the cheapest questions first — or null. */
+    private String unlike(RecordingStore.Stored stored)
+    {
+        if (!RecordingStore.same(stored.environment(), RecordingStore.environment()))
+        {
+            return "the addon, BBS or the game is another build";
+        }
+
+        if (stored.ticks() <= STORED_CHECK || stored.floats().length != stored.ticks() * this.cache.getStride())
+        {
+            return "it is too short to check";
+        }
+
+        if (stored.originX() != this.originX || stored.originY() != this.originY || stored.originZ() != this.originZ
+            || stored.gravity() != this.gravity || stored.speed() != this.speed || stored.collisionSteps() != this.collisionSteps)
+        {
+            return "the film's physics knobs or its first actor's place differ";
+        }
+
+        if (this.window == null || !RecordingStore.same(stored.ground(), this.window.ground()))
+        {
+            return "the blocks of the world under the film differ";
+        }
+
+        if (stored.bodies() != this.world.getBodyCount() || !stored.channels().equals(this.channelKeys) || !this.sameWidths(stored.widths()))
+        {
+            return "the film builds into other bodies";
+        }
+
+        boolean standing = false;
+
+        for (SceneCheckpoints.Checkpoint checkpoint : stored.checkpoints())
+        {
+            standing |= checkpoint.tick() == stored.standing();
+        }
+
+        if (!standing || stored.standing() != stored.ticks() - 1)
+        {
+            return "it ends without a checkpoint to go on from";
+        }
+
+        if (!RecordingStore.same(stored.assets(), RecordingStore.assets(this.actorForms())))
+        {
+            return "a model or picture file of the film's forms changed";
+        }
+
+        if (!RecordingStore.same(stored.filmData(), this.filmFingerprint()))
+        {
+            return "the film says something else now";
+        }
+
+        return null;
+    }
+
+    private boolean sameWidths(int[] widths)
+    {
+        if (widths.length != this.cache.getChannelCount())
+        {
+            return false;
+        }
+
+        for (int i = 0; i < widths.length; i++)
+        {
+            if (widths[i] != this.cache.getWidth(i))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** The root form of every actor, for the files they are made from. */
+    private List<Form> actorForms()
+    {
+        List<Form> forms = new ArrayList<>(this.actors.size());
+
+        for (SceneActor actor : this.actors)
+        {
+            Form form = actor.getEntity().getForm();
+
+            if (form != null)
+            {
+                forms.add(form);
+            }
+        }
+
+        return forms;
+    }
+
+    /** Everything of the film this recording is made from, digested — see {@link SceneChanges#fingerprint}. */
+    private byte[] filmFingerprint()
+    {
+        Fingerprint print = new Fingerprint();
+
+        this.changes.fingerprint(this.film, this.reach, print);
+
+        return print.digest();
+    }
+
+    /**
+     * The last check: the film's first second, just recorded afresh, against the first second kept —
+     * bit for bit, every channel. Equal, and the recording kept is taken whole, and the world goes on
+     * from where it stood when it was kept. Different in anything, and nothing is taken: the film is
+     * recorded on from here as if there had been nothing on disk.
+     */
+    private void takeStored()
+    {
+        RecordingStore.Stored stored = this.stored;
+
+        this.stored = null;
+
+        PhysicsCache kept = this.cache.withRecorded(stored.floats(), stored.ticks());
+
+        for (int tick = 0; tick <= STORED_CHECK; tick++)
+        {
+            int channel = this.cache.firstDifference(kept, tick);
+
+            if (channel >= 0)
+            {
+                BBSPhysics.LOGGER.info("The physics recording kept on disk for film \"{}\" is not used: recorded afresh, tick {} differs, first on channel '{}'. The film is recorded afresh.",
+                    this.film.getId(), tick, this.channelName(channel));
+
+                return;
+            }
+        }
+
+        SceneCheckpoints checkpoints = new SceneCheckpoints();
+        SceneCheckpoints.Checkpoint standing = null;
+
+        for (SceneCheckpoints.Checkpoint checkpoint : stored.checkpoints())
+        {
+            checkpoints.add(checkpoint);
+
+            if (checkpoint.tick() == stored.standing())
+            {
+                standing = checkpoint;
+            }
+        }
+
+        PhysicsCache fresh = this.cache;
+        SceneCheckpoints own = this.checkpoints;
+
+        this.cache = kept;
+        this.checkpoints = checkpoints;
+
+        if (standing == null || !this.putBack(standing))
+        {
+            /* The same first second, yet the world would not stand where the recording ends: the
+             * recording starts over on the next tick rather than going on from half of either. */
+            this.cache = fresh;
+            this.checkpoints = own;
+            this.stale = true;
+
+            return;
+        }
+
+        this.full = stored.full();
+        this.teleport = true;
+
+        BBSPhysics.LOGGER.info("Physics scene for film \"{}\" took the recording kept on disk: {} ticks.", this.film.getId(), this.cache.getComputed());
+    }
+
+    /**
+     * What this scene keeps on disk as it goes — see {@link RecordingStore} — or null when there is
+     * nothing to keep that would stand: the recording waits on an edit, or holds no more than the
+     * second every scene records to check a kept one by.
+     */
+    private RecordingStore.Stored storable()
+    {
+        if (this.manualCalculation() || this.film == null || this.film.getId() == null || this.stale || this.staleFrom != FRESH
+            || this.verifying || this.window == null)
+        {
+            return null;
+        }
+
+        int tick = this.timeline.getTick();
+
+        if (this.cache.getComputed() != tick + 1 || tick <= STORED_CHECK)
+        {
+            return null;
+        }
+
+        try
+        {
+            this.checkpoints.add(this.standing(tick));
+
+            int[] widths = new int[this.cache.getChannelCount()];
+
+            for (int i = 0; i < widths.length; i++)
+            {
+                widths[i] = this.cache.getWidth(i);
+            }
+
+            return new RecordingStore.Stored(this.film.getId(), this.worldKey, RecordingStore.environment(),
+                RecordingStore.assets(this.actorForms()), this.filmFingerprint(), this.window.ground(),
+                this.originX, this.originY, this.originZ, this.gravity, this.speed, this.collisionSteps,
+                this.world.getBodyCount(), new java.util.LinkedHashMap<>(this.channelKeys), widths, this.cache.getComputed(),
+                this.cache.recorded(), this.full, this.checkpoints.all(), tick);
+        }
+        catch (Throwable e)
+        {
+            BBSPhysics.LOGGER.warn("A physics recording could not be put together to be kept on disk.", e);
+
+            return null;
+        }
     }
 
     /** Takes a checkpoint after recording {@code tick}. */
@@ -1813,6 +2125,19 @@ public class FilmScene implements AutoCloseable
             this.posed = 0;
             this.reach();
             this.checkpoints.clear();
+
+            /* Back to the world as built, before anything is stood on the opening frame: what a
+             * run leaves behind in Jolt — the contacts it remembers, the impulses its joints carry
+             * into the next step — would otherwise carry into the run starting now, and the same
+             * film would come out a hair different after an edit than opened afresh. The knobs are
+             * the film's as they are now, not as the world was built under. */
+            if (this.initial != null && this.putBack(this.initial))
+            {
+                this.world.setGravity(this.gravity);
+                this.world.setSpeed(this.speed);
+                this.world.setCollisionSteps(this.collisionSteps);
+            }
+
             this.cast.apply(0);
             this.clips.prepareDeaths(this.cast, 0);
 
@@ -2089,6 +2414,20 @@ public class FilmScene implements AutoCloseable
     @Override
     public void close()
     {
+        /* Kept on disk first, while the world and the rigs are still there to take a checkpoint of —
+         * unless the recording went on to the scene after this one. */
+        if (this.built && !this.groundHandedOver)
+        {
+            RecordingStore.Stored keep = this.storable();
+
+            if (keep != null)
+            {
+                RecordingStore.save(keep);
+            }
+        }
+
+        this.built = false;
+
         /* Hand the forms back to their keyframes. A form draws itself from the simulation for
          * exactly as long as a scene claims it, and one left holding the last transform of a world
          * that no longer exists would sit frozen wherever the simulation happened to stop — with

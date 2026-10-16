@@ -197,6 +197,31 @@ public final class RigMemory
         return this.size * 8L + this.referenceCount * 16L;
     }
 
+    /** The numbers written, in order, marks included — for keeping a checkpoint on disk. */
+    public long[] numbers()
+    {
+        return Arrays.copyOf(this.values, this.size);
+    }
+
+    /** The objects kept by reference, in order — for keeping a checkpoint on disk. */
+    public Object[] keptObjects()
+    {
+        return Arrays.copyOf(this.references, this.referenceCount);
+    }
+
+    /** A memory holding what {@link #numbers} and {@link #keptObjects} gave out, ready to be read. */
+    public static RigMemory of(long[] numbers, Object[] kept)
+    {
+        RigMemory memory = new RigMemory();
+
+        memory.values = Arrays.copyOf(numbers, numbers.length);
+        memory.size = numbers.length;
+        memory.references = Arrays.copyOf(kept, kept.length);
+        memory.referenceCount = kept.length;
+
+        return memory;
+    }
+
     /** Drops the spare room left by growing, once nothing more will be written. */
     public RigMemory trim()
     {

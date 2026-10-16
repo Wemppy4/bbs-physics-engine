@@ -14,6 +14,7 @@ import mchorse.bbs_mod.utils.keyframes.KeyframeLoop;
 import wemppy.bbs_physics.engine.FilmPhysics;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -299,6 +300,110 @@ final class SceneChanges
 
         /* The replay's own settings: its death switches are physics, the rest places the actor. */
         return new Change(0, replay, ScenePoses.isPhysics(part.getId()) ? Poses.STAND : Poses.REPLAY);
+    }
+
+    /**
+     * Feeds {@code into} everything of the film a recording is made from, as this copy has it — what
+     * a recording kept on disk is checked against (see {@link RecordingStore}). The film's physics
+     * knobs, the replays a step reads, and every replay in order: what places it, its form whole, its
+     * clips, and — for a replay a step reads — every key and loop of every channel.
+     *
+     * <p>From the copy rather than from the film, because the copy has every key read already and
+     * keeps up with every edit as it happens: nothing here is read twice.</p>
+     */
+    void fingerprint(Film film, Set<String> reach, Fingerprint into)
+    {
+        into.put(FilmPhysics.of(film).toData());
+
+        List<String> reached = new ArrayList<>(reach);
+
+        reached.sort(null);
+        into.put(reached.size());
+
+        for (String id : reached)
+        {
+            into.put(id);
+        }
+
+        List<Replay> replays = film.replays.getList();
+
+        into.put(replays.size());
+
+        for (Replay replay : replays)
+        {
+            into.put(replay.getId());
+
+            /* What places it — everything of the replay but its keys, tracks, clips and form, which
+             * follow. */
+            for (BaseValue value : replay.getAll())
+            {
+                if (value != replay.keyframes && value != replay.properties && value != replay.actions && value != replay.form)
+                {
+                    into.put(value.getId()).put(value.toData());
+                }
+            }
+
+            MapType form = this.forms.get(replay);
+
+            into.put(form != null ? form : formData(replay));
+
+            Map<Clip, Shot> shots = this.clips.get(replay.actions);
+            List<Clip> clips = replay.actions.get();
+
+            into.put(clips.size());
+
+            for (Clip clip : clips)
+            {
+                Shot shot = shots == null ? null : shots.get(clip);
+
+                into.put(shot != null ? shot.tick() : clip.tick.get()).put(shot != null ? shot.data() : clip.toData());
+            }
+
+            if (!reach.contains(replay.getId()))
+            {
+                continue;
+            }
+
+            for (KeyframeChannel<?> channel : replay.keyframes.getChannels())
+            {
+                this.fingerprint(channel, into);
+            }
+
+            /* By the track's name: the tracks are kept in a map, in no order of their own. */
+            List<Object> tracks = new ArrayList<>(replay.properties.tracks.keySet());
+
+            tracks.sort(Comparator.comparing(String::valueOf));
+
+            for (Object track : tracks)
+            {
+                into.put(String.valueOf(track));
+                this.fingerprint((KeyframeChannel<?>) replay.properties.tracks.get(track), into);
+            }
+        }
+    }
+
+    private void fingerprint(KeyframeChannel<?> channel, Fingerprint into)
+    {
+        Copy copy = this.channels.get(channel);
+
+        if (copy == null)
+        {
+            copy = copy(channel, null, null);
+        }
+
+        into.put(channel.getId()).put(copy.keys().size());
+
+        for (Key key : copy.keys())
+        {
+            into.put(key.tick()).put(key.enabled()).put(key.data());
+        }
+
+        into.put(copy.loops().size());
+
+        for (KeyframeLoop loop : copy.loops())
+        {
+            into.put(loop.id()).put(loop.start()).put(loop.sourceEnd()).put(loop.end());
+        }
     }
 
     /** The replay {@code value} sits in, or null when it sits above the replays. */

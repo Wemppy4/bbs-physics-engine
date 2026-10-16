@@ -216,6 +216,18 @@ tasks.named('check') {
 	dependsOn physicsNativeReleaseCheck
 }
 
+tasks.register('physicsRecordingStoreCheck', JavaExec) {
+	dependsOn physicsChecksClasses
+	classpath = sourceSets.physicsChecks.runtimeClasspath
+	mainClass = 'wemppy.bbs_physics.client.scene.RecordingStoreCheck'
+	workingDir layout.buildDirectory.dir('physicsRecordingStoreCheck')
+	doFirst { workingDir.mkdirs() }
+}
+
+tasks.named('check') {
+	dependsOn physicsRecordingStoreCheck
+}
+
 publishing {
 	publications {
 		mavenJava(MavenPublication) {

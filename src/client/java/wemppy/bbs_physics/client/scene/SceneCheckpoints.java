@@ -5,6 +5,8 @@ import wemppy.bbs_physics.engine.RigMemory;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * The recording's checkpoints: every second of the film, where the world and every rig stood, so an
@@ -90,6 +92,12 @@ final class SceneCheckpoints
             this.bytes -= later.next().bytes();
             later.remove();
         }
+    }
+
+    /** Every checkpoint, earliest first — for keeping them on disk. */
+    List<Checkpoint> all()
+    {
+        return new ArrayList<>(this.byTick.values());
     }
 
     void clear()

@@ -55,10 +55,11 @@ public final class CheckpointCheck
         changes();
         resume();
         handover();
+        startOver();
         layout();
         structure();
         System.out.println("CheckpointCheck passed: memory, swing, checkpoint lookup, edit placement, bit-exact resume past a different future, "
-            + "bit-exact resume in a world built afresh on the same ground, recording layout, structure blocks.");
+            + "bit-exact resume in a world built afresh on the same ground, starting over as built, recording layout, structure blocks.");
     }
 
     /** Every kind of value comes back as it went in, and a rig reading too much or too little is caught. */
@@ -298,6 +299,38 @@ public final class CheckpointCheck
                 scene.act(tick, false);
                 world.step();
                 require(Arrays.equals(straight.get(tick), scene.pose()), "Gone on in a world built afresh, tick " + tick + " matches the first world bit for bit");
+            }
+        }
+    }
+
+    /**
+     * A world put back to where it stood as built runs the film again exactly as it ran the first
+     * time, whatever the run between left in it — what starting over relies on, so that a recording
+     * made after edits is the one a scene built afresh makes (see {@code FilmScene#rewind}).
+     */
+    private static void startOver()
+    {
+        try (PhysicsWorld world = new PhysicsWorld())
+        {
+            Scene scene = new Scene(world);
+            byte[] built = world.saveState();
+            List<double[]> first = new ArrayList<>();
+
+            for (int tick = 1; tick <= 60; tick++)
+            {
+                scene.act(tick, false);
+                world.step();
+                first.add(scene.pose());
+            }
+
+            scene.recall(true, true);
+            require(world.restoreState(built), "Jolt accepts the world as built");
+
+            for (int tick = 1; tick <= 60; tick++)
+            {
+                scene.act(tick, false);
+                world.step();
+                require(Arrays.equals(first.get(tick - 1), scene.pose()), "Started over as built, tick " + tick + " matches the first run bit for bit");
             }
         }
     }

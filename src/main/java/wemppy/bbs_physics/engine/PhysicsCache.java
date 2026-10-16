@@ -265,6 +265,44 @@ public class PhysicsCache
         return copy;
     }
 
+    /** How many floats one tick of this recording takes, all channels together. */
+    public int getStride()
+    {
+        return this.stride;
+    }
+
+    /** How many floats channel {@code channel} has per tick. */
+    public int getWidth(int channel)
+    {
+        return this.widths[channel];
+    }
+
+    /** The recorded ticks, float for float, as they lie — for keeping the recording on disk. */
+    public float[] recorded()
+    {
+        return Arrays.copyOf(this.data, this.computed * this.stride);
+    }
+
+    /**
+     * A recording laid out as this one is, holding {@code ticks} ticks of {@code floats} — what
+     * {@link #recorded} gave out, read back from disk. Writable, like the recording it stands for.
+     */
+    public PhysicsCache withRecorded(float[] floats, int ticks)
+    {
+        if (ticks < 0 || floats.length != ticks * this.stride)
+        {
+            throw new IllegalArgumentException("A recording of " + ticks + " ticks of " + this.stride + " floats cannot be " + floats.length + " floats long");
+        }
+
+        PhysicsCache copy = this.copyPrefix(0);
+
+        copy.data = floats;
+        copy.capacity = ticks;
+        copy.computed = ticks;
+
+        return copy;
+    }
+
     /**
      * The first channel whose numbers differ between the two recordings on {@code tick}, bit for bit,
      * or -1 when they agree — both must have the tick and the same channels.
