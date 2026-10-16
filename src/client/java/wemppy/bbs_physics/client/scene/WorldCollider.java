@@ -9,6 +9,7 @@ import com.github.stephengold.joltjni.StaticCompoundShapeSettings;
 import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
+import com.github.stephengold.joltjni.readonly.ConstShape;
 import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsWorld;
@@ -49,9 +50,36 @@ public final class WorldCollider
      * <p>Kept by the scene rather than recomputed from the settings, because the settings can be
      * changed while a film is open and the region a body is being judged against has to be the one
      * that was actually built.</p>
+     *
+     * <p>Along with the shape the blocks came to, or null when there were none: a scene built for
+     * the same film after BBS rebuilt its cast stands on the same blocks without collecting them
+     * again (see {@link #adopt}). A shape belongs to no world, so it outlives the one it was built
+     * for.</p>
      */
-    public record Window(int radius, int below, int above, int boxes, List<int[]> areas)
+    public record Window(int radius, int below, int above, int boxes, List<int[]> areas, ConstShape shape)
     {
+        /**
+         * Whether every one of {@code centers} sits inside a region of this window with the margin a
+         * build would have skipped it by — so a build from those centres would have collected
+         * nothing this window lacks. In world coordinates, against the scene's origin.
+         */
+        public boolean covers(List<double[]> centers, double originX, double originY, double originZ)
+        {
+            for (double[] center : centers)
+            {
+                int x = (int) Math.floor(center[0]) - (int) Math.floor(originX);
+                int y = (int) Math.floor(center[1]) - (int) Math.floor(originY);
+                int z = (int) Math.floor(center[2]) - (int) Math.floor(originZ);
+
+                if (!isCovered(this.areas, x, y, z, this.radius, this.below, this.above))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         /**
          * Whether a point in the scene's own coordinates still has blocks under it. Outside every
          * region there is nothing to land on and a body falls forever, which from the viewport is
@@ -109,7 +137,7 @@ public final class WorldCollider
 
         if (world == null)
         {
-            return new Window(radius, below, above, 0, areas);
+            return new Window(radius, below, above, 0, areas, null);
         }
 
         /* Which centres deserve a region of their own: [baseX, baseY, baseZ, minY, maxY] each. */
@@ -137,7 +165,7 @@ public final class WorldCollider
 
         if (accepted.isEmpty())
         {
-            return new Window(radius, below, above, 0, areas);
+            return new Window(radius, below, above, 0, areas, null);
         }
 
         StaticCompoundShapeSettings compound = new StaticCompoundShapeSettings();
@@ -235,7 +263,7 @@ public final class WorldCollider
 
         if (boxes == 0)
         {
-            return new Window(radius, below, above, 0, areas);
+            return new Window(radius, below, above, 0, areas, null);
         }
 
         ShapeResult result = compound.create();
@@ -244,22 +272,44 @@ public final class WorldCollider
         {
             BBSPhysics.LOGGER.error("Could not build world collision for a physics scene: {}", result.getError());
 
-            return new Window(radius, below, above, 0, new ArrayList<>(0));
+            return new Window(radius, below, above, 0, new ArrayList<>(0), null);
         }
 
-        /* One body at the scene's origin; every block sits inside it as a child shape. */
-        BodyCreationSettings settings = new BodyCreationSettings(result.get(), new RVec3(0D, 0D, 0D), Quat.sIdentity(), EMotionType.Static, PhysicsLayers.STATIC);
+        ConstShape shape = result.get();
 
-        settings.setFriction(0.6F);
-
-        physics.getBodies().createAndAddBody(settings, EActivation.DontActivate);
+        addGround(physics, shape);
 
         int[] first = accepted.get(0);
 
         BBSPhysics.LOGGER.debug("World collision built from {} boxes in {} area(s), the first around ({}, {}, {}).",
             boxes, accepted.size(), first[0], first[1], first[2]);
 
-        return new Window(radius, below, above, boxes, areas);
+        return new Window(radius, below, above, boxes, areas, shape);
+    }
+
+    /**
+     * Stands a scene on the blocks another scene of the same film collected — the same body, made
+     * the same way, without reading a block of the world. Only for a scene centred where that one
+     * was, since the shape sits around its origin.
+     */
+    public static Window adopt(PhysicsWorld physics, Window window)
+    {
+        if (window.shape() != null)
+        {
+            addGround(physics, window.shape());
+        }
+
+        return window;
+    }
+
+    /** One body at the scene's origin; every block sits inside it as a child shape. */
+    private static void addGround(PhysicsWorld physics, ConstShape shape)
+    {
+        BodyCreationSettings settings = new BodyCreationSettings(shape, new RVec3(0D, 0D, 0D), Quat.sIdentity(), EMotionType.Static, PhysicsLayers.STATIC);
+
+        settings.setFriction(0.6F);
+
+        physics.getBodies().createAndAddBody(settings, EActivation.DontActivate);
     }
 
     /**

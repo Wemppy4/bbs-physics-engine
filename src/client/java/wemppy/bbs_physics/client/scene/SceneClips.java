@@ -59,6 +59,19 @@ public final class SceneClips
         for (var hits : this.deathImpacts.values()) hits.tailMap(tick, false).clear();
     }
 
+    /** The hits recorded so far, for the scene that takes this one's recording over. */
+    java.util.Map<wemppy.bbs_physics.actions.DeathActionClip, java.util.NavigableMap<Integer, RagdollRig.Impact>> deathImpacts()
+    {
+        return this.deathImpacts;
+    }
+
+    /** Takes over the hits of the recording this scene took over — see {@link SceneHandover}. */
+    void adoptDeathImpacts(java.util.Map<wemppy.bbs_physics.actions.DeathActionClip, java.util.NavigableMap<Integer, RagdollRig.Impact>> hits)
+    {
+        this.deathImpacts.clear();
+        this.deathImpacts.putAll(hits);
+    }
+
     /** Only show an actual hit near its occurrence, including when the film loops. */
     public RagdollRig.Impact deathImpact(wemppy.bbs_physics.actions.DeathActionClip clip, int tick)
     {

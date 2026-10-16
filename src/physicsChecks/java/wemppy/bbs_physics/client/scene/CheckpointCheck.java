@@ -7,11 +7,13 @@ import com.github.stephengold.joltjni.BoxShape;
 import com.github.stephengold.joltjni.PointConstraintSettings;
 import com.github.stephengold.joltjni.Quat;
 import com.github.stephengold.joltjni.RVec3;
+import com.github.stephengold.joltjni.ShapeRefC;
 import com.github.stephengold.joltjni.TwoBodyConstraint;
 import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EConstraintSpace;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
+import com.github.stephengold.joltjni.readonly.ConstShape;
 import mchorse.bbs_mod.BBSSettings;
 import mchorse.bbs_mod.data.types.FloatType;
 import mchorse.bbs_mod.forms.forms.StructureForm;
@@ -52,8 +54,11 @@ public final class CheckpointCheck
         checkpoints();
         changes();
         resume();
+        handover();
+        layout();
         structure();
-        System.out.println("CheckpointCheck passed: memory, swing, checkpoint lookup, edit placement, bit-exact resume past a different future, structure blocks.");
+        System.out.println("CheckpointCheck passed: memory, swing, checkpoint lookup, edit placement, bit-exact resume past a different future, "
+            + "bit-exact resume in a world built afresh on the same ground, recording layout, structure blocks.");
     }
 
     /** Every kind of value comes back as it went in, and a rig reading too much or too little is caught. */
@@ -235,6 +240,89 @@ public final class CheckpointCheck
         }
     }
 
+    /**
+     * A checkpoint taken in one world and put back into another built the same way — standing on the
+     * very ground shape the first stood on, the first world long gone — goes on exactly as the first
+     * would have. What a scene built after BBS rebuilt the cast relies on (see {@link SceneHandover}).
+     */
+    private static void handover()
+    {
+        List<double[]> straight = new ArrayList<>();
+        ShapeRefC ground = new BoxShape(20F, 0.5F, 20F).toRefC();
+
+        try (PhysicsWorld world = new PhysicsWorld())
+        {
+            Scene scene = new Scene(world, ground);
+
+            straight.add(scene.pose());
+
+            for (int tick = 1; tick <= 60; tick++)
+            {
+                scene.act(tick, false);
+                world.step();
+                straight.add(scene.pose());
+            }
+        }
+
+        byte[] state;
+        boolean held;
+        boolean joined;
+
+        try (PhysicsWorld world = new PhysicsWorld())
+        {
+            Scene scene = new Scene(world, ground);
+
+            /* Past the box being let go, short of the hinge breaking. */
+            for (int tick = 1; tick <= 35; tick++)
+            {
+                scene.act(tick, false);
+                world.step();
+            }
+
+            state = world.saveState();
+            held = scene.held;
+            joined = scene.joined;
+        }
+
+        try (PhysicsWorld world = new PhysicsWorld())
+        {
+            Scene scene = new Scene(world, ground);
+
+            require(!Arrays.equals(straight.get(35), scene.pose()), "A world built afresh stands on its opening frame");
+            scene.recall(held, joined);
+            require(world.restoreState(state), "A world built the same way accepts another world's checkpoint");
+            require(Arrays.equals(straight.get(35), scene.pose()), "The checkpoint puts every body where the first world had it");
+
+            for (int tick = 36; tick <= 60; tick++)
+            {
+                scene.act(tick, false);
+                world.step();
+                require(Arrays.equals(straight.get(tick), scene.pose()), "Gone on in a world built afresh, tick " + tick + " matches the first world bit for bit");
+            }
+        }
+    }
+
+    /** Two recordings lay a tick out the same way only with the same channels, as wide, in order. */
+    private static void layout()
+    {
+        PhysicsCache a = new PhysicsCache();
+        PhysicsCache b = new PhysicsCache();
+        PhysicsCache c = new PhysicsCache();
+        PhysicsCache d = new PhysicsCache();
+
+        a.addChannel();
+        a.addChannel(24);
+        b.addChannel();
+        b.addChannel(24);
+        c.addChannel(24);
+        c.addChannel();
+        d.addChannel();
+
+        require(a.sameLayout(b), "The same channels lay a tick out the same way");
+        require(!a.sameLayout(c), "The same channels in another order do not");
+        require(!a.sameLayout(d) && !a.sameLayout(null), "Nor do fewer");
+    }
+
     /** A pushed crate, a box held by the animation and let go, and a hinge that breaks. */
     private static final class Scene
     {
@@ -249,11 +337,17 @@ public final class CheckpointCheck
 
         private Scene(PhysicsWorld world)
         {
+            this(world, new BoxShape(20F, 0.5F, 20F));
+        }
+
+        /** @param ground what the floor is made of — one shape may stand any number of worlds */
+        private Scene(PhysicsWorld world, ConstShape ground)
+        {
             this.world = world;
 
             BodyInterface bodies = world.getBodies();
 
-            bodies.createAndAddBody(new BodyCreationSettings(new BoxShape(20F, 0.5F, 20F), new RVec3(0, -0.5, 0),
+            bodies.createAndAddBody(new BodyCreationSettings(ground, new RVec3(0, -0.5, 0),
                 Quat.sIdentity(), EMotionType.Static, PhysicsLayers.STATIC), EActivation.DontActivate);
             this.crate = dynamic(world, new RVec3(0, 2, 0));
 

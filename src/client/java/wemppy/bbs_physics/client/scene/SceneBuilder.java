@@ -90,8 +90,14 @@ final class SceneBuilder
      * — the cast is standing on tick 0 right now, so these are the film's opening positions. One
      * area was not enough: a balloon placed ninety blocks from the first actor fell through a world
      * that had only ever been collected around that first actor, and nothing on screen said why.</p>
+     *
+     * <p>A scene built after BBS rebuilt the cast stands on the blocks the scene before it collected
+     * ({@code adopted}) when they reach as far, and cover every place collected around now:
+     * reading a region of the world block by block is the dearest part of putting a scene up.</p>
+     *
+     * @param adopted the ground of the scene before this one, centred on the same origin, or null
      */
-    WorldCollider.Window buildGround(SceneCast cast)
+    WorldCollider.Window buildGround(SceneCast cast, WorldCollider.Window adopted)
     {
         List<double[]> centers = new ArrayList<>(1);
 
@@ -110,9 +116,20 @@ final class SceneBuilder
         /* The blocks the film is actually shot among. Not drawn as debug boxes — there are thousands
          * of them and they are already visible as, well, the world. */
         FilmPhysics physics = FilmPhysics.of(this.scene.getFilm());
-        WorldCollider.Window window = WorldCollider.build(this.world, MinecraftClient.getInstance().world,
-            this.scene.getOriginX(), this.scene.getOriginY(), this.scene.getOriginZ(), centers,
-            physics.worldRadius.get(), physics.worldBelow.get(), physics.worldAbove.get());
+        WorldCollider.Window window;
+
+        if (adopted != null && adopted.radius() == physics.worldRadius.get() && adopted.below() == physics.worldBelow.get()
+            && adopted.above() == physics.worldAbove.get()
+            && adopted.covers(centers, this.scene.getOriginX(), this.scene.getOriginY(), this.scene.getOriginZ()))
+        {
+            window = WorldCollider.adopt(this.world, adopted);
+        }
+        else
+        {
+            window = WorldCollider.build(this.world, MinecraftClient.getInstance().world,
+                this.scene.getOriginX(), this.scene.getOriginY(), this.scene.getOriginZ(), centers,
+                physics.worldRadius.get(), physics.worldBelow.get(), physics.worldAbove.get());
+        }
 
         if (window.boxes() == 0)
         {

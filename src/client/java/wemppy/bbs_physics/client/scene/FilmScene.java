@@ -131,10 +131,10 @@ public class FilmScene implements AutoCloseable
     private PhysicsCache cache = new PhysicsCache();
 
     /** Where the world and every rig stood every second of the recording. */
-    private final SceneCheckpoints checkpoints = new SceneCheckpoints();
+    private SceneCheckpoints checkpoints = new SceneCheckpoints();
 
     /** What the recording was made from, for working out the first tick an edit changes. */
-    private final SceneChanges changes = new SceneChanges();
+    private final SceneChanges changes;
 
     /** Whether {@link #verify} is recording a second time, which takes no checkpoints of its own. */
     private boolean verifying;
@@ -142,6 +142,12 @@ public class FilmScene implements AutoCloseable
     private final Map<String, Integer> channelKeys = new java.util.HashMap<>();
     private String channelActor = "";
     private final Recording retained;
+
+    /**
+     * What the scene before this one for the same film handed over, while this one is being put up
+     * — see {@link SceneHandover}. Let go of once taken over.
+     */
+    private SceneHandover handover;
 
     record Recording(PhysicsCache cache, Map<String, Integer> keys, double x, double y, double z, boolean complete, boolean full, int lostAt) {}
 
@@ -279,7 +285,18 @@ public class FilmScene implements AutoCloseable
 
     FilmScene(BaseFilmController controller, Recording retained)
     {
+        this(controller, retained, null);
+    }
+
+    /**
+     * @param handover what the scene before this one for the same film handed over when BBS rebuilt
+     *                 its cast, or null — see {@link SceneHandover}
+     */
+    FilmScene(BaseFilmController controller, Recording retained, SceneHandover handover)
+    {
         this.retained = retained;
+        this.handover = handover;
+        this.changes = handover != null ? handover.changes : new SceneChanges();
         this.editor = controller instanceof mchorse.bbs_mod.ui.film.controller.FilmEditorController;
         this.world = new PhysicsWorld();
         this.timeline = new PhysicsTimeline(this.world);
@@ -304,7 +321,12 @@ public class FilmScene implements AutoCloseable
                 this.lostAt = retained.lostAt();
                 this.stale = true;
             }
+            else if (handover != null)
+            {
+                this.adopt(handover);
+            }
 
+            this.handover = null;
             built = true;
         }
         finally
@@ -336,10 +358,11 @@ public class FilmScene implements AutoCloseable
             this.posed = 0;
             this.cast.apply(0);
             this.pickOrigin();
+            this.takeWorldSettings();
 
             SceneBuilder builder = new SceneBuilder(this, this.world);
 
-            this.window = builder.buildGround(this.cast);
+            this.window = builder.buildGround(this.cast, this.handover == null ? null : this.handover.ground);
             this.actors.addAll(builder.buildActors(this.cast));
             this.reach();
 
@@ -381,6 +404,16 @@ public class FilmScene implements AutoCloseable
             this.originX = this.retained.x();
             this.originY = this.retained.y();
             this.originZ = this.retained.z();
+            return;
+        }
+
+        if (this.handover != null)
+        {
+            /* Where the scene before stood its world: the ground it hands over and every number it
+             * recorded are around it. */
+            this.originX = this.handover.originX;
+            this.originY = this.handover.originY;
+            this.originZ = this.handover.originZ;
             return;
         }
         IEntity first = this.cast.first();
@@ -801,6 +834,24 @@ public class FilmScene implements AutoCloseable
         {
             this.calculationRequested = false;
         }
+    }
+
+    /**
+     * The film's scene-wide knobs, taken as they are by a scene being put up: nothing is recorded
+     * under any others yet. Without this the first tick found them "moved" from the defaults and
+     * started a recording over that had only just begun — or one taken over from the scene before.
+     */
+    private void takeWorldSettings()
+    {
+        FilmPhysics physics = FilmPhysics.of(this.film);
+
+        this.gravity = physics.gravity.get();
+        this.speed = physics.speed.get();
+        this.collisionSteps = physics.collisionSteps.get();
+
+        this.world.setGravity(this.gravity);
+        this.world.setSpeed(this.speed);
+        this.world.setCollisionSteps(this.collisionSteps);
     }
 
     /**
@@ -1409,6 +1460,91 @@ public class FilmScene implements AutoCloseable
         this.step += 1;
 
         return true;
+    }
+
+    /**
+     * What the scene built after this one for the same film may take over, as BBS rebuilds the cast
+     * — see {@link SceneHandover}. Where the world stands now is taken as one more checkpoint first,
+     * so the next scene goes on from exactly here; a scene about to start over has nothing that
+     * would stand, and hands over only its ground and its copy of the film.
+     */
+    SceneHandover handOver()
+    {
+        int tick = this.timeline.getTick();
+        boolean standing = !this.stale && !this.verifying && this.cache.getComputed() == tick + 1;
+
+        if (standing)
+        {
+            RigMemory memory = new RigMemory();
+
+            for (SceneActor actor : this.actors)
+            {
+                actor.remember(memory);
+            }
+
+            this.checkpoints.add(new SceneCheckpoints.Checkpoint(tick, this.world.saveState(), memory.trim(), this.lostAt));
+        }
+
+        return new SceneHandover(this.film, this.originX, this.originY, this.originZ, this.window,
+            this.cache, Map.copyOf(this.channelKeys), this.world.getBodyCount(), this.checkpoints, tick,
+            this.changes, this.reach, this.clips.deathImpacts(), this.full, !standing, this.staleFrom,
+            this.gravity, this.speed, this.collisionSteps);
+    }
+
+    /**
+     * Takes over what the scene before this one recorded — see {@link SceneHandover}.
+     *
+     * <p>Only into the same bodies: the same channels under the same keys, the same layout of a
+     * tick, as many bodies in the world — which a scene built from the same film comes to, body for
+     * body, in the same order. The world and every rig are put back where the scene before stood, and
+     * the edits it had not answered are this scene's to answer. Into anything else — or should
+     * putting back fail — this scene records the film from its opening frame, as built.</p>
+     */
+    private void adopt(SceneHandover given)
+    {
+        SceneCheckpoints.Checkpoint standing = given.stale ? null : given.checkpoints.at(given.tick);
+
+        /* The ground too: collected afresh, it is another set of blocks — what the recording landed
+         * on, and what the contacts it remembers are with, would not be what this scene stands on. */
+        boolean sameGround = this.window != null && given.ground != null && this.window.shape() == given.ground.shape();
+
+        /* And under the same knobs: a recording made under another gravity is another film. */
+        boolean sameKnobs = given.gravity == this.gravity && given.speed == this.speed && given.collisionSteps == this.collisionSteps;
+
+        if (standing == null || !sameGround || !sameKnobs || !given.channels.equals(this.channelKeys)
+            || !given.cache.sameLayout(this.cache) || given.bodies != this.world.getBodyCount())
+        {
+            return;
+        }
+
+        PhysicsCache built = this.cache;
+        SceneCheckpoints none = this.checkpoints;
+
+        this.cache = given.cache;
+        this.checkpoints = given.checkpoints;
+
+        if (!this.putBack(standing))
+        {
+            /* Built the same yet not the same, and some rigs may already have been put back: the
+             * recording starts over on the next tick, from a world stood on its opening frame. */
+            this.cache = built;
+            this.checkpoints = none;
+            this.stale = true;
+
+            return;
+        }
+
+        this.clips.adoptDeathImpacts(given.impacts);
+        this.full = given.full;
+        this.staleFrom = given.staleFrom;
+
+        /* Everything was just moved to where the scene before had it; whatever is drawn next is a
+         * cut, not a step from the opening frame this scene was built on. */
+        this.teleport = true;
+
+        BBSPhysics.LOGGER.info("Physics scene for film \"{}\" took over the recording of the one before it: {} ticks, standing on tick {}{}.",
+            this.film == null ? "?" : this.film.getId(), this.cache.getComputed(), given.tick,
+            this.staleFrom == FRESH ? "" : ", recording again from tick " + this.staleFrom);
     }
 
     /** Takes a checkpoint after recording {@code tick}. */

@@ -781,7 +781,9 @@ public class BodyRig implements SceneRig
 
         List<CollisionShapes.SubShape> subs = memory.kept();
 
-        if (subs != this.shapeSubs)
+        /* By what they say, not by which list they are: a scene built after this one's cast was
+         * rebuilt reads this memory with a list of its own that may well say the same. */
+        if (!subs.equals(this.shapeSubs))
         {
             ConstShape shape = subs.isEmpty() ? JoltShapes.speck() : JoltShapes.build(subs);
 

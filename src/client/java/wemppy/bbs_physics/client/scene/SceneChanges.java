@@ -1,8 +1,10 @@
 package wemppy.bbs_physics.client.scene;
 
 import mchorse.bbs_mod.data.types.BaseType;
+import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_mod.film.replays.Replay;
+import mchorse.bbs_mod.forms.FormUtils;
 import mchorse.bbs_mod.settings.values.base.BaseValue;
 import mchorse.bbs_mod.utils.clips.Clip;
 import mchorse.bbs_mod.utils.clips.Clips;
@@ -78,6 +80,9 @@ final class SceneChanges
     private Map<KeyframeChannel<?>, Copy> channels = new IdentityHashMap<>();
     private Map<Clips, Map<Clip, Shot>> clips = new IdentityHashMap<>();
 
+    /** Every replay's form as it was, whole — see {@link #affected}. */
+    private Map<Replay, MapType> forms = new IdentityHashMap<>();
+
     /**
      * Whether an edit since the last {@link #follow} may have rewritten keys or clips without the copy
      * following it — the film as a whole, the list of replays, a replay as a whole — so that the next
@@ -98,14 +103,17 @@ final class SceneChanges
     {
         Map<KeyframeChannel<?>, Copy> knownChannels = this.channels;
         Map<Clips, Map<Clip, Shot>> knownClips = this.clips;
+        Map<Replay, MapType> knownForms = this.forms;
 
         this.channels = new IdentityHashMap<>();
         this.clips = new IdentityHashMap<>();
+        this.forms = new IdentityHashMap<>();
 
         if (this.resync)
         {
             knownChannels.clear();
             knownClips.clear();
+            knownForms.clear();
 
             this.resync = false;
         }
@@ -118,8 +126,10 @@ final class SceneChanges
         for (Replay replay : film.replays.getList())
         {
             Map<Clip, Shot> shots = knownClips.get(replay.actions);
+            MapType form = knownForms.get(replay);
 
             this.clips.put(replay.actions, shots != null ? shots : shots(replay.actions));
+            this.forms.put(replay, form != null ? form : formData(replay));
 
             if (reach.contains(replay.getId()))
             {
@@ -142,6 +152,22 @@ final class SceneChanges
      */
     Change affected(Film film, BaseValue value, Set<String> reach)
     {
+        Replay owner = replayOf(value);
+
+        if (owner != null && partOf(value, owner) == owner.form)
+        {
+            /* The copy of a form follows every edit to it, and a form handed back whole saying exactly
+             * what it said changes nothing: the form editor hands the form back as it opens, and
+             * again as it closes, edited or not — and BBS rebuilds the cast both times. */
+            MapType now = formData(owner);
+            MapType before = this.forms.put(owner, now);
+
+            if (value == owner.form && now.equals(before))
+            {
+                return Change.NOTHING;
+            }
+        }
+
         Change change = classify(film, value);
 
         if (change.replay() == null || change.tick() == NONE)
@@ -222,16 +248,7 @@ final class SceneChanges
             return Change.NOTHING;
         }
 
-        Replay replay = null;
-
-        for (BaseValue current = value; current != null; current = current.getParent())
-        {
-            if (current instanceof Replay found)
-            {
-                replay = found;
-                break;
-            }
-        }
+        Replay replay = replayOf(value);
 
         if (replay == null)
         {
@@ -282,6 +299,28 @@ final class SceneChanges
 
         /* The replay's own settings: its death switches are physics, the rest places the actor. */
         return new Change(0, replay, ScenePoses.isPhysics(part.getId()) ? Poses.STAND : Poses.REPLAY);
+    }
+
+    /** The replay {@code value} sits in, or null when it sits above the replays. */
+    private static Replay replayOf(BaseValue value)
+    {
+        for (BaseValue current = value; current != null; current = current.getParent())
+        {
+            if (current instanceof Replay replay)
+            {
+                return replay;
+            }
+        }
+
+        return null;
+    }
+
+    /** The replay's form as data, whole — what a form handed back is compared against. */
+    private static MapType formData(Replay replay)
+    {
+        MapType data = FormUtils.toData(replay.form.get());
+
+        return data == null ? new MapType() : data;
     }
 
     /** The child of {@code replay} that {@code value} sits under, or null for the replay itself. */

@@ -118,6 +118,28 @@ public class PhysicsCache
 
     public int getChannelCount() { return this.channels; }
 
+    /**
+     * Whether {@code other} lays a tick out the same way: as many channels, each as wide, in the same
+     * order — so a tick of one is a tick of the other, float for float.
+     */
+    public boolean sameLayout(PhysicsCache other)
+    {
+        if (other == null || other.channels != this.channels || other.stride != this.stride)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < this.channels; i++)
+        {
+            if (other.widths[i] != this.widths[i] || other.offsets[i] != this.offsets[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /** Restore an existing recording into rebuilt runtime channels without simulating. */
     public void restore(PhysicsCache source, int[] sourceChannels)
     {

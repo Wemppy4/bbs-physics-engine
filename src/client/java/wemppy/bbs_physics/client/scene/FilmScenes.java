@@ -45,6 +45,12 @@ public class FilmScenes
     private static ScenePoses poses;
     private static WeakReference<Film> posesFilm = new WeakReference<>(null);
 
+    /**
+     * What the last scene of a film handed over as BBS rebuilt its cast, until the next scene for
+     * it is built — see {@link SceneHandover}.
+     */
+    private static SceneHandover handover;
+
     private static boolean manual(BaseFilmController controller)
     {
         return controller instanceof mchorse.bbs_mod.ui.film.controller.FilmEditorController
@@ -102,6 +108,19 @@ public class FilmScenes
                     RETAINED.putIfAbsent(controller.film.getId(), entry.getValue().recording());
             }
         }
+        else if (controller.film != null)
+        {
+            /* The cast of a film was rebuilt — an undo, the form editor, a replay switched — and the
+             * scene of the old one goes below. What it knows goes to the scene of the new one. The
+             * very same film object only: the copies it hands over follow that object's values. */
+            for (var entry : SCENES.entrySet())
+            {
+                if (entry.getKey() != controller && entry.getKey().film == controller.film && !manual(entry.getKey()))
+                {
+                    handOver(entry.getValue());
+                }
+            }
+        }
         drop(controller);
         dropOthersOf(controller);
 
@@ -109,8 +128,32 @@ public class FilmScenes
          * must not each allocate a Jolt world and collect the same Minecraft blocks. */
     }
 
+    /** Takes what {@code scene} hands over — see {@link SceneHandover}. */
+    private static void handOver(FilmScene scene)
+    {
+        try
+        {
+            handover = scene.handOver();
+        }
+        catch (Throwable e)
+        {
+            handover = null;
+
+            BBSPhysics.LOGGER.error("A physics scene could not hand its recording over; the next one records the film from the start.", e);
+        }
+    }
+
     private static void create(BaseFilmController controller)
     {
+        /* Taken, or let go, by the build of the same film, whichever way the building goes. */
+        SceneHandover given = null;
+
+        if (handover != null && handover.film == controller.film)
+        {
+            given = manual(controller) ? null : handover;
+            handover = null;
+        }
+
         try
         {
             dropOthersOf(controller);
@@ -128,7 +171,7 @@ public class FilmScenes
             }
 
             FilmScene scene = new FilmScene(controller,
-                manual(controller) ? RETAINED.get(controller.film.getId()) : null);
+                manual(controller) ? RETAINED.get(controller.film.getId()) : null, given);
 
             SCENES.put(controller, scene);
             watch(controller.film);
@@ -460,7 +503,26 @@ public class FilmScenes
      */
     private static void editedUnfollowed(Film film, List<BaseValue> values)
     {
-        if (poses == null || posesFilm.get() != film)
+        boolean keeping = poses != null && posesFilm.get() == film;
+
+        if (handover != null && handover.film == film)
+        {
+            /* Between a rebuilt cast and its scene: the scene that went left its copy of the film,
+             * which places the edit to the tick, and the scene coming answers it. */
+            for (BaseValue value : values)
+            {
+                SceneChanges.Change change = handover.edited(film, value);
+
+                if (keeping)
+                {
+                    poses.edited(change);
+                }
+            }
+
+            return;
+        }
+
+        if (!keeping)
         {
             return;
         }
@@ -521,7 +583,7 @@ public class FilmScenes
     /** One change to a watched film, as it happens — see {@link #watch}. */
     private static void onLiveEdit(BaseValue value)
     {
-        if (value == null || (SCENES.isEmpty() && poses == null))
+        if (value == null || (SCENES.isEmpty() && poses == null && handover == null))
         {
             return;
         }
@@ -654,6 +716,12 @@ public class FilmScenes
     /** The film is gone. */
     public static void onShutdown(BaseFilmController controller)
     {
+        if (handover != null && handover.film == controller.film)
+        {
+            /* The film is closing: there is no next scene to hand anything to. */
+            handover = null;
+        }
+
         if (manual(controller) && controller.film != null) RETAINED.remove(controller.film.getId());
         drop(controller);
     }
@@ -766,6 +834,7 @@ public class FilmScenes
         RETAINED.clear();
         poses = null;
         posesFilm = new WeakReference<>(null);
+        handover = null;
     }
 
     public static int getSceneCount()
