@@ -11,6 +11,7 @@ import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.forms.utils.Anchor;
 import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
+import mchorse.bbs_mod.settings.values.base.BaseValue;
 import mchorse.bbs_mod.utils.Pair;
 import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.BBSPhysicsSettings;
@@ -75,6 +76,12 @@ public class FilmScene implements AutoCloseable
      */
     private static final long CATCHUP_BUDGET = 12_000_000L;
     private static final long LOOKAHEAD_BUDGET = 4_000_000L;
+
+    /**
+     * The longest a recording that still has ticks to record may go without a step, whatever a
+     * frame's budget says — the pace the per-tick schedule always guaranteed, one step a tick.
+     */
+    private static final long MIN_PROGRESS = 50_000_000L;
 
     /**
      * How long after the last edit the background catch-up stays out of the way. An author dragging
@@ -154,6 +161,23 @@ public class FilmScene implements AutoCloseable
 
     /** When the last edit arrived — the background catch-up keeps clear for a moment after one. */
     private long editedAt;
+
+    /** When the last step finished, and what a step has been costing — see {@link #recordUntil}. */
+    private long steppedAt;
+    private long stepCost;
+
+    /** Counts the steps, so a pose walked for one step is never taken for the next one's. */
+    private long step;
+
+    /** The older half of the pair {@link #distribute} last handed out, and whether it was a cut. */
+    private int shownPrevious = -1;
+    private boolean shownJumped = true;
+
+    /**
+     * The replays a step reads — the actors with anything simulated or marked up, and whatever they
+     * hang off. See {@link SceneReach}; worked out again whenever the recording starts over.
+     */
+    private Set<String> reach = Set.of();
 
     /** Whether the recording has hit its ceiling, so the fact is reported once rather than per tick. */
     private boolean full;
@@ -258,6 +282,7 @@ public class FilmScene implements AutoCloseable
 
             this.window = builder.buildGround(this.cast);
             this.actors.addAll(builder.buildActors(this.cast));
+            this.reach();
 
             this.world.optimize();
 
@@ -388,6 +413,65 @@ public class FilmScene implements AutoCloseable
         return this.window == null ? 0 : this.window.boxes();
     }
 
+    /** Which step is being taken, for the walks an actor keeps for the rest of it. */
+    long stepIndex()
+    {
+        return this.step;
+    }
+
+    /**
+     * Works out what a step reads — see {@link SceneReach} — and tells every actor how much of its
+     * pose work a step may share: an actor that hangs off nothing walks its pose once and reads it
+     * three times.
+     */
+    private void reach()
+    {
+        this.reach = SceneReach.of(this.cast, this.actors);
+        this.cast.reach(this.reach);
+
+        for (SceneActor actor : this.actors)
+        {
+            SceneCast.Member member = this.cast.find(actor.getEntity());
+
+            actor.plan(member == null || SceneReach.anchored(member));
+        }
+    }
+
+    /**
+     * Whether any of these edits touches something this simulation reads.
+     *
+     * <p>The animation of a replay outside the reach — an actor with nothing simulated and nothing
+     * marked up, that nothing simulated hangs off — is drawn by the film and read by nobody here, so
+     * moving its keys leaves the recording standing. Everything else counts as it always did; the
+     * action clips above all, since a push from any replay's timeline reaches every body.</p>
+     */
+    public boolean reads(Film film, List<BaseValue> values)
+    {
+        for (BaseValue value : values)
+        {
+            if (value == film)
+            {
+                return true;
+            }
+
+            if (!SceneEdits.matters(value.getPath().strings))
+            {
+                continue;
+            }
+
+            Replay replay = SceneEdits.animationOf(value);
+
+            if (replay != null && !this.reach.contains(replay.getId()))
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
     public double getOriginX()
     {
         return this.originX;
@@ -492,16 +576,27 @@ public class FilmScene implements AutoCloseable
     /* The clock */
 
     /**
-     * The film moved to {@code tick}: record whatever of the film still needs recording, then hand
-     * every body the frame it is to be drawn in.
+     * The film moved to {@code tick}: hand every body the frame it is to be drawn in, recording
+     * first only what that frame cannot be drawn without.
      *
      * <p>Two halves that no longer have anything to do with each other, and that separation is the
-     * whole of Э3. Recording only ever moves forwards, one tick at a time, in whatever time this
-     * frame can spare. Drawing reads an array. A scrub to tick 900 does not make the world go
-     * anywhere — it reads entry 900 if there is one, and shows plain animation if there is not
-     * (Р8.1). Nothing can be "behind" any more, because nothing is chasing anything.</p>
+     * whole of Э3. Recording only ever moves forwards, one tick at a time, in whatever time the frames
+     * can spare. Drawing reads an array. A scrub to tick 900 does not make the world go anywhere — it
+     * reads entry 900 if there is one, and shows plain animation if there is not (Р8.1). Nothing can
+     * be "behind" any more, because nothing is chasing anything.</p>
+     *
+     * <p>The recording used to be done here, on a budget per tick: twelve milliseconds of every
+     * fiftieth of a second while the cursor waited, four once it had its frame — a quarter of the
+     * time at most, and a run ahead that was never faster than the film plays. The frames pace it now
+     * ({@link #advance}, from {@link FilmScenes#onFrame}). Two things stay with the tick: an exported
+     * video records through the cursor here whatever it costs, because a frame of the video must
+     * never be drawn without its physics; and with no frames being drawn at all, the per-tick budget
+     * still moves the recording along.</p>
+     *
+     * @param paced     whether frames are being drawn, which do the recording
+     * @param exporting whether a video is being recorded
      */
-    public void tick(int tick)
+    public void tick(int tick, boolean paced, boolean exporting)
     {
         if (tick < 0)
         {
@@ -529,12 +624,124 @@ public class FilmScene implements AutoCloseable
             this.rewind();
         }
 
-        this.compute(tick);
-        this.calculationComplete = this.cache.getComputed()
-            > (this.manualCalculation() ? this.requestedEnd : this.recordingEnd(tick));
-        if (this.calculationRequested && (this.full || this.cache.getComputed() > this.requestedEnd))
-            this.calculationRequested = false;
+        if (exporting)
+        {
+            this.recordUntil(tick, Long.MAX_VALUE);
+        }
+        else if (!paced)
+        {
+            this.compute(tick);
+        }
+
+        this.settle();
         this.distribute(tick);
+    }
+
+    /** How much this scene wants a frame's spare time, from not at all up to an author who asked. */
+    public enum Demand
+    {
+        NONE, BACKGROUND, CATCH_UP, REQUESTED
+    }
+
+    /**
+     * What this scene would do with a frame's spare time right now: nothing, run ahead of the cursor,
+     * record the frame the author is looking at, or carry out a calculation the author asked for.
+     * A recording that is about to start over has nothing to say until the tick has done that.
+     */
+    public Demand demand()
+    {
+        boolean manual = this.manualCalculation();
+
+        if (this.stale || this.full || (manual && !this.calculationRequested))
+        {
+            return Demand.NONE;
+        }
+
+        if (this.cache.getComputed() > (manual ? this.requestedEnd : this.recordingEnd(this.filmTick)))
+        {
+            return Demand.NONE;
+        }
+
+        if (manual)
+        {
+            return Demand.REQUESTED;
+        }
+
+        if (!this.cache.has(this.filmTick))
+        {
+            return Demand.CATCH_UP;
+        }
+
+        return this.backgroundAllowed() ? Demand.BACKGROUND : Demand.NONE;
+    }
+
+    /** Whether this is the editor's scene, where an author is waiting rather than an audience. */
+    public boolean isEditor()
+    {
+        return this.editor;
+    }
+
+    /** Whether an edit has only just landed — the author is probably still dragging something. */
+    public boolean isEditing()
+    {
+        return !this.backgroundAllowed();
+    }
+
+    /**
+     * Records for as long as {@code deadline} allows, then hands the drawn pair back — a frame's
+     * share of the work (see {@link FilmScenes#onFrame}).
+     *
+     * <p>Only up to the cursor while the cursor is what is missing: the frame's budget was sized for
+     * an author waiting on that one frame, and running ahead is the background's business, which
+     * keeps clear for a moment after an edit.</p>
+     */
+    public void advance(long deadline)
+    {
+        Demand demand = this.demand();
+
+        if (demand == Demand.NONE)
+        {
+            return;
+        }
+
+        int end = this.manualCalculation() ? this.requestedEnd : this.recordingEnd(this.filmTick);
+
+        if (demand == Demand.CATCH_UP)
+        {
+            end = Math.min(end, this.filmTick);
+        }
+
+        this.recordUntil(end, deadline);
+        this.settle();
+        this.redisplay();
+    }
+
+    /**
+     * A video is being recorded: the frame about to be drawn must carry its physics, however long that
+     * takes. The tick does the same; this covers a frame that comes before its tick does.
+     */
+    public void recordCursor()
+    {
+        if (this.stale || (this.manualCalculation() && !this.calculationRequested) || this.cache.has(this.filmTick))
+        {
+            return;
+        }
+
+        this.recordUntil(this.filmTick, Long.MAX_VALUE);
+        this.settle();
+        this.redisplay();
+    }
+
+    /** Notes whether the recording now reaches as far as it was asked to. */
+    private void settle()
+    {
+        this.calculationComplete = this.cache.getComputed()
+            > (this.manualCalculation() ? this.requestedEnd : this.recordingEnd(this.filmTick));
+
+        if (this.calculationRequested && (this.full || this.cache.getComputed() > this.requestedEnd))
+        {
+            this.calculationRequested = false;
+        }
     }
 
     /**
@@ -570,7 +777,8 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
-     * Records as much of the film as this frame can afford, nearest need first.
+     * Records on the per-tick budget, nearest need first — the schedule for when no frames are being
+     * drawn to pace the recording.
      *
      * <p>Priority is the cursor: while the recording has not reached the frame the author is looking
      * at, the whole catch-up budget goes there, because that is the one frame somebody is waiting
@@ -595,7 +803,24 @@ public class FilmScene implements AutoCloseable
             return;
         }
 
-        long deadline = System.nanoTime() + (catchup ? CATCHUP_BUDGET : LOOKAHEAD_BUDGET);
+        this.recordUntil(end, System.nanoTime() + (catchup ? CATCHUP_BUDGET : LOOKAHEAD_BUDGET));
+    }
+
+    /**
+     * Records forwards until {@code end} is in, the recording is full, or the next step would run
+     * past {@code deadline}.
+     *
+     * <p>A step is only started when its usual cost still fits, so a thin budget is not overrun by a
+     * heavy scene — except that a recording which has gone {@link #MIN_PROGRESS} without a step takes
+     * one regardless. That keeps the pace the per-tick schedule always had, one step a tick, under
+     * any frame's budget.</p>
+     */
+    private void recordUntil(int end, long deadline)
+    {
+        if (this.cache.getComputed() > end || !this.mayStep(deadline))
+        {
+            return;
+        }
 
         /* The cast is the film's own entities, and standing them on the ticks being recorded moves
          * the very objects BBS is about to draw. Borrowed for the whole run and handed back in a
@@ -622,18 +847,42 @@ public class FilmScene implements AutoCloseable
                     break;
                 }
 
-                this.step();
-
-                if (System.nanoTime() >= deadline)
+                if (!this.mayStep(deadline))
                 {
                     break;
                 }
+
+                long started = System.nanoTime();
+
+                this.step();
+
+                this.steppedAt = System.nanoTime();
+
+                long cost = this.steppedAt - started;
+
+                this.stepCost = this.stepCost == 0 ? cost : (this.stepCost * 7 + cost) / 8;
             }
         }
         finally
         {
-            this.cast.restore(cursor);
+            this.cast.restore(this.filmTick);
         }
+    }
+
+    /**
+     * Whether a step may start with {@code deadline} ahead: when what a step usually costs still
+     * fits, or when the recording has gone {@link #MIN_PROGRESS} without one.
+     */
+    private boolean mayStep(long deadline)
+    {
+        if (deadline == Long.MAX_VALUE)
+        {
+            return true;
+        }
+
+        long now = System.nanoTime();
+
+        return now - this.steppedAt >= MIN_PROGRESS || deadline - now >= this.stepCost;
     }
 
     /** Simulates the next tick of the film and writes it into the recording. */
@@ -646,12 +895,15 @@ public class FilmScene implements AutoCloseable
      * Stands the film on {@code tick}, for the step that is about to simulate it.
      *
      * <p>Called once per simulated step, which during a scrub is many times per frame — so the order
-     * matters: the whole cast is placed first, then each actor's pose is walked. Cheap it is not,
-     * and it is the price of the viewport agreeing with the exported video.</p>
+     * matters: the cast the step reads is placed first, then each actor's pose is walked. Cheap it
+     * is not, and it is the price of the viewport agreeing with the exported video. Only the reached
+     * replays are placed (see {@link SceneReach}): nothing here reads the rest, and the film puts
+     * every actor where it belongs before anything is drawn.</p>
      */
     private void poseTick(int tick)
     {
-        this.cast.apply(tick);
+        this.step += 1;
+        this.cast.applyReached(tick);
         this.clips.prepareDeaths(this.cast, tick);
 
         /* The viewport may be anywhere. Every drive must instead see the last completed physics
@@ -664,7 +916,7 @@ public class FilmScene implements AutoCloseable
         /* Rebase the live Jolt pose onto this tick's animation before driving anything. Merely
          * reading last tick's local cache would carry a free parent along with its newly moved
          * actor/anchor. This is a private staging pass; the tick is still unreadable to playback. */
-        this.recordPoses(tick, this.cache.beginFrame(tick));
+        this.recordPoses(tick, this.cache.beginFrame(tick), true);
 
         for (SceneActor actor : this.actors)
         {
@@ -690,7 +942,7 @@ public class FilmScene implements AutoCloseable
             body.record(this.world.getBodies(), this.cache, tick);
         }
 
-        this.recordPoses(tick, pending);
+        this.recordPoses(tick, pending, false);
         this.cache.commit(tick);
 
         if (this.lostAt < 0 && this.anythingLost())
@@ -700,18 +952,20 @@ public class FilmScene implements AutoCloseable
     }
 
     /** Anchor targets publish before dependents, including through actors without physics.
-     * Marking on entry bounds cyclic anchor graphs just as BBS bounds their matrix walk. */
-    private void recordPoses(int tick, PhysicsCache pending)
+     * Marking on entry bounds cyclic anchor graphs just as BBS bounds their matrix walk.
+     *
+     * @param staging whether this is the pass before the step rather than the recording after it */
+    private void recordPoses(int tick, PhysicsCache pending, boolean staging)
     {
         Set<IEntity> visited = Collections.newSetFromMap(new IdentityHashMap<>());
 
         for (SceneActor actor : this.actors)
         {
-            this.recordActor(actor.getEntity(), pending, tick, visited);
+            this.recordActor(actor.getEntity(), pending, tick, visited, staging);
         }
     }
 
-    private void recordActor(IEntity entity, PhysicsCache pending, int tick, Set<IEntity> visited)
+    private void recordActor(IEntity entity, PhysicsCache pending, int tick, Set<IEntity> visited, boolean staging)
     {
         if (entity == null || !visited.add(entity))
         {
@@ -722,11 +976,11 @@ public class FilmScene implements AutoCloseable
 
         if (anchor != null)
         {
-            this.recordActor(this.entities.get(anchor.replay), pending, tick, visited);
+            this.recordActor(this.entities.get(anchor.replay), pending, tick, visited, staging);
 
             if (anchor.previous != null)
             {
-                this.recordActor(this.entities.get(anchor.previous.replay), pending, tick, visited);
+                this.recordActor(this.entities.get(anchor.previous.replay), pending, tick, visited, staging);
             }
         }
 
@@ -734,27 +988,24 @@ public class FilmScene implements AutoCloseable
 
         if (actor != null)
         {
-            actor.record(this.world, this, this.cache, pending, tick);
+            actor.record(this.world, this, this.cache, pending, tick, staging);
         }
     }
 
     /** Restores the displayed frame pair after the simulation borrowed the runtime slots. */
     private void distribute(int tick)
     {
-        if (this.impulsePreview != null)
+        if (this.showsImpulsePreview(tick))
         {
-            if (tick == this.impulsePreviewTick && !this.cache.has(tick) && !this.full && this.lostAt < 0)
-            {
-                /* Reapply after computation, which borrows the same render slots. This frame is
-                 * only a visual placeholder; it never enters simulation or baking caches. */
-                for (SceneBody body : this.bodies) body.readCache(this.impulsePreview, 0, true);
-                for (SceneActor actor : this.actors) actor.readCache(this.impulsePreview, 0, true);
-                this.drawnTick = tick;
-                this.teleport = true;
-                return;
-            }
-            this.impulsePreview = null;
+            this.showImpulsePreview();
+            this.drawnTick = tick;
+            this.teleport = true;
+            this.shownJumped = true;
+            this.shownPrevious = tick;
+            return;
         }
+
+        this.impulsePreview = null;
 
         /* A jump is anything but the one step forward that playback makes: across one there is no
          * meaningful previous tick, and interpolating out of it would draw bodies sliding the whole
@@ -763,6 +1014,8 @@ public class FilmScene implements AutoCloseable
         boolean jumped = this.teleport || (tick != this.drawnTick && tick != this.drawnTick + 1);
 
         this.teleport = false;
+        this.shownJumped = jumped;
+        this.shownPrevious = jumped ? tick : this.drawnTick;
 
         for (SceneBody body : this.bodies)
         {
@@ -782,6 +1035,66 @@ public class FilmScene implements AutoCloseable
         }
 
         this.drawnTick = tick;
+    }
+
+    /**
+     * Hands the drawn pair back after a frame's recording borrowed the runtime slots between two
+     * ticks.
+     *
+     * <p>{@link #distribute} cannot simply run again: asked for the tick it last handed out, it takes
+     * it for a paused frame and puts that tick in both slots — and between two ticks of playback that
+     * is the interpolation thrown away. So the pair it handed out is read back exactly, older half
+     * first, and a tick recorded in the meantime is picked up on the way.</p>
+     */
+    private void redisplay()
+    {
+        if (this.drawnTick < 0)
+        {
+            return;
+        }
+
+        if (this.showsImpulsePreview(this.drawnTick))
+        {
+            this.showImpulsePreview();
+            return;
+        }
+
+        for (SceneBody body : this.bodies)
+        {
+            if (!this.shownJumped)
+            {
+                body.readCache(this.cache, this.shownPrevious, true);
+            }
+
+            body.readCache(this.cache, this.drawnTick, this.shownJumped);
+        }
+
+        for (SceneActor actor : this.actors)
+        {
+            if (!this.shownJumped)
+            {
+                actor.readCache(this.cache, this.shownPrevious, true);
+            }
+
+            actor.readCache(this.cache, this.drawnTick, this.shownJumped);
+        }
+    }
+
+    /** Whether the frame drawn for {@code tick} is still the placeholder left by an impulse edit. */
+    private boolean showsImpulsePreview(int tick)
+    {
+        return this.impulsePreview != null && tick == this.impulsePreviewTick
+            && !this.cache.has(tick) && !this.full && this.lostAt < 0;
+    }
+
+    /**
+     * Reapplied after recording, which borrows the same render slots. The placeholder is only
+     * something to look at; it never enters the recording or a bake.
+     */
+    private void showImpulsePreview()
+    {
+        for (SceneBody body : this.bodies) body.readCache(this.impulsePreview, 0, true);
+        for (SceneActor actor : this.actors) actor.readCache(this.impulsePreview, 0, true);
     }
 
     /**
@@ -983,19 +1296,7 @@ public class FilmScene implements AutoCloseable
             this.rewind();
         }
 
-        this.cast.borrow();
-
-        try
-        {
-            while (this.cache.getComputed() <= end && this.cache.canWrite(this.timeline.getTick() + 1))
-            {
-                this.step();
-            }
-        }
-        finally
-        {
-            this.cast.restore(this.filmTick);
-        }
+        this.recordUntil(end, Long.MAX_VALUE);
 
         return this.cache.getComputed() - 1;
     }
@@ -1029,6 +1330,11 @@ public class FilmScene implements AutoCloseable
 
         try
         {
+            /* An edit may have hung an actor off another, or let one go: what a step reads is
+             * worked out again before anything is stepped. A new step, too, so that nothing walked
+             * before the edit is ever taken for a walk of this run. */
+            this.step += 1;
+            this.reach();
             this.cast.apply(0);
             this.clips.prepareDeaths(this.cast, 0);
 

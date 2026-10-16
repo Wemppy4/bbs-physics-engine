@@ -1,7 +1,10 @@
 package wemppy.bbs_physics.client.scene;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
+import mchorse.bbs_mod.BBSModClient;
 import mchorse.bbs_mod.film.BaseFilmController;
 import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_mod.film.replays.Replay;
@@ -58,6 +61,19 @@ public class FilmScenes
      * could plausibly have fixed it — the cast is rebuilt, or the author edits the film.</p>
      */
     private static final Set<BaseFilmController> FAILED = Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /** When the last frame's share of the recording began, and how long it took — see {@link #onFrame}. */
+    private static long frameStarted;
+    private static long frameSpent;
+
+    /** A frame's length when there is no previous frame to measure it by. */
+    private static final long FRAME = 16_666_667L;
+
+    /** How long without a frame before the ticks take the recording back — see {@link FilmScene#tick}. */
+    private static final long FRAMES_GONE = 250_000_000L;
+
+    /** The most a frame ever gives the recording, however much the shares below would allow. */
+    private static final long MAX_BUDGET = 50_000_000L;
 
     private FilmScenes()
     {}
@@ -177,13 +193,156 @@ public class FilmScenes
 
         try
         {
-            scene.tick(tick);
+            scene.tick(tick, paced(), exporting());
         }
         catch (Throwable e)
         {
             BBSPhysics.LOGGER.error("A physics scene failed to reach tick {} and was dropped.", tick, e);
 
             fail(controller);
+        }
+    }
+
+    /**
+     * A frame is about to be drawn: every scene records in the time this frame can spare.
+     *
+     * <p>Recording used to happen on the film's tick, twenty times a second, twelve milliseconds at a
+     * time while the cursor waited and four once it had its frame — never more than a quarter of the
+     * time, and a run ahead no faster than the film plays. Here it takes a <em>share</em> of the
+     * time instead, measured against what the rest of the frame costs, so a fast machine records
+     * fast and a slow one keeps its frame rate. How big a share depends on who is waiting (see
+     * {@link #budget}), and the most urgent scene sets it for the frame.</p>
+     *
+     * <p>Before the world is drawn, so a frame recorded here is the frame drawn now. A video being
+     * recorded is the exception to every budget: each of its frames gets its physics, whatever it
+     * costs.</p>
+     */
+    public static void onFrame()
+    {
+        long now = System.nanoTime();
+        long interval = frameStarted == 0 ? FRAME : now - frameStarted;
+        long other = Math.max(1_000_000L, Math.min(100_000_000L, interval - frameSpent));
+
+        frameStarted = now;
+        frameSpent = 0;
+
+        if (SCENES.isEmpty() || !isEnabled())
+        {
+            return;
+        }
+
+        boolean exporting = exporting();
+        List<Map.Entry<BaseFilmController, FilmScene>> scenes = new ArrayList<>(SCENES.entrySet());
+
+        /* Most urgent first: the frame's budget is the one its most urgent scene asks for. */
+        scenes.sort(Comparator.comparing((Map.Entry<BaseFilmController, FilmScene> entry) -> entry.getValue().demand()).reversed());
+
+        long deadline = 0L;
+
+        for (Map.Entry<BaseFilmController, FilmScene> entry : scenes)
+        {
+            FilmScene scene = entry.getValue();
+
+            try
+            {
+                if (exporting)
+                {
+                    scene.recordCursor();
+
+                    continue;
+                }
+
+                FilmScene.Demand demand = scene.demand();
+
+                if (demand == FilmScene.Demand.NONE)
+                {
+                    continue;
+                }
+
+                if (deadline == 0L)
+                {
+                    deadline = now + budget(demand, scene.isEditor(), scene.isEditing(), other);
+                }
+
+                scene.advance(deadline);
+            }
+            catch (Throwable e)
+            {
+                BBSPhysics.LOGGER.error("A physics scene failed while recording and was dropped.", e);
+
+                fail(entry.getKey());
+            }
+        }
+
+        frameSpent = System.nanoTime() - now;
+    }
+
+    /**
+     * How long a frame may record, given what the rest of the frame costs ({@code other}).
+     *
+     * <p>Shares of the time rather than fixed amounts. Most for a calculation the author asked for
+     * by name; a little less for the frame an author is looking at; a third of the time for running
+     * ahead in the editor; the old, thin shares for a film playing in the world, where the frame rate
+     * belongs to the audience. While an edit is still landing — a slider being dragged — the cursor
+     * gets only what it used to, so the editor stays smooth under the hand, and the full share once it
+     * lets go. Each share stops where the frame would fall below thirty frames a second (fifteen for
+     * an asked-for calculation), but never below what the old per-tick schedule gave: nothing records
+     * slower than it did.</p>
+     */
+    static long budget(FilmScene.Demand demand, boolean editor, boolean editing, long other)
+    {
+        double share;
+        double floor;
+        long frame;
+
+        switch (demand)
+        {
+            case REQUESTED ->
+            {
+                share = 0.75D;
+                floor = 0.24D;
+                frame = 66_000_000L;
+            }
+            case CATCH_UP ->
+            {
+                share = !editor ? 0.35D : editing ? 0.24D : 0.6D;
+                floor = 0.24D;
+                frame = 33_000_000L;
+            }
+            case BACKGROUND ->
+            {
+                share = editor ? 0.4D : 0.1D;
+                floor = 0.08D;
+                frame = 33_000_000L;
+            }
+            default ->
+            {
+                return 0L;
+            }
+        }
+
+        long wanted = Math.min((long) (other * share / (1D - share)), frame - other);
+        long least = (long) (other * floor / (1D - floor));
+
+        return Math.min(MAX_BUDGET, Math.max(wanted, least));
+    }
+
+    /** Whether frames are being drawn, and so are doing the recording. */
+    private static boolean paced()
+    {
+        return frameStarted != 0L && System.nanoTime() - frameStarted < FRAMES_GONE;
+    }
+
+    /** Whether BBS is recording a video, every frame of which must carry its physics. */
+    private static boolean exporting()
+    {
+        try
+        {
+            return BBSModClient.getVideoRecorder().isRecording();
+        }
+        catch (Throwable e)
+        {
+            return false;
         }
     }
 
@@ -245,7 +404,12 @@ public class FilmScenes
             {
                 if (manual(entry.getKey()) || hasSimulation(other))
                 {
-                    entry.getValue().invalidate(impulseEdit);
+                    /* Only when the edit reaches what this scene reads: moving the keys of an
+                     * actor nothing simulated touches leaves the recording standing. */
+                    if (entry.getValue().reads(film, values))
+                    {
+                        entry.getValue().invalidate(impulseEdit);
+                    }
                 }
                 else
                 {

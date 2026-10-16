@@ -68,8 +68,9 @@ public final class PhysicsSceneCheck
         require(SceneEdits.matters(List.of(FilmPhysics.KEY, "gravity")), "Film physics knobs affect physics");
         require(!SceneEdits.matters(List.of("camera", "0", "duration")), "Camera is not physical");
         checkFilmPhysics();
+        checkFrameBudget();
         FilmScenes.clear();
-        System.out.println("PhysicsSceneCheck passed: absent films, form presence, lifecycle cleanup, edit filtering and film physics knobs.");
+        System.out.println("PhysicsSceneCheck passed: absent films, form presence, lifecycle cleanup, edit filtering, film physics knobs and frame budgets.");
     }
 
     /** The knobs travel with the film: saved, loaded, reset; a film without them reads the defaults. */
@@ -94,6 +95,30 @@ public final class PhysicsSceneCheck
         FilmPhysics absent = FilmPhysics.of(null);
         require(absent.gravity.get() == PhysicsWorld.EARTH_GRAVITY && absent.speed.get() == 1F && absent.worldRadius.get() == 32,
             "A film without knobs must read the defaults");
+    }
+
+    /** A frame's share: the right order of urgency, never slower than the old per-tick pace, capped. */
+    private static void checkFrameBudget()
+    {
+        long other = 10_000_000L;
+        long none = FilmScenes.budget(FilmScene.Demand.NONE, true, false, other);
+        long catchUp = FilmScenes.budget(FilmScene.Demand.CATCH_UP, true, false, other);
+        long dragging = FilmScenes.budget(FilmScene.Demand.CATCH_UP, true, true, other);
+        long background = FilmScenes.budget(FilmScene.Demand.BACKGROUND, true, false, other);
+        long world = FilmScenes.budget(FilmScene.Demand.BACKGROUND, false, false, other);
+        long asked = FilmScenes.budget(FilmScene.Demand.REQUESTED, true, false, other);
+
+        require(none == 0L, "A scene with nothing to record takes no time");
+        require(Math.abs(catchUp - 15_000_000L) < 10_000L, "The waited-for frame takes three fifths of the time: " + catchUp);
+        require(dragging < catchUp && background < catchUp && world < background && asked > catchUp,
+            "Urgency orders the shares: " + dragging + " " + background + " " + world + " " + asked);
+
+        long slow = 60_000_000L;
+
+        require(FilmScenes.budget(FilmScene.Demand.CATCH_UP, true, false, slow) >= (long) (slow * 0.24D / 0.76D) - 1L,
+            "A slow frame still records at the old per-tick pace");
+        require(FilmScenes.budget(FilmScene.Demand.REQUESTED, true, false, 1_000_000_000L) <= 50_000_000L,
+            "No frame gives the recording more than fifty milliseconds");
     }
 
     /** BBS stores anchors on replays; a plain preview entity has no anchor at all. */

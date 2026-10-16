@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The film's actors, as the simulation needs them: able to be stood on any tick, and put back
@@ -61,6 +62,12 @@ public final class SceneCast implements Iterable<SceneCast.Member>
 
     private final List<Member> members = new ArrayList<>();
 
+    /** The members a step stands on its tick — see {@link #reach}. Everyone until told otherwise. */
+    private List<Member> reached = this.members;
+
+    /** Whether everyone has been stood on a tick since the borrow, not only the reached members. */
+    private boolean movedAll = true;
+
     public SceneCast(BaseFilmController controller)
     {
         if (controller.film == null)
@@ -107,9 +114,46 @@ public final class SceneCast implements Iterable<SceneCast.Member>
         return null;
     }
 
+    /** The member standing for {@code entity}, or null when the cast has none for it. */
+    public Member find(IEntity entity)
+    {
+        for (Member member : this.members)
+        {
+            if (member.entity == entity)
+            {
+                return member;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Narrows what a step stands on its tick to the replays the simulation reads (see
+     * {@link SceneReach}), in the film's order as ever. Nobody reads the others during a step, and
+     * standing them on every recorded tick was a film's worth of keyframes evaluated per step for
+     * nothing. The opening frame and the hand-back still place everyone.
+     */
+    public void reach(Set<String> replays)
+    {
+        List<Member> reached = new ArrayList<>();
+
+        for (Member member : this.members)
+        {
+            if (member.replay != null && replays.contains(member.replay.getId()))
+            {
+                reached.add(member);
+            }
+        }
+
+        this.reached = reached;
+    }
+
     /** Takes a copy of where every actor stands, because the simulation is about to move them. */
     public void borrow()
     {
+        this.movedAll = false;
+
         for (Member member : this.members)
         {
             member.state.capture(member.entity);
@@ -122,8 +166,9 @@ public final class SceneCast implements Iterable<SceneCast.Member>
         /* Both halves: the keyframes put back everything an actor carries — held items, equipment,
          * the lot — and the snapshot then puts the placement back verbatim, because BBS pairs the
          * current tick with the previous one differently depending on whether the film is playing,
-         * and only a copy knows which rule was in force. */
-        this.apply(tick);
+         * and only a copy knows which rule was in force. Only the actors that were moved: a run of
+         * steps stands the reached ones alone, and the rest are still exactly as they were found. */
+        this.apply(tick, this.movedAll ? this.members : this.reached);
 
         for (Member member : this.members)
         {
@@ -137,12 +182,24 @@ public final class SceneCast implements Iterable<SceneCast.Member>
      */
     public void apply(int tick)
     {
+        this.movedAll = true;
+        this.apply(tick, this.members);
+    }
+
+    /** Stands only the members a step reads on {@code tick} — see {@link #reach}. */
+    public void applyReached(int tick)
+    {
+        this.apply(tick, this.reached);
+    }
+
+    private void apply(int tick, List<Member> members)
+    {
         /* Track runtime writes do not bump the form's pose version. A catch-up evaluates many
          * film ticks in one render frame, so both channel and anchor-matrix caches must forget
          * the previous sample. This also covers restore(), before the viewport reads its pose. */
         RenderFrame.invalidate();
 
-        for (Member member : this.members)
+        for (Member member : members)
         {
             if (member.replay == null)
             {
@@ -168,5 +225,6 @@ public final class SceneCast implements Iterable<SceneCast.Member>
     public void clear()
     {
         this.members.clear();
+        this.reached = this.members;
     }
 }

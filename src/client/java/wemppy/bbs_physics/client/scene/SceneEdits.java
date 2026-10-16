@@ -1,6 +1,7 @@
 package wemppy.bbs_physics.client.scene;
 
 import mchorse.bbs_mod.film.Film;
+import mchorse.bbs_mod.film.replays.Replay;
 import mchorse.bbs_mod.settings.values.base.BaseValue;
 import wemppy.bbs_physics.engine.FilmPhysics;
 
@@ -59,6 +60,31 @@ public final class SceneEdits
     }
 
     /**
+     * The replay whose animation {@code value} belongs to — its own keyframes, or the keyframed
+     * tracks of its form — or null for anything else: the form itself, the clips, the film.
+     *
+     * <p>The difference matters to a scene that does not read that replay at all (see
+     * {@link FilmScene#reads}): moving its keys changes what is drawn and nothing that is simulated,
+     * while a change to its form may be the very edit that gives it something to simulate.</p>
+     */
+    public static Replay animationOf(BaseValue value)
+    {
+        BaseValue child = null;
+
+        for (BaseValue current = value; current != null; current = current.getParent())
+        {
+            if (current instanceof Replay replay)
+            {
+                return child == replay.keyframes || child == replay.properties ? replay : null;
+            }
+
+            child = current;
+        }
+
+        return null;
+    }
+
+    /**
      * Whether editing {@code value} can change what the simulation computes.
      *
      * @param path the value's path within its film, as segments — {@code replays/3/form/color}
@@ -75,7 +101,7 @@ public final class SceneEdits
 
         if (replays < 0)
         {
-            /* The camera, the film's own settings: none of it is physical. */
+            /* The camera, the film's other settings: none of it is physical. */
             return false;
         }
 

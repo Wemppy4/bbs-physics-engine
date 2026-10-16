@@ -5,6 +5,7 @@ import wemppy.bbs_physics.client.scene.FilmScenes;
 import wemppy.bbs_physics.engine.JoltEngine;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 
 /**
  * The client entry point of the addon.
@@ -36,6 +37,10 @@ public class BBSPhysicsClient implements ClientModInitializer
         FilmEvents.TICK_AFTER.register(FilmScenes::onTick);
         FilmEvents.RENDER_AFTER.register(FilmScenes::onRender);
         FilmEvents.SHUTDOWN.register(FilmScenes::onShutdown);
+
+        /* The recording is paced by the frames rather than by the film's tick — see onFrame. At
+         * the start of the world's drawing, so whatever a frame records is drawn in that frame. */
+        WorldRenderEvents.START.register((context) -> FilmScenes.onFrame());
 
         /* API 2 shuts down film controllers on reset. Also clear any addon-owned dormant/failure
          * entries on disconnect; clear() is idempotent and owns no already-closed worlds. */
