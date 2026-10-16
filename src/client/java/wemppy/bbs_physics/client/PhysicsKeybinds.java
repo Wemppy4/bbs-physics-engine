@@ -8,7 +8,7 @@ import org.lwjgl.glfw.GLFW;
 public final class PhysicsKeybinds
 {
     public static final KeyCombo TOGGLE_DEBUG = new KeyCombo("toggle_debug",
-        L10n.lang("bbs_physics.config.general.debug"), GLFW.GLFW_KEY_F5, GLFW.GLFW_KEY_LEFT_SHIFT)
+        L10n.lang("bbs_physics.config.display.debug"), GLFW.GLFW_KEY_F5, GLFW.GLFW_KEY_LEFT_SHIFT)
         .categoryKey("bbs_physics").category(L10n.lang("keybinds.config.bbs_physics.title"));
 
     public static final KeyCombo CALCULATE = new KeyCombo("calculate",

@@ -4,6 +4,7 @@
     "compatibilityLevel": "JAVA_17",
     "mixins": [
         "FormMixin",
+        "FilmMixin",
         "ReplayMixin",
         "ModelFormMixin",
         "StructureFormMixin",

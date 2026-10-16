@@ -24,6 +24,7 @@ import wemppy.bbs_physics.client.collision.CollisionCollector;
 import wemppy.bbs_physics.client.ragdoll.RagdollWelds;
 import wemppy.bbs_physics.cloth.ClothForm;
 import wemppy.bbs_physics.collision.FormCollisions;
+import wemppy.bbs_physics.engine.FilmPhysics;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsWorld;
 import wemppy.bbs_physics.forms.FormTreeWalk;
@@ -108,8 +109,10 @@ final class SceneBuilder
 
         /* The blocks the film is actually shot among. Not drawn as debug boxes — there are thousands
          * of them and they are already visible as, well, the world. */
+        FilmPhysics physics = FilmPhysics.of(this.scene.getFilm());
         WorldCollider.Window window = WorldCollider.build(this.world, MinecraftClient.getInstance().world,
-            this.scene.getOriginX(), this.scene.getOriginY(), this.scene.getOriginZ(), centers);
+            this.scene.getOriginX(), this.scene.getOriginY(), this.scene.getOriginZ(), centers,
+            physics.worldRadius.get(), physics.worldBelow.get(), physics.worldAbove.get());
 
         if (window.boxes() == 0)
         {

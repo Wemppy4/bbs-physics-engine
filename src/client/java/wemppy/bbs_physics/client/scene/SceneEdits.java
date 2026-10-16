@@ -2,6 +2,7 @@ package wemppy.bbs_physics.client.scene;
 
 import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_mod.settings.values.base.BaseValue;
+import wemppy.bbs_physics.engine.FilmPhysics;
 
 import java.util.List;
 import java.util.Set;
@@ -64,6 +65,12 @@ public final class SceneEdits
      */
     public static boolean matters(List<String> path)
     {
+        if (path.contains(FilmPhysics.KEY))
+        {
+            /* The film's own physics knobs: gravity, speed, precision, the world around. */
+            return true;
+        }
+
         int replays = path.indexOf("replays");
 
         if (replays < 0)

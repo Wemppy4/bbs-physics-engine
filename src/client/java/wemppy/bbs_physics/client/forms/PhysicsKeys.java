@@ -255,6 +255,20 @@ public class PhysicsKeys
     public static final IKey RAGDOLL_CONTEXT_SAVE = L10n.lang("bbs_physics.forms.ragdoll.context.save");
     public static final IKey RAGDOLL_CONTEXT_NAME = L10n.lang("bbs_physics.forms.ragdoll.context.name");
 
+    public static final IKey FILM_PHYSICS = L10n.lang("bbs_physics.film_physics.title");
+    public static final IKey FILM_PHYSICS_RESET = L10n.lang("bbs_physics.film_physics.reset");
+    public static final IKey FILM_PHYSICS_GRAVITY = L10n.lang("bbs_physics.film_physics.gravity");
+    public static final IKey FILM_PHYSICS_GRAVITY_TOOLTIP = L10n.lang("bbs_physics.film_physics.gravity_tooltip");
+    public static final IKey FILM_PHYSICS_SPEED = L10n.lang("bbs_physics.film_physics.speed");
+    public static final IKey FILM_PHYSICS_SPEED_TOOLTIP = L10n.lang("bbs_physics.film_physics.speed_tooltip");
+    public static final IKey FILM_PHYSICS_PRECISION = L10n.lang("bbs_physics.film_physics.precision");
+    public static final IKey FILM_PHYSICS_PRECISION_TOOLTIP = L10n.lang("bbs_physics.film_physics.precision_tooltip");
+    public static final IKey FILM_PHYSICS_WORLD = L10n.lang("bbs_physics.film_physics.world");
+    public static final IKey FILM_PHYSICS_WORLD_TOOLTIP = L10n.lang("bbs_physics.film_physics.world_tooltip");
+    public static final IKey FILM_PHYSICS_WORLD_RADIUS = L10n.lang("bbs_physics.film_physics.world_radius");
+    public static final IKey FILM_PHYSICS_WORLD_BELOW = L10n.lang("bbs_physics.film_physics.world_below");
+    public static final IKey FILM_PHYSICS_WORLD_ABOVE = L10n.lang("bbs_physics.film_physics.world_above");
+
     private static final IKey JOINT_CONE = L10n.lang("bbs_physics.forms.ragdoll.kind.cone");
     private static final IKey JOINT_HINGE = L10n.lang("bbs_physics.forms.ragdoll.kind.hinge");
     private static final IKey JOINT_FIXED = L10n.lang("bbs_physics.forms.ragdoll.kind.fixed");

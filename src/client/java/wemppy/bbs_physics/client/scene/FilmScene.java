@@ -16,6 +16,7 @@ import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.BBSPhysicsSettings;
 import wemppy.bbs_physics.chain.ChainForm;
 import wemppy.bbs_physics.client.ragdoll.RagdollPoseApplier;
+import wemppy.bbs_physics.engine.FilmPhysics;
 import wemppy.bbs_physics.engine.PhysicsCache;
 import wemppy.bbs_physics.engine.PhysicsTimeline;
 import wemppy.bbs_physics.engine.PhysicsWorld;
@@ -537,20 +538,20 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
-     * Picks up the scene-wide knobs — gravity, speed and collision steps — and throws the recording away
-     * when either has moved.
+     * Picks up the film's scene-wide knobs — gravity, speed and collision steps — and throws the
+     * recording away when either has moved.
      *
      * <p>They are part of the simulation's arithmetic, not a display option: half gravity is a
      * different fall from the first tick onwards, so nothing worked out under the old value is worth
      * keeping. Cheap to check and rare to change, which is why it lives on the tick rather than
-     * needing the settings screen to tell anyone.</p>
+     * needing the film physics panel to tell anyone.</p>
      */
     private void applyWorldSettings()
     {
-        float gravity = BBSPhysicsSettings.gravity == null ? PhysicsWorld.EARTH_GRAVITY : BBSPhysicsSettings.gravity.get();
-        int steps = BBSPhysicsSettings.collisionSteps == null ? PhysicsWorld.COLLISION_STEPS : BBSPhysicsSettings.collisionSteps.get();
-
-        float speed = BBSPhysicsSettings.speed == null ? 1F : BBSPhysicsSettings.speed.get();
+        FilmPhysics physics = FilmPhysics.of(this.film);
+        float gravity = physics.gravity.get();
+        int steps = physics.collisionSteps.get();
+        float speed = physics.speed.get();
 
         if (gravity == this.gravity && steps == this.collisionSteps && speed == this.speed)
         {
@@ -1262,7 +1263,7 @@ public class FilmScene implements AutoCloseable
     /* The scene's own life */
 
     /**
-     * Whether the region of the world this scene collected no longer matches what the settings ask
+     * Whether the region of the world this scene collected no longer matches what the film asks
      * for, which is the one change a rewind cannot answer: the blocks are a body, and a different set
      * of blocks is a different set of bodies — a different shape of recording, since a channel is
      * fixed when the scene is sealed. So the scene is rebuilt from scratch instead, and the caller is
@@ -1271,10 +1272,11 @@ public class FilmScene implements AutoCloseable
     public boolean needsRebuild()
     {
         if (this.manualCalculation()) return false;
+        FilmPhysics physics = FilmPhysics.of(this.film);
         return this.window == null
-            || this.window.radius() != BBSPhysicsSettings.worldRadius.get()
-            || this.window.below() != BBSPhysicsSettings.worldBelow.get()
-            || this.window.above() != BBSPhysicsSettings.worldAbove.get()
+            || this.window.radius() != physics.worldRadius.get()
+            || this.window.below() != physics.worldBelow.get()
+            || this.window.above() != physics.worldAbove.get()
             || this.modelArrived();
     }
 

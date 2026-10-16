@@ -11,7 +11,9 @@ import mchorse.bbs_mod.settings.values.numeric.ValueBoolean;
 import mchorse.bbs_mod.settings.values.numeric.ValueInt;
 import wemppy.bbs_physics.BBSPhysicsSettings;
 import wemppy.bbs_physics.chain.ChainForm;
+import wemppy.bbs_physics.engine.FilmPhysics;
 import wemppy.bbs_physics.engine.JoltEngine;
+import wemppy.bbs_physics.engine.PhysicsWorld;
 import wemppy.bbs_physics.forms.FormTreeWalk;
 import wemppy.bbs_physics.forms.PhysicsForms;
 
@@ -63,8 +65,35 @@ public final class PhysicsSceneCheck
         require(!SceneEdits.matters(List.of("replays", "actor", "properties", "nested/render_layer", "0")), "Layer track is cosmetic");
         require(SceneEdits.matters(List.of("replays", "actor", "form", "visible")), "Visibility affects collisions");
         require(SceneEdits.matters(List.of("replays", "actor", "properties", "nested/transform", "0")), "Transform affects physics");
+        require(SceneEdits.matters(List.of(FilmPhysics.KEY, "gravity")), "Film physics knobs affect physics");
+        require(!SceneEdits.matters(List.of("camera", "0", "duration")), "Camera is not physical");
+        checkFilmPhysics();
         FilmScenes.clear();
-        System.out.println("PhysicsSceneCheck passed: absent films, form presence, lifecycle cleanup and edit filtering.");
+        System.out.println("PhysicsSceneCheck passed: absent films, form presence, lifecycle cleanup, edit filtering and film physics knobs.");
+    }
+
+    /** The knobs travel with the film: saved, loaded, reset; a film without them reads the defaults. */
+    private static void checkFilmPhysics()
+    {
+        FilmPhysics physics = new FilmPhysics();
+
+        physics.gravity.set(1.62F);
+        physics.collisionSteps.set(5);
+        physics.worldBelow.set(128);
+
+        FilmPhysics loaded = new FilmPhysics();
+
+        loaded.fromData(physics.toData());
+        require(loaded.gravity.get() == 1.62F && loaded.collisionSteps.get() == 5 && loaded.worldBelow.get() == 128,
+            "Film physics must survive saving");
+
+        loaded.resetAll();
+        require(loaded.gravity.get() == PhysicsWorld.EARTH_GRAVITY && loaded.collisionSteps.get() == PhysicsWorld.COLLISION_STEPS
+            && loaded.worldBelow.get() == 32, "Reset must restore the defaults");
+
+        FilmPhysics absent = FilmPhysics.of(null);
+        require(absent.gravity.get() == PhysicsWorld.EARTH_GRAVITY && absent.speed.get() == 1F && absent.worldRadius.get() == 32,
+            "A film without knobs must read the defaults");
     }
 
     /** BBS stores anchors on replays; a plain preview entity has no anchor at all. */

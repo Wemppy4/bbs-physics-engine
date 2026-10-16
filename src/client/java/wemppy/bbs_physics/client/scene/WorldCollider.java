@@ -10,7 +10,6 @@ import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
 import wemppy.bbs_physics.BBSPhysics;
-import wemppy.bbs_physics.BBSPhysicsSettings;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsWorld;
 import net.minecraft.block.Block;
@@ -94,7 +93,8 @@ public final class WorldCollider
      * scene's origin and is always collected; the rest are the starting spots of whatever else the
      * film simulates. A centre already covered by an earlier region, with a quarter-radius to
      * spare, brings nothing of its own and is skipped; a block two overlapping regions both reach
-     * is collected once.
+     * is collected once. How far each region reaches is the film's — see {@link
+     * wemppy.bbs_physics.engine.FilmPhysics#worldRadius}.
      *
      * @return the regions that were collected, with the number of boxes in them — zero boxes
      *         meaning there was nothing solid to add and no body was created. Deliberately not the
@@ -102,12 +102,9 @@ public final class WorldCollider
      *         creates, so "0" would be both the id it gets and the answer meaning "nothing" — and
      *         the scene would lay its fallback floor through the real ground
      */
-    public static Window build(PhysicsWorld physics, World world, double originX, double originY, double originZ, List<double[]> centers)
+    public static Window build(PhysicsWorld physics, World world, double originX, double originY, double originZ, List<double[]> centers,
+        int radius, int below, int above)
     {
-        int radius = BBSPhysicsSettings.worldRadius.get();
-        int below = BBSPhysicsSettings.worldBelow.get();
-        int above = BBSPhysicsSettings.worldAbove.get();
-
         List<int[]> areas = new ArrayList<>(1);
 
         if (world == null)

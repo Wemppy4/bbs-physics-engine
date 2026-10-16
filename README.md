@@ -118,10 +118,14 @@ point, or the client half of this addon will not load.
 
 ### Settings
 
-Under **Physics** in BBS's settings: the master switch — off, and the addon costs nothing —
-gravity, where half of Earth's reads as slow motion without touching a single keyframe; collision
-sub-steps; how many blocks of the world around, below and above the scene take part; and a debug
-overlay that draws the shapes the simulation actually works with.
+Under **Physics** in BBS's settings, only what is personal to whoever is editing. **General**: the
+master switch — off, and the addon costs nothing — and manual calculation. **Display**: the markup
+in the form editor and a debug overlay that draws the shapes the simulation actually works with.
+
+What the simulation computes belongs to the film, so a film comes out the same on every machine:
+**gear menu → Film physics** in the film editor. Gravity — where half of Earth's reads as slow motion
+without touching a single keyframe — speed, precision and how much of the world around the scene
+takes part, each a named preset with a custom value one step further.
 
 ### Structure destruction
 
