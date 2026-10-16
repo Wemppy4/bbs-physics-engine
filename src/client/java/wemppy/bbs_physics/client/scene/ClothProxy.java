@@ -14,6 +14,7 @@ import com.github.stephengold.joltjni.enumerate.EMotionType;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsMath;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.JoltRelease;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
@@ -161,14 +162,18 @@ public class ClothProxy
 
                 /* Sized in the next update, when the sheet's real spacing is known; built as a
                  * unit slab parked out of the way so nothing meets it before it is placed. */
+                BoxShape slab = new BoxShape(0.05F, THICKNESS, 0.05F);
                 BodyCreationSettings settings = new BodyCreationSettings(
-                    new BoxShape(0.05F, THICKNESS, 0.05F),
+                    slab,
                     new RVec3(0D, PARKED_Y, 0D), Quat.sIdentity(),
                     EMotionType.Kinematic, PhysicsLayers.CLOTH_PROXY);
+                CollisionGroup collision = new CollisionGroup(filter, group, 1);
 
-                settings.setCollisionGroup(new CollisionGroup(filter, group, 1));
+                settings.setCollisionGroup(collision);
 
                 bodies[i] = bodyInterface.createAndAddBody(settings, EActivation.Activate);
+
+                JoltRelease.release(settings, slab, collision);
 
                 i += 1;
             }
@@ -270,6 +275,15 @@ public class ClothProxy
         {
             physics.getBodies().setShape(body, shape, false, EActivation.Activate);
         }
+
+        /* Every slab holds it now. */
+        JoltRelease.release(shape);
+    }
+
+    /** Lets go of the filter the slabs and the sheet consult — they hold it for as long as they last. */
+    public void release()
+    {
+        JoltRelease.release(this.filter);
     }
 
     public int getCount()

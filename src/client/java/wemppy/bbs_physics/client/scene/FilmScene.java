@@ -149,6 +149,12 @@ public class FilmScene implements AutoCloseable
      */
     private SceneHandover handover;
 
+    /**
+     * Whether the ground this scene stands on went to the scene after it, which keeps it — see
+     * {@link WorldCollider.Window#release}.
+     */
+    private boolean groundHandedOver;
+
     record Recording(PhysicsCache cache, Map<String, Integer> keys, double x, double y, double z, boolean complete, boolean full, int lostAt) {}
 
     Recording recording()
@@ -296,6 +302,13 @@ public class FilmScene implements AutoCloseable
     {
         this.retained = retained;
         this.handover = handover;
+
+        if (handover != null)
+        {
+            /* Its ground is this scene's from here: kept if stood on, let go of if not. */
+            handover.taken = true;
+        }
+
         this.changes = handover != null ? handover.changes : new SceneChanges();
         this.editor = controller instanceof mchorse.bbs_mod.ui.film.controller.FilmEditorController;
         this.world = new PhysicsWorld();
@@ -326,11 +339,18 @@ public class FilmScene implements AutoCloseable
                 this.adopt(handover);
             }
 
-            this.handover = null;
             built = true;
         }
         finally
         {
+            if (handover != null && handover.ground != null && this.window != handover.ground)
+            {
+                /* Built on ground of its own: the ground handed over is stood on by nobody now. */
+                handover.ground.release();
+            }
+
+            this.handover = null;
+
             if (!built)
             {
                 /* Half a scene is worse than none: a Jolt world is native memory that no garbage
@@ -1485,10 +1505,14 @@ public class FilmScene implements AutoCloseable
             this.checkpoints.add(new SceneCheckpoints.Checkpoint(tick, this.world.saveState(), memory.trim(), this.lostAt));
         }
 
-        return new SceneHandover(this.film, this.originX, this.originY, this.originZ, this.window,
+        SceneHandover handover = new SceneHandover(this.film, this.originX, this.originY, this.originZ, this.window,
             this.cache, Map.copyOf(this.channelKeys), this.world.getBodyCount(), this.checkpoints, tick,
             this.changes, this.reach, this.clips.deathImpacts(), this.full, !standing, this.staleFrom,
             this.gravity, this.speed, this.collisionSteps);
+
+        this.groundHandedOver = true;
+
+        return handover;
     }
 
     /**
@@ -2078,5 +2102,10 @@ public class FilmScene implements AutoCloseable
         this.actors.clear();
         this.cast.clear();
         this.world.close();
+
+        if (!this.groundHandedOver && this.window != null)
+        {
+            this.window.release();
+        }
     }
 }

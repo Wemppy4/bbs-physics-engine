@@ -13,6 +13,7 @@ import com.github.stephengold.joltjni.readonly.ConstShape;
 import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.JoltRelease;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.util.math.BlockPos;
@@ -58,6 +59,16 @@ public final class WorldCollider
      */
     public record Window(int radius, int below, int above, int boxes, List<int[]> areas, ConstShape shape)
     {
+        /**
+         * Lets go of the shape, once no scene will stand on it again: a scene going without handing
+         * it on, or a handover nobody took. The body standing on it keeps its own hold for as long
+         * as its world lasts.
+         */
+        public void release()
+        {
+            JoltRelease.release(this.shape);
+        }
+
         /**
          * Whether every one of {@code centers} sits inside a region of this window with the margin a
          * build would have skipped it by — so a build from those centres would have collected
@@ -263,6 +274,8 @@ public final class WorldCollider
 
         if (boxes == 0)
         {
+            JoltRelease.release(compound);
+
             return new Window(radius, below, above, 0, areas, null);
         }
 
@@ -271,12 +284,16 @@ public final class WorldCollider
         if (result.hasError())
         {
             BBSPhysics.LOGGER.error("Could not build world collision for a physics scene: {}", result.getError());
+            JoltRelease.release(result, compound);
 
             return new Window(radius, below, above, 0, new ArrayList<>(0), null);
         }
 
-        ConstShape shape = result.get();
+        /* A hold of its own on the compound, kept by the window for as long as some scene stands
+         * on it (see Window#release); the result and the settings are done with. */
+        ConstShape shape = JoltRelease.take(result);
 
+        JoltRelease.release(compound);
         addGround(physics, shape);
 
         int[] first = accepted.get(0);
@@ -310,6 +327,7 @@ public final class WorldCollider
         settings.setFriction(0.6F);
 
         physics.getBodies().createAndAddBody(settings, EActivation.DontActivate);
+        JoltRelease.release(settings);
     }
 
     /**
@@ -417,7 +435,12 @@ public final class WorldCollider
         float centerY = (float) (blockY + (box.minY + box.maxY) * 0.5D);
         float centerZ = (float) (blockZ + (box.minZ + box.maxZ) * 0.5D);
 
-        compound.addShape(new Vec3(centerX, centerY, centerZ), Quat.sIdentity(), new BoxShape(new Vec3(halfX, halfY, halfZ), radius));
+        BoxShape leaf = new BoxShape(new Vec3(halfX, halfY, halfZ), radius);
+
+        /* The compound holds every box it is given; thousands of them a world, each kept alive by
+         * this hold alone once the world was gone, until it was let go of here. */
+        compound.addShape(new Vec3(centerX, centerY, centerZ), Quat.sIdentity(), leaf);
+        JoltRelease.release(leaf);
 
         return true;
     }

@@ -10,6 +10,7 @@ import com.github.stephengold.joltjni.SphereShape;
 import com.github.stephengold.joltjni.SwingTwistConstraint;
 import com.github.stephengold.joltjni.SwingTwistConstraintSettings;
 import com.github.stephengold.joltjni.Vec3;
+import com.github.stephengold.joltjni.CollisionGroup;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EMotionQuality;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
@@ -40,6 +41,7 @@ import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsMath;
 import wemppy.bbs_physics.engine.PhysicsWorld;
 import wemppy.bbs_physics.engine.RigMemory;
+import wemppy.bbs_physics.engine.JoltRelease;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import wemppy.bbs_physics.ragdoll.RagdollState;
 import org.joml.Matrix4f;
@@ -269,14 +271,19 @@ public class BoneChainRig implements SceneRig
 
             /* The author gives the strand's weight; Jolt would weigh a thin capsule by volume and
              * make hair weightless. Inertia still comes from the shape, scaled to the mass. */
-            settings.setMassPropertiesOverride(new MassProperties().setMass(Math.max(config.mass(), 0.01F) / config.bones().size()));
+            MassProperties mass = new MassProperties().setMass(Math.max(config.mass(), 0.01F) / config.bones().size());
+
+            settings.setMassPropertiesOverride(mass);
             settings.setOverrideMassProperties(EOverrideMassProperties.CalculateInertia);
 
             int sub = group.claimChain();
+            CollisionGroup collision = group.of(sub);
 
-            settings.setCollisionGroup(group.of(sub));
+            settings.setCollisionGroup(collision);
 
             Body body = bodies.createBody(settings);
+
+            JoltRelease.release(settings, shape, mass, collision);
 
             bodies.addBody(body.getId(), EActivation.Activate);
 
@@ -480,8 +487,9 @@ public class BoneChainRig implements SceneRig
 
         /* GHOST: it holds the strand through the joint and must meet nothing itself — an invisible
          * handle, not a collider the author never described. */
+        SphereShape handle = new SphereShape(0.02F);
         BodyCreationSettings settings = new BodyCreationSettings(
-            new SphereShape(0.02F),
+            handle,
             new RVec3(
                 this.translation.x - scene.getOriginX(),
                 this.translation.y - scene.getOriginY(),
@@ -489,10 +497,13 @@ public class BoneChainRig implements SceneRig
             new Quat(this.orientation.x, this.orientation.y, this.orientation.z, this.orientation.w),
             EMotionType.Kinematic,
             PhysicsLayers.GHOST);
+        CollisionGroup collision = group.of(sub);
 
-        settings.setCollisionGroup(group.of(sub));
+        settings.setCollisionGroup(collision);
 
         Body body = physics.getBodies().createBody(settings);
+
+        JoltRelease.release(settings, handle, collision);
 
         physics.getBodies().addBody(body.getId(), EActivation.Activate);
 
@@ -542,6 +553,7 @@ public class BoneChainRig implements SceneRig
         SwingTwistConstraint constraint = (SwingTwistConstraint) settings.create(anchor, segment.body);
 
         physics.getSystem().addConstraint(constraint);
+        JoltRelease.release(settings);
 
         PhysicsJoints.tune(constraint, config.stiffness(), config.damping(), index, count, 1F - config.falloff());
 
@@ -972,6 +984,12 @@ public class BoneChainRig implements SceneRig
     public void release()
     {
         FormChains.setState(this.form, null);
+
+        /* The system holds the joints for as long as the world lasts; this was the rig's own hold. */
+        for (Joint joint : this.joints)
+        {
+            JoltRelease.release(joint.constraint());
+        }
     }
 
     /**

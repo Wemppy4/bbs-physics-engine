@@ -26,6 +26,7 @@ import wemppy.bbs_physics.cloth.ClothForm;
 import wemppy.bbs_physics.collision.FormCollisions;
 import wemppy.bbs_physics.engine.FilmPhysics;
 import wemppy.bbs_physics.engine.PhysicsLayers;
+import wemppy.bbs_physics.engine.JoltRelease;
 import wemppy.bbs_physics.engine.PhysicsWorld;
 import wemppy.bbs_physics.forms.FormTreeWalk;
 import wemppy.bbs_physics.forms.PhysicsForms;
@@ -136,11 +137,14 @@ final class SceneBuilder
             /* No world to stand on — a scene built before the client has one, or a spot with nothing
              * solid nearby. A slab under the origin keeps bodies from falling forever, which would
              * look exactly like physics being broken. */
+            BoxShape slab = new BoxShape(16F, 0.5F, 16F);
             BodyCreationSettings floor = new BodyCreationSettings(
-                new BoxShape(16F, 0.5F, 16F), new RVec3(0D, -0.5D, 0D), Quat.sIdentity(),
+                slab, new RVec3(0D, -0.5D, 0D), Quat.sIdentity(),
                 EMotionType.Static, PhysicsLayers.STATIC);
 
             int floorId = this.world.getBodies().createAndAddBody(floor, EActivation.DontActivate);
+
+            JoltRelease.release(floor, slab);
 
             this.scene.addFloor(new SceneBody(floorId, 16F, 0.5F, 16F, 0.35F, 0.35F, 0.4F));
         }
@@ -452,6 +456,7 @@ final class SceneBuilder
         finally
         {
             lock.releaseLock();
+            JoltRelease.release(lock);
         }
     }
 

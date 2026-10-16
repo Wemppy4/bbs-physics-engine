@@ -106,6 +106,7 @@ public final class StructureRig implements SceneRig
             settings.setRestitution(0.05F);
             settings.setMotionQuality(EMotionQuality.LinearCast);
             ids[i] = physics.getBodies().createAndAddBody(settings, EActivation.DontActivate);
+            JoltRelease.release(settings, shape);
             if (ids[i] == -1) throw new IllegalStateException("Jolt could not allocate a structure block body.");
             channels[i] = scene.addChannel("structure/" + path + "/" + i);
         }
@@ -123,14 +124,24 @@ public final class StructureRig implements SceneRig
             float x = Math.max(0.001F, (float) box.getLengthX() * scale.x * 0.5F);
             float y = Math.max(0.001F, (float) box.getLengthY() * scale.y * 0.5F);
             float z = Math.max(0.001F, (float) box.getLengthZ() * scale.z * 0.5F);
+            BoxShape leaf = new BoxShape(new Vec3(x, y, z), Math.min(0.02F, Math.min(x, Math.min(y, z))));
             compound.addShape(new Vec3((float) ((box.minX + box.maxX) * 0.5 - 0.5) * scale.x,
                     (float) ((box.minY + box.maxY) * 0.5 - 0.5) * scale.y,
                     (float) ((box.minZ + box.maxZ) * 0.5 - 0.5) * scale.z),
-                Quat.sIdentity(), new BoxShape(new Vec3(x, y, z), Math.min(0.02F, Math.min(x, Math.min(y, z)))));
+                Quat.sIdentity(), leaf);
+            JoltRelease.release(leaf);
         }
         ShapeResult result = compound.create();
-        if (result.hasError()) throw new IllegalArgumentException(result.getError());
-        return result.get();
+        try
+        {
+            if (result.hasError()) throw new IllegalArgumentException(result.getError());
+            /* The caller's to let go of once its body has it. */
+            return JoltRelease.take(result);
+        }
+        finally
+        {
+            JoltRelease.release(result, compound);
+        }
     }
 
     @Override public Form getForm() { return this.form; }

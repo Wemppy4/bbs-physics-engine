@@ -623,6 +623,11 @@ public final class SceneActor
         {
             rig.release();
         }
+
+        if (this.group != null)
+        {
+            this.group.release();
+        }
     }
 
 }

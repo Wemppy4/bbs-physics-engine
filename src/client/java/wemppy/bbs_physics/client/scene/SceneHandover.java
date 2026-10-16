@@ -67,6 +67,9 @@ final class SceneHandover
     boolean stale;
     int staleFrom;
 
+    /** Whether a scene took this handover on, which makes the ground its own to keep or let go of. */
+    boolean taken;
+
     SceneHandover(Film film, double originX, double originY, double originZ, WorldCollider.Window ground,
         PhysicsCache cache, Map<String, Integer> channels, int bodies, SceneCheckpoints checkpoints, int tick,
         SceneChanges changes, Set<String> reach, Map<DeathActionClip, NavigableMap<Integer, RagdollRig.Impact>> impacts,
@@ -91,6 +94,19 @@ final class SceneHandover
         this.gravity = gravity;
         this.speed = speed;
         this.collisionSteps = collisionSteps;
+    }
+
+    /**
+     * Lets go of the ground when no scene takes this handover on — the film closing, another film's
+     * scene built instead. See {@link WorldCollider.Window#release}.
+     */
+    void release()
+    {
+        if (!this.taken && this.ground != null)
+        {
+            this.taken = true;
+            this.ground.release();
+        }
     }
 
     /**

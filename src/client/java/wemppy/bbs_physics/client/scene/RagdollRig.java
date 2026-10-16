@@ -10,6 +10,7 @@ import com.github.stephengold.joltjni.SwingTwistConstraint;
 import com.github.stephengold.joltjni.TwoBodyConstraint;
 import com.github.stephengold.joltjni.TwoBodyConstraintSettings;
 import com.github.stephengold.joltjni.Vec3;
+import com.github.stephengold.joltjni.CollisionGroup;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EAllowedDofs;
 import com.github.stephengold.joltjni.enumerate.EMotionQuality;
@@ -39,6 +40,7 @@ import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsMath;
 import wemppy.bbs_physics.engine.PhysicsWorld;
 import wemppy.bbs_physics.engine.RigMemory;
+import wemppy.bbs_physics.engine.JoltRelease;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import wemppy.bbs_physics.ragdoll.FormRagdoll;
 import wemppy.bbs_physics.ragdoll.FormRagdolls;
@@ -420,13 +422,16 @@ public class RagdollRig implements SceneRig
              * otherwise do. Another actor's bodies are in a different group and collide normally,
              * so two fallen characters land on each other rather than through. */
             int sub = group.claimPart();
+            CollisionGroup collision = group.of(sub);
 
-            settings.setCollisionGroup(group.of(sub));
+            settings.setCollisionGroup(collision);
 
             /* Dynamic-capable from birth even though it starts kinematic: the body has to carry
              * proper mass and inertia for the moment the handle lets it go. Jolt weighs the shape
              * by volume at water's density, which for body parts is the right ballpark. */
             Body body = bodies.createBody(settings);
+
+            JoltRelease.release(settings, shape, collision);
 
             bodies.addBody(body.getId(), EActivation.Activate);
 
@@ -455,17 +460,23 @@ public class RagdollRig implements SceneRig
 
             for (Part part : ragdoll.parts)
             {
-                total += part.body.getShape().getMassProperties().getMass();
+                ConstShape shape = part.body.getShape();
+                MassProperties properties = shape.getMassProperties();
+
+                total += properties.getMass();
+                JoltRelease.release(properties, shape);
             }
 
             if (total > 0F)
             {
                 for (Part part : ragdoll.parts)
                 {
-                    MassProperties properties = part.body.getShape().getMassProperties();
+                    ConstShape shape = part.body.getShape();
+                    MassProperties properties = shape.getMassProperties();
 
                     properties.scaleToMass(config.mass() * properties.getMass() / total);
                     part.body.getMotionProperties().setMassProperties(EAllowedDofs.All, properties);
+                    JoltRelease.release(properties, shape);
                 }
             }
         }
@@ -527,6 +538,7 @@ public class RagdollRig implements SceneRig
             TwoBodyConstraint constraint = settings.create(parent != null ? parent.body : rigParent.body(), part.body);
 
             physics.getSystem().addConstraint(constraint);
+            JoltRelease.release(settings);
 
             /* A cone gets a muscle: the two rotations that carry a target from "child relative to
              * parent, in the parent's frame" — which the animated pose gives — into the joint's own
@@ -1433,6 +1445,12 @@ public class RagdollRig implements SceneRig
     public void release()
     {
         FormRagdolls.setState(this.form, null);
+
+        /* The system holds the joints for as long as the world lasts; this was the rig's own hold. */
+        for (Joint joint : this.joints)
+        {
+            JoltRelease.release(joint.constraint());
+        }
     }
 
     /**

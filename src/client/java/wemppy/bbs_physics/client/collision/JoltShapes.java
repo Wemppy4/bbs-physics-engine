@@ -11,12 +11,18 @@ import com.github.stephengold.joltjni.StaticCompoundShapeSettings;
 import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.readonly.ConstShape;
 import wemppy.bbs_physics.BBSPhysics;
+import wemppy.bbs_physics.engine.JoltRelease;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import java.util.List;
 
-/** The bridge from measured or authored shapes to the ones Jolt actually simulates. */
+/**
+ * The bridge from measured or authored shapes to the ones Jolt actually simulates.
+ *
+ * <p>Every shape handed out here is the caller's to let go of (see {@link JoltRelease}) once a body
+ * has it: the body keeps a hold of its own, and the shape goes with the body.</p>
+ */
 public final class JoltShapes
 {
     /** Jolt's corner rounding, kept small so a thin shape — a finger, a strap — still fits it. */
@@ -43,27 +49,50 @@ public final class JoltShapes
         if (shapes.size() == 1)
         {
             CollisionShapes.SubShape sub = shapes.get(0);
+            ConstShape leaf = leaf(sub);
+            ConstShape placed = new RotatedTranslatedShape(vec(sub.offset()), quat(sub.rotation()), leaf);
 
-            return new RotatedTranslatedShape(vec(sub.offset()), quat(sub.rotation()), leaf(sub));
+            /* The placed shape holds the leaf now. */
+            JoltRelease.release(leaf);
+
+            return placed;
         }
 
         StaticCompoundShapeSettings compound = new StaticCompoundShapeSettings();
 
-        for (CollisionShapes.SubShape sub : shapes)
+        try
         {
-            compound.addShape(vec(sub.offset()), quat(sub.rotation()), leaf(sub));
+            for (CollisionShapes.SubShape sub : shapes)
+            {
+                ConstShape leaf = leaf(sub);
+
+                compound.addShape(vec(sub.offset()), quat(sub.rotation()), leaf);
+                JoltRelease.release(leaf);
+            }
+
+            ShapeResult result = compound.create();
+
+            try
+            {
+                if (result.hasError())
+                {
+                    BBSPhysics.LOGGER.warn("Could not build a compound collider: {}", result.getError());
+
+                    return null;
+                }
+
+                /* A hold of its own on the compound, which outlives the result and the settings. */
+                return JoltRelease.take(result);
+            }
+            finally
+            {
+                JoltRelease.release(result);
+            }
         }
-
-        ShapeResult result = compound.create();
-
-        if (result.hasError())
+        finally
         {
-            BBSPhysics.LOGGER.warn("Could not build a compound collider: {}", result.getError());
-
-            return null;
+            JoltRelease.release(compound);
         }
-
-        return result.get();
     }
 
     /** A single primitive. Convex radii are clamped: Jolt rejects a shape smaller than its rounding. */

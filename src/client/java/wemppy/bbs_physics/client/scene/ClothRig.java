@@ -11,6 +11,7 @@ import com.github.stephengold.joltjni.SoftBodyVertex;
 import com.github.stephengold.joltjni.Vec3;
 import com.github.stephengold.joltjni.Vertex;
 import com.github.stephengold.joltjni.VertexAttributes;
+import com.github.stephengold.joltjni.CollisionGroup;
 import com.github.stephengold.joltjni.enumerate.EActivation;
 import com.github.stephengold.joltjni.enumerate.EBendType;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
@@ -21,6 +22,7 @@ import wemppy.bbs_physics.cloth.ClothState;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsMath;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.JoltRelease;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -122,6 +124,7 @@ public class ClothRig extends SoftBodyRig
                 vertex.setInvMass(held[r * columns + c] ? 0F : freeInvMass);
 
                 shared.addVertex(vertex);
+                JoltRelease.release(vertex);
             }
         }
 
@@ -139,6 +142,7 @@ public class ClothRig extends SoftBodyRig
                 one.setVertex(1, bl);
                 one.setVertex(2, bl + 1);
                 shared.addFace(one);
+                JoltRelease.release(one);
 
                 Face two = new Face();
 
@@ -146,6 +150,7 @@ public class ClothRig extends SoftBodyRig
                 two.setVertex(1, bl + 1);
                 two.setVertex(2, tl + 1);
                 shared.addFace(two);
+                JoltRelease.release(two);
             }
         }
 
@@ -157,6 +162,7 @@ public class ClothRig extends SoftBodyRig
         VertexAttributes attributes = new VertexAttributes(compliance, compliance * 2F, compliance * 10F);
 
         shared.createConstraints(attributes, 1, EBendType.Distance);
+        JoltRelease.release(attributes);
 
         /* Contact happens at the vertices, and a vertex is a point: give it a little thickness so
          * the sheet rests on surfaces instead of z-fighting them, scaled to the mesh so a fine sheet
@@ -184,12 +190,17 @@ public class ClothRig extends SoftBodyRig
          * that is the whole of how it is excused from its own stand-ins. */
         ClothProxy proxy = form.selfCollision.get() ? ClothProxy.build(physics, columns, rows, group) : null;
 
-        if (proxy != null)
+        CollisionGroup collision = proxy == null ? null : proxy.sheetGroup(group);
+
+        if (collision != null)
         {
-            settings.setCollisionGroup(proxy.sheetGroup(group));
+            settings.setCollisionGroup(collision);
         }
 
         Body body = physics.getBodies().createSoftBody(settings);
+
+        /* The body holds the shared settings now, and its own copy of the group. */
+        JoltRelease.release(settings, shared, collision);
 
         physics.getBodies().addBody(body.getId(), EActivation.Activate);
 
@@ -288,5 +299,10 @@ public class ClothRig extends SoftBodyRig
     public void release()
     {
         this.cloth.state = null;
+
+        if (this.proxy != null)
+        {
+            this.proxy.release();
+        }
     }
 }

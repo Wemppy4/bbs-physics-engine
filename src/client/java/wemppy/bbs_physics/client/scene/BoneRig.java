@@ -3,6 +3,7 @@ package wemppy.bbs_physics.client.scene;
 import com.github.stephengold.joltjni.Body;
 import com.github.stephengold.joltjni.BodyCreationSettings;
 import com.github.stephengold.joltjni.BodyInterface;
+import com.github.stephengold.joltjni.CollisionGroup;
 import com.github.stephengold.joltjni.Quat;
 import com.github.stephengold.joltjni.RVec3;
 import com.github.stephengold.joltjni.enumerate.EActivation;
@@ -13,6 +14,7 @@ import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import wemppy.bbs_physics.client.collision.CollisionCollector;
 import wemppy.bbs_physics.client.collision.JoltShapes;
+import wemppy.bbs_physics.engine.JoltRelease;
 import wemppy.bbs_physics.engine.KinematicDrive;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsWorld;
@@ -114,15 +116,18 @@ public class BoneRig implements SceneRig
             BodyCreationSettings settings = new BodyCreationSettings(shape, new RVec3(0D, 0D, 0D), Quat.sIdentity(), EMotionType.Kinematic, PhysicsLayers.BONE);
 
             int sub = group.claimBone();
+            CollisionGroup collision = group.of(sub);
 
             settings.setFriction(0.6F);
-            settings.setCollisionGroup(group.of(sub));
+            settings.setCollisionGroup(collision);
 
             /* Created and added in two steps rather than createAndAddBody, because the Body
              * reference has a consumer now: a ragdoll jointed to a kinematic bone — "the head
              * falls, the torso walks on" — hands this very body to the constraint. */
             Body body = bodies.createBody(settings);
             int id = body.getId();
+
+            JoltRelease.release(settings, shape, collision);
 
             bodies.addBody(id, EActivation.Activate);
 

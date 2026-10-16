@@ -36,6 +36,7 @@ import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsMath;
 import wemppy.bbs_physics.engine.PhysicsWorld;
 import wemppy.bbs_physics.engine.RigMemory;
+import wemppy.bbs_physics.engine.JoltRelease;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -44,6 +45,7 @@ import org.joml.Vector3f;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import com.github.stephengold.joltjni.readonly.ConstShape;
 
 /**
  * Ties one chain form to its strand of rigid bodies in the simulation: capsule segments held
@@ -251,8 +253,9 @@ public class ChainRig implements SceneRig
             center.set(0F, form.restY(i), 0F);
             formWorld.transformPosition(center);
 
+            ConstShape shape = JoltShapes.leaf(capsule);
             BodyCreationSettings settings = new BodyCreationSettings(
-                JoltShapes.leaf(capsule),
+                shape,
                 new RVec3(
                     center.x - scene.getOriginX(),
                     center.y - scene.getOriginY(),
@@ -279,12 +282,17 @@ public class ChainRig implements SceneRig
 
             /* The author gives the strand's mass; Jolt would weigh the capsule by volume and make
              * a thin rope weightless. Inertia still comes from the shape, scaled to the mass. */
-            settings.setMassPropertiesOverride(new MassProperties().setMass(segmentMass));
+            MassProperties mass = new MassProperties().setMass(segmentMass);
+            CollisionGroup collision = new CollisionGroup(filter, group, i);
+
+            settings.setMassPropertiesOverride(mass);
             settings.setOverrideMassProperties(EOverrideMassProperties.CalculateInertia);
 
-            settings.setCollisionGroup(new CollisionGroup(filter, group, i));
+            settings.setCollisionGroup(collision);
 
             Body body = bodies.createBody(settings);
+
+            JoltRelease.release(settings, shape, mass, collision);
 
             bodies.addBody(body.getId(), EActivation.Activate);
 
@@ -338,14 +346,17 @@ public class ChainRig implements SceneRig
 
             formWorld.transformPosition(at);
 
+            SphereShape speck = new SphereShape(0.02F);
             BodyCreationSettings settings = new BodyCreationSettings(
-                new SphereShape(0.02F),
+                speck,
                 new RVec3(at.x - scene.getOriginX(), at.y - scene.getOriginY(), at.z - scene.getOriginZ()),
                 new Quat(formRotation.x, formRotation.y, formRotation.z, formRotation.w),
                 EMotionType.Kinematic,
                 PhysicsLayers.GHOST);
 
             Body root = bodies.createBody(settings);
+
+            JoltRelease.release(settings, speck);
 
             bodies.addBody(root.getId(), EActivation.Activate);
 
@@ -360,14 +371,17 @@ public class ChainRig implements SceneRig
 
         formWorld.transformPosition(tipRest);
 
+        SphereShape pinSpeck = new SphereShape(0.02F);
         BodyCreationSettings pinSettings = new BodyCreationSettings(
-            new SphereShape(0.02F),
+            pinSpeck,
             new RVec3(tipRest.x - scene.getOriginX(), tipRest.y - scene.getOriginY(), tipRest.z - scene.getOriginZ()),
             Quat.sIdentity(),
             EMotionType.Kinematic,
             PhysicsLayers.GHOST);
 
         Body pin = bodies.createBody(pinSettings);
+
+        JoltRelease.release(pinSettings, pinSpeck);
 
         bodies.addBody(pin.getId(), EActivation.Activate);
 
@@ -384,6 +398,7 @@ public class ChainRig implements SceneRig
 
         pinJoint.setEnabled(false);
         physics.getSystem().addConstraint(pinJoint);
+        JoltRelease.release(pinJointSettings);
 
         form.state = new ChainState(segments);
 
@@ -419,6 +434,7 @@ public class ChainRig implements SceneRig
         SwingTwistConstraint constraint = (SwingTwistConstraint) settings.create(parent, child);
 
         physics.getSystem().addConstraint(constraint);
+        JoltRelease.release(settings);
 
         /* The spring toward the built shape. Both bodies were created in the same orientation, so
          * the rest relative rotation is the identity — the default target — and the motor in
@@ -450,6 +466,7 @@ public class ChainRig implements SceneRig
 
             constraint.setEnabled(false);
             physics.getSystem().addConstraint(constraint);
+            JoltRelease.release(settings);
 
             this.targetJoints.put(candidate.getKey(), constraint);
         }
@@ -1044,6 +1061,12 @@ public class ChainRig implements SceneRig
     public void release()
     {
         this.form.state = null;
+
+        /* The system holds the joints, and the bodies their filter, for as long as the world lasts;
+         * these were the rig's own holds. */
+        JoltRelease.release((Object[]) this.joints);
+        JoltRelease.release(this.rootJoint, this.pinJoint, this.filter);
+        JoltRelease.release(this.targetJoints.values().toArray());
     }
 
     /** The rotation of a frame that may carry scale — the ragdoll's proven extraction. */

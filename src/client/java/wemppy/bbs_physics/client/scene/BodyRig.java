@@ -21,6 +21,7 @@ import wemppy.bbs_physics.client.collision.CollisionCollector;
 import wemppy.bbs_physics.client.collision.CollisionShapes;
 import wemppy.bbs_physics.client.collision.JoltShapes;
 import wemppy.bbs_physics.engine.BodyDrive;
+import wemppy.bbs_physics.engine.JoltRelease;
 import wemppy.bbs_physics.engine.KinematicDrive;
 import wemppy.bbs_physics.engine.PhysicsCache;
 import wemppy.bbs_physics.engine.PhysicsLayers;
@@ -240,7 +241,9 @@ public class BodyRig implements SceneRig
          * heavy and a small one weightless. The author gives a mass; the inertia is worked out
          * from the assembled shape and scaled to it, so the thing tumbles like what it looks like
          * rather than like the box it used to be given. */
-        settings.setMassPropertiesOverride(new MassProperties().setMass(body.mass()));
+        MassProperties mass = new MassProperties().setMass(body.mass());
+
+        settings.setMassPropertiesOverride(mass);
         settings.setOverrideMassProperties(EOverrideMassProperties.CalculateInertia);
 
         /* Asleep until touched, when asked: a stack that starts awake shivers on the spot for a
@@ -248,6 +251,9 @@ public class BodyRig implements SceneRig
          * the handle anyway. */
         boolean asleep = body.asleep() && !kinematic;
         int id = physics.getBodies().createAndAddBody(settings, asleep ? EActivation.DontActivate : EActivation.Activate);
+
+        /* The body holds its shape now; nothing else here is read again. */
+        JoltRelease.release(settings, shape, mass);
 
         /* An unmarked body is drawn in a colour of its own: it is about to fall through the floor,
          * and the overlay is the only place that can say "nothing was marked up here" before it
@@ -545,6 +551,9 @@ public class BodyRig implements SceneRig
          * by one derived from the volume. They are set from the new shape just below. */
         bodies.setShape(this.bodyId, shape, false, EActivation.Activate);
 
+        /* The body holds the new shape, and has let go of the old one. */
+        JoltRelease.release(shape);
+
         this.shapeSubs = subs;
         this.builtFrom.clear();
         this.builtFrom.addAll(frames);
@@ -641,6 +650,7 @@ public class BodyRig implements SceneRig
         finally
         {
             lock.releaseLock();
+            JoltRelease.release(lock);
         }
     }
 
@@ -661,21 +671,32 @@ public class BodyRig implements SceneRig
             }
 
             MotionProperties motion = lock.getBody().getMotionProperties();
+
+            /* A handle of its own on the body's shape, made by the getter on every call. */
             ConstShape shape = lock.getBody().getShape();
 
-            if (motion == null || shape == null)
+            try
             {
-                return;
+                if (motion == null || shape == null)
+                {
+                    return;
+                }
+
+                MassProperties properties = shape.getMassProperties();
+
+                properties.scaleToMass(mass);
+                motion.setMassProperties(dofs, properties);
+                JoltRelease.release(properties);
             }
-
-            MassProperties properties = shape.getMassProperties();
-
-            properties.scaleToMass(mass);
-            motion.setMassProperties(dofs, properties);
+            finally
+            {
+                JoltRelease.release(shape);
+            }
         }
         finally
         {
             lock.releaseLock();
+            JoltRelease.release(lock);
         }
     }
 
@@ -790,6 +811,7 @@ public class BodyRig implements SceneRig
             if (shape != null)
             {
                 bodies.setShape(this.bodyId, shape, false, EActivation.DontActivate);
+                JoltRelease.release(shape);
             }
 
             this.shapeSubs = subs;

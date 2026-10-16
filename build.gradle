@@ -204,6 +204,18 @@ tasks.named('check') {
 	dependsOn physicsPoseCacheCheck
 }
 
+tasks.register('physicsNativeReleaseCheck', JavaExec) {
+	dependsOn physicsChecksClasses
+	classpath = sourceSets.physicsChecks.runtimeClasspath
+	mainClass = 'wemppy.bbs_physics.client.scene.NativeReleaseCheck'
+	workingDir layout.buildDirectory.dir('physicsNativeReleaseCheck')
+	doFirst { workingDir.mkdirs() }
+}
+
+tasks.named('check') {
+	dependsOn physicsNativeReleaseCheck
+}
+
 publishing {
 	publications {
 		mavenJava(MavenPublication) {

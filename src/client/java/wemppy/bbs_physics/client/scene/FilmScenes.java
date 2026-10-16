@@ -133,10 +133,22 @@ public class FilmScenes
     {
         try
         {
-            handover = scene.handOver();
+            SceneHandover given = scene.handOver();
+
+            if (handover != null)
+            {
+                handover.release();
+            }
+
+            handover = given;
         }
         catch (Throwable e)
         {
+            if (handover != null)
+            {
+                handover.release();
+            }
+
             handover = null;
 
             BBSPhysics.LOGGER.error("A physics scene could not hand its recording over; the next one records the film from the start.", e);
@@ -150,10 +162,26 @@ public class FilmScenes
 
         if (handover != null && handover.film == controller.film)
         {
-            given = manual(controller) ? null : handover;
+            given = handover;
             handover = null;
         }
 
+        try
+        {
+            build(controller, manual(controller) ? null : given);
+        }
+        finally
+        {
+            /* Nothing, once a scene took it on; its ground otherwise. */
+            if (given != null)
+            {
+                given.release();
+            }
+        }
+    }
+
+    private static void build(BaseFilmController controller, SceneHandover given)
+    {
         try
         {
             dropOthersOf(controller);
@@ -719,6 +747,7 @@ public class FilmScenes
         if (handover != null && handover.film == controller.film)
         {
             /* The film is closing: there is no next scene to hand anything to. */
+            handover.release();
             handover = null;
         }
 
@@ -834,6 +863,12 @@ public class FilmScenes
         RETAINED.clear();
         poses = null;
         posesFilm = new WeakReference<>(null);
+
+        if (handover != null)
+        {
+            handover.release();
+        }
+
         handover = null;
     }
 

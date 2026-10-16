@@ -19,6 +19,7 @@ import wemppy.bbs_physics.balloon.BalloonState;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsMath;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.JoltRelease;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -98,6 +99,7 @@ public class BalloonRig extends SoftBodyRig
             vertex.setInvMass(count / mass);
 
             shared.addVertex(vertex);
+            JoltRelease.release(vertex);
         }
 
         /* Top fan, belts, bottom fan — wound so the pressure pushes out (see the class comment).
@@ -129,7 +131,10 @@ public class BalloonRig extends SoftBodyRig
         /* The same one-knob log scale cloth uses — rubber just defaults stiffer. */
         float compliance = (float) Math.pow(10D, -3D - 5D * form.stiffness.get());
 
-        shared.createConstraints(new VertexAttributes(compliance, compliance * 2F, compliance * 10F), 1, EBendType.Distance);
+        VertexAttributes attributes = new VertexAttributes(compliance, compliance * 2F, compliance * 10F);
+
+        shared.createConstraints(attributes, 1, EBendType.Distance);
+        JoltRelease.release(attributes);
 
         /* Contact happens at the vertices: a little thickness, scaled to the mesh, so the ball rests
          * on surfaces instead of z-fighting them. A quarter of the smaller cell, exactly as cloth
@@ -155,6 +160,9 @@ public class BalloonRig extends SoftBodyRig
 
         Body body = physics.getBodies().createSoftBody(settings);
 
+        /* The body holds the shared settings now. */
+        JoltRelease.release(settings, shared);
+
         physics.getBodies().addBody(body.getId(), EActivation.Activate);
 
         form.state = new BalloonState(count);
@@ -171,6 +179,7 @@ public class BalloonRig extends SoftBodyRig
         face.setVertex(1, v1);
         face.setVertex(2, v2);
         shared.addFace(face);
+        JoltRelease.release(face);
     }
 
     @Override

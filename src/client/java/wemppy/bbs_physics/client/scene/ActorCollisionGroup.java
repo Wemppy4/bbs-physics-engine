@@ -5,6 +5,7 @@ import com.github.stephengold.joltjni.GroupFilterTable;
 
 import java.util.ArrayList;
 import java.util.List;
+import wemppy.bbs_physics.engine.JoltRelease;
 
 /**
  * Who, inside one actor, is excused from colliding with whom.
@@ -99,10 +100,19 @@ public class ActorCollisionGroup
         return this.next++;
     }
 
-    /** What a body is told to carry, so that it consults this table rather than colliding blindly. */
+    /**
+     * What a body is told to carry, so that it consults this table rather than colliding blindly —
+     * the caller's to let go of once the body's settings have their copy of it.
+     */
     public CollisionGroup of(int sub)
     {
         return new CollisionGroup(this.filter, this.id, sub);
+    }
+
+    /** Lets go of the table: the bodies hold it for as long as they last — the scene is closing. */
+    public void release()
+    {
+        JoltRelease.release(this.filter);
     }
 
     /** Excuses one pair by hand — the ragdoll's joints, which only it knows about. */
