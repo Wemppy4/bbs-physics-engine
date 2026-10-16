@@ -87,6 +87,29 @@ public final class SwingWindow
         this.written = 0;
     }
 
+    /** Writes the window down for a checkpoint: the last few poses, and how many were pushed. */
+    public void remember(RigMemory memory)
+    {
+        memory.write(this.written);
+
+        for (int i = 0; i < this.positions.length; i++)
+        {
+            memory.write(this.positions[i]).write(this.rotations[i]);
+        }
+    }
+
+    /** Puts back what {@link #remember} wrote. */
+    public void recall(RigMemory memory)
+    {
+        this.written = memory.readInt();
+
+        for (int i = 0; i < this.positions.length; i++)
+        {
+            memory.read(this.positions[i]);
+            memory.read(this.rotations[i]);
+        }
+    }
+
     /** One tick of animated pose, in scene coordinates — the same target the body was steered to. */
     public void push(RVec3 position, Quat rotation)
     {

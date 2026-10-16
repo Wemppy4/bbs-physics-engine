@@ -224,6 +224,13 @@ public class BalloonRig extends SoftBodyRig
     }
 
     @Override
+    protected void forgetOwnSettings()
+    {
+        this.lastRestitution = Float.NaN;
+        this.lastGravity = Float.NaN;
+    }
+
+    @Override
     protected String getKind()
     {
         return "balloon";

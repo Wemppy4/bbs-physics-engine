@@ -3,6 +3,7 @@ package wemppy.bbs_physics.client.scene;
 import mchorse.bbs_mod.forms.forms.Form;
 import wemppy.bbs_physics.engine.PhysicsCache;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.RigMemory;
 import org.joml.Vector3f;
 
 /**
@@ -41,6 +42,26 @@ public interface SceneRig
      * for it, by however much of it the authority handle says the animation owns.
      */
     void update(RigUpdate update);
+
+    /**
+     * Writes down what this rig carries from one tick to the next, for a checkpoint: everything a
+     * step from here on depends on that is neither in the recording nor in Jolt's own snapshot —
+     * whether the animation holds it, what has torn off, what the swing has been.
+     *
+     * <p>No default, on purpose. A rig that forgot something here would pick a recording up
+     * differently from the run that made it, and the editor and the exported video would quietly
+     * disagree; every rig has to say what its memory is, even when the answer is nothing.</p>
+     */
+    void remember(RigMemory memory);
+
+    /**
+     * Puts back what {@link #remember} wrote, before Jolt's own snapshot is restored: the Java side,
+     * and whatever of the world that snapshot does not carry — motion types, object layers, shapes,
+     * which constraints are on — set without waking anything, since the snapshot says who is awake.
+     * Settings applied only when they change are forgotten instead, so the next tick applies them
+     * again whatever they were left at.
+     */
+    void recall(RigMemory memory, PhysicsWorld physics);
 
     default boolean needsRenderFrame()
     {

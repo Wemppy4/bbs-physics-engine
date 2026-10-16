@@ -11,6 +11,7 @@ import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.engine.PhysicsCache;
 import wemppy.bbs_physics.engine.PhysicsMath;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.RigMemory;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -276,6 +277,28 @@ public abstract class SoftBodyRig implements SceneRig
 
     /** Anything a kind does once the vertices are driven — cloth moves its stand-ins here. */
     protected void afterUpdate(PhysicsWorld physics)
+    {}
+
+    /** Nothing of its own: every vertex, where it is and how it moves, is in Jolt's snapshot. */
+    @Override
+    public void remember(RigMemory memory)
+    {
+        memory.mark(this.getKind() + "/" + this.path);
+    }
+
+    @Override
+    public void recall(RigMemory memory, PhysicsWorld physics)
+    {
+        memory.expect(this.getKind() + "/" + this.path);
+
+        this.lastFriction = Float.NaN;
+        this.lastDamping = Float.NaN;
+        this.dampedSteps = -1;
+        this.forgetOwnSettings();
+    }
+
+    /** Forgets what {@link #applyOwnSettings} applies only on change, so the next tick applies it again. */
+    protected void forgetOwnSettings()
     {}
 
     /** The form's frame, sampled with its physical ancestors already substituted. */

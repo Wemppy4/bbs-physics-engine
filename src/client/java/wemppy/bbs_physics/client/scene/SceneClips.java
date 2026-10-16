@@ -53,6 +53,12 @@ public final class SceneClips
 
     public void clearDeathImpacts() { this.deathImpacts.clear(); }
 
+    /** Forgets the hits recorded after {@code tick}: that part of the recording is being made again. */
+    public void dropDeathImpactsAfter(int tick)
+    {
+        for (var hits : this.deathImpacts.values()) hits.tailMap(tick, false).clear();
+    }
+
     /** Only show an actual hit near its occurrence, including when the film loops. */
     public RagdollRig.Impact deathImpact(wemppy.bbs_physics.actions.DeathActionClip clip, int tick)
     {

@@ -35,6 +35,7 @@ import wemppy.bbs_physics.engine.PhysicsJoints;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsMath;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.RigMemory;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -575,6 +576,53 @@ public class ChainRig implements SceneRig
     }
 
     /** Whether a drive target is a place at all — a broken pose must not become the solver's problem. */
+    /** Whether the animation holds the rope, and what its far end is tied to. */
+    @Override
+    public void remember(RigMemory memory)
+    {
+        memory.mark("chain/" + this.path);
+        memory.write(this.kinematic);
+        memory.write(this.attachMode);
+        memory.write(this.attachBody);
+    }
+
+    @Override
+    public void recall(RigMemory memory, PhysicsWorld physics)
+    {
+        memory.expect("chain/" + this.path);
+
+        BodyInterface bodies = physics.getBodies();
+        boolean kinematic = memory.readBoolean();
+
+        if (kinematic != this.kinematic)
+        {
+            for (int id : this.bodies)
+            {
+                bodies.setMotionType(id, kinematic ? EMotionType.Kinematic : EMotionType.Dynamic, EActivation.DontActivate);
+            }
+
+            this.kinematic = kinematic;
+        }
+
+        this.attachMode = memory.readInt();
+        this.attachBody = memory.readInt();
+
+        /* Which tie is on is in Jolt's snapshot too; set here as well, so nothing rests on that. */
+        this.pinJoint.setEnabled(this.attachMode == ATTACH_PIN);
+
+        for (Map.Entry<Integer, PointConstraint> entry : this.targetJoints.entrySet())
+        {
+            entry.getValue().setEnabled(this.attachMode == ATTACH_BODY && entry.getKey() == this.attachBody);
+        }
+
+        /* Applied again on the next tick, whatever the later run left them at. */
+        this.lastFriction = Float.NaN;
+        this.lastGravity = Float.NaN;
+        this.lastStiffness = Float.NaN;
+        this.lastDamping = Float.NaN;
+        this.dampedSteps = -1;
+    }
+
     private boolean placeable(Vector3f target)
     {
         if (Float.isFinite(target.x) && Float.isFinite(target.y) && Float.isFinite(target.z))

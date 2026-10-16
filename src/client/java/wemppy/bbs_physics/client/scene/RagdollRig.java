@@ -38,6 +38,7 @@ import wemppy.bbs_physics.engine.PhysicsJoints;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsMath;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.RigMemory;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import wemppy.bbs_physics.ragdoll.FormRagdoll;
 import wemppy.bbs_physics.ragdoll.FormRagdolls;
@@ -938,6 +939,89 @@ public class RagdollRig implements SceneRig
      *
      * @return whether this ragdoll has that bone as a part at all
      */
+    /**
+     * Whether the animation holds the ragdoll, which parts have torn off and which joints broke
+     * with them, and whether a bone has left the world. The death switches are not here: the clips
+     * set them again at the start of every step.
+     */
+    @Override
+    public void remember(RigMemory memory)
+    {
+        memory.mark("ragdoll/" + this.formPath);
+        memory.write(this.kinematic);
+        memory.write(this.lost);
+
+        for (Part part : this.parts)
+        {
+            memory.write(this.torn.contains(part.bone));
+        }
+
+        for (Joint joint : this.joints)
+        {
+            memory.write(this.severed.contains(joint.constraint));
+        }
+    }
+
+    @Override
+    public void recall(RigMemory memory, PhysicsWorld physics)
+    {
+        memory.expect("ragdoll/" + this.formPath);
+
+        BodyInterface bodies = physics.getBodies();
+
+        this.kinematic = memory.readBoolean();
+        this.lost = memory.readBoolean();
+        this.torn.clear();
+
+        for (Part part : this.parts)
+        {
+            if (memory.readBoolean())
+            {
+                this.torn.add(part.bone);
+            }
+        }
+
+        /* A joint is only ever switched off by a tear, so every joint not broken then is on. */
+        this.severed.clear();
+
+        for (Joint joint : this.joints)
+        {
+            boolean severed = memory.readBoolean();
+
+            if (severed)
+            {
+                this.severed.add(joint.constraint);
+            }
+
+            joint.constraint.setEnabled(!severed);
+        }
+
+        for (Part part : this.parts)
+        {
+            boolean free = !this.kinematic || this.torn.contains(part.bone);
+            EMotionType type = free ? EMotionType.Dynamic : EMotionType.Kinematic;
+            int layer = free ? PhysicsLayers.MOVING : PhysicsLayers.BONE;
+
+            if (bodies.getMotionType(part.id) != type)
+            {
+                bodies.setMotionType(part.id, type, EActivation.DontActivate);
+            }
+
+            if (bodies.getObjectLayer(part.id) != layer)
+            {
+                bodies.setObjectLayer(part.id, layer);
+            }
+        }
+
+        /* Applied again on the next tick, whatever the later run left them at. */
+        this.dampedSteps = -1;
+        this.lastDamping = Float.NaN;
+        this.lastGravity = Float.NaN;
+        this.lastFriction = Float.NaN;
+        this.lastMuscles = Float.NaN;
+        this.lastMuscleDamping = Float.NaN;
+    }
+
     public boolean tear(PhysicsWorld physics, String bone, float kickX, float kickY, float kickZ)
     {
         Part found = null;

@@ -21,7 +21,9 @@ import wemppy.bbs_physics.engine.FilmPhysics;
 import wemppy.bbs_physics.engine.PhysicsCache;
 import wemppy.bbs_physics.engine.PhysicsTimeline;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.RigMemory;
 import wemppy.bbs_physics.forms.FormTreeWalk;
+import net.fabricmc.loader.api.FabricLoader;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -40,10 +42,18 @@ import java.util.Map;
  * <p><b>The world is a recorder, not a source of pictures</b> (§2.5, §6). It only ever moves
  * forwards, one tick at a time, writing each tick's answers into {@link PhysicsCache}; a drawn frame
  * reads that recording and never asks the world anything. Scrubbing therefore costs an array lookup,
- * an edit costs a counter reset, and a frame the recording has not reached yet is drawn as plain
- * animation (Р8.1) until the background catch-up gets there. What this replaced — snapshots,
- * rewinds, a re-simulation budget, a scene that could be "behind" the cursor — is gone entirely,
- * along with the class of bugs where the viewport and the exported video disagreed.</p>
+ * and a frame the recording has not reached yet is drawn as plain animation (Р8.1) until the
+ * background catch-up gets there. What this replaced — rewinds on every scrub, a re-simulation
+ * budget, a scene that could be "behind" the cursor — is gone entirely, along with the class of bugs
+ * where the viewport and the exported video disagreed.</p>
+ *
+ * <p><b>An edit takes back only what it changed.</b> The recording keeps a checkpoint every second
+ * ({@link SceneCheckpoints}), and an edit is compared against what the recording was made from
+ * ({@link SceneChanges}) to find the first tick it can change. Everything before that tick stands;
+ * the world and every rig go back to the last checkpoint before it and record on from there. A run
+ * picked up from a checkpoint has to come out exactly as the run that made it — that is what keeps
+ * the editor and the video agreeing — and the development build checks it as it goes
+ * ({@link #verify}).</p>
  *
  * <p><b>Everything is simulated around an origin</b> rather than in raw world coordinates. Jolt is
  * built here in single precision, where a float's resolution at a hundred thousand blocks out is
@@ -94,14 +104,36 @@ public class FilmScene implements AutoCloseable
     /** How far past the film's own length the recording is allowed to run. */
     private static final int LOOKAHEAD_PAST_END = 40;
 
+    /** What {@link #staleFrom} holds while nothing has been edited. */
+    private static final int FRESH = Integer.MAX_VALUE;
+
+    /**
+     * Whether every checkpoint is checked by recording the second before it again from the one
+     * before, and comparing — see {@link #verify}. Twice the work, so only in the development
+     * environment or when asked for with {@code -Dbbs_physics.checkResume=true}.
+     */
+    private static final boolean CHECK_RESUME = FabricLoader.getInstance().isDevelopmentEnvironment()
+        || Boolean.getBoolean("bbs_physics.checkResume");
+
     private final PhysicsWorld world;
     private final PhysicsTimeline timeline;
 
     /**
      * The film as a recording: what every body was doing on every tick that has been simulated.
-     * This, and not the Jolt world, is what a drawn frame reads (§6).
+     * This, and not the Jolt world, is what a drawn frame reads (§6). Swapped for a copy only while
+     * {@link #verify} records part of the film a second time.
      */
-    private final PhysicsCache cache = new PhysicsCache();
+    private PhysicsCache cache = new PhysicsCache();
+
+    /** Where the world and every rig stood every second of the recording. */
+    private final SceneCheckpoints checkpoints = new SceneCheckpoints();
+
+    /** What the recording was made from, for working out the first tick an edit changes. */
+    private final SceneChanges changes = new SceneChanges();
+
+    /** Whether {@link #verify} is recording a second time, which takes no checkpoints of its own. */
+    private boolean verifying;
+    private boolean verifyReported;
     private final Map<String, Integer> channelKeys = new java.util.HashMap<>();
     private String channelActor = "";
     private final Recording retained;
@@ -147,11 +179,19 @@ public class FilmScene implements AutoCloseable
     private final List<SceneActor> actors = new ArrayList<>();
 
     /**
-     * Whether the film has been edited since this simulation ran, so everything it worked out is a
-     * consequence of numbers that are no longer there. Raised from outside (see
-     * {@link FilmScenes#onFilmEdited}) and answered on the next tick by starting over.
+     * Whether the film has been edited in a way that changes it from the opening frame, so
+     * everything the simulation worked out is a consequence of numbers that are no longer there.
+     * Raised from outside (see {@link FilmScenes#onFilmEdited}) and answered on the next tick by
+     * starting over.
      */
     private boolean stale;
+
+    /**
+     * The first tick an edit since the last tick has changed, or {@link #FRESH}: the recording from
+     * there on is wrong, the rest stands. Answered on the next tick by picking the recording up at
+     * the last checkpoint before it ({@link #resume}).
+     */
+    private int staleFrom = FRESH;
     private final boolean editor;
     private boolean calculationRequested;
     private boolean calculationComplete;
@@ -422,7 +462,8 @@ public class FilmScene implements AutoCloseable
     /**
      * Works out what a step reads — see {@link SceneReach} — and tells every actor how much of its
      * pose work a step may share: an actor that hangs off nothing walks its pose once and reads it
-     * three times.
+     * three times. Then brings the copy of what the recording is made from in line with it (see
+     * {@link SceneChanges}).
      */
     private void reach()
     {
@@ -435,41 +476,33 @@ public class FilmScene implements AutoCloseable
 
             actor.plan(member == null || SceneReach.anchored(member));
         }
+
+        this.changes.follow(this.film, this.reach);
     }
 
     /**
-     * Whether any of these edits touches something this simulation reads.
+     * The film was edited: the recording from the first tick these edits change is taken back, and
+     * everything before it stands.
      *
      * <p>The animation of a replay outside the reach — an actor with nothing simulated and nothing
      * marked up, that nothing simulated hangs off — is drawn by the film and read by nobody here, so
-     * moving its keys leaves the recording standing. Everything else counts as it always did; the
-     * action clips above all, since a push from any replay's timeline reaches every body.</p>
+     * moving its keys takes nothing back. A key of an actor that is read takes back the film from two
+     * keys before it; a clip, from where it starts or used to; anything else, from the opening
+     * frame.</p>
      */
-    public boolean reads(Film film, List<BaseValue> values)
+    public void edited(Film film, List<BaseValue> values, boolean impulseEdit)
     {
+        int first = SceneChanges.NONE;
+
         for (BaseValue value : values)
         {
-            if (value == film)
-            {
-                return true;
-            }
-
-            if (!SceneEdits.matters(value.getPath().strings))
-            {
-                continue;
-            }
-
-            Replay replay = SceneEdits.animationOf(value);
-
-            if (replay != null && !this.reach.contains(replay.getId()))
-            {
-                continue;
-            }
-
-            return true;
+            first = Math.min(first, this.changes.affected(film, value, this.reach));
         }
 
-        return false;
+        if (first != SceneChanges.NONE)
+        {
+            this.invalidateFrom(first, impulseEdit);
+        }
     }
 
     public double getOriginX()
@@ -533,7 +566,7 @@ public class FilmScene implements AutoCloseable
             this.cache.getComputed() - 1,
             this.manualCalculation() && this.calculationComplete ? this.cache.getComputed() - 1 : this.recordingEnd(this.filmTick),
             this.cache.has(this.filmTick),
-            this.manualCalculation() ? this.waitingForCalculation() : this.stale || !this.backgroundAllowed(),
+            this.manualCalculation() ? this.waitingForCalculation() : this.isStale() || !this.backgroundAllowed(),
             this.full,
             this.lostAt,
             this.world.getBodyCount(),
@@ -617,12 +650,7 @@ public class FilmScene implements AutoCloseable
             return;
         }
 
-        if (this.stale)
-        {
-            this.stale = false;
-
-            this.rewind();
-        }
+        this.catchUpWithEdits();
 
         if (exporting)
         {
@@ -652,7 +680,7 @@ public class FilmScene implements AutoCloseable
     {
         boolean manual = this.manualCalculation();
 
-        if (this.stale || this.full || (manual && !this.calculationRequested))
+        if (this.isStale() || this.full || (manual && !this.calculationRequested))
         {
             return Demand.NONE;
         }
@@ -722,7 +750,7 @@ public class FilmScene implements AutoCloseable
      */
     public void recordCursor()
     {
-        if (this.stale || (this.manualCalculation() && !this.calculationRequested) || this.cache.has(this.filmTick))
+        if (this.isStale() || (this.manualCalculation() && !this.calculationRequested) || this.cache.has(this.filmTick))
         {
             return;
         }
@@ -888,7 +916,14 @@ public class FilmScene implements AutoCloseable
     /** Simulates the next tick of the film and writes it into the recording. */
     private void step()
     {
-        this.record(this.timeline.step(this::poseTick));
+        int tick = this.timeline.step(this::poseTick);
+
+        this.record(tick);
+
+        if (!this.verifying && this.checkpoints.due(tick))
+        {
+            this.checkpoint(tick);
+        }
     }
 
     /**
@@ -1116,7 +1151,7 @@ public class FilmScene implements AutoCloseable
     public boolean waitingForCalculation()
     {
         return this.manualCalculation() && !this.calculationComplete && !this.calculationRequested && !this.full
-            && (this.stale || this.cache.getComputed() <= this.recordingEnd(this.filmTick));
+            && (this.isStale() || this.cache.getComputed() <= this.recordingEnd(this.filmTick));
     }
 
     public void requestCalculation(int tick)
@@ -1156,26 +1191,282 @@ public class FilmScene implements AutoCloseable
     /** Keep the last displayed result only for impulse edits at the unchanged cursor. */
     public void invalidate(boolean impulseEdit)
     {
+        this.invalidateFrom(0, impulseEdit);
+    }
+
+    /**
+     * The film changed from {@code tick} on: the recording from there is taken back on the next tick
+     * and everything before it stands. From the opening frame it is the old starting over; in manual
+     * calculation any edit only marks the recording as out of date, as it always did.
+     *
+     * <p>An impulse edit keeps the frame on screen as a placeholder while its tick is being recorded
+     * again — only when that frame is among what is taken back.</p>
+     */
+    public void invalidateFrom(int tick, boolean impulseEdit)
+    {
         if (this.manualCalculation())
         {
             this.stale = true;
             this.calculationRequested = false;
             return;
         }
-        this.clips.clearDeathImpacts();
+
+        if (tick <= 0)
+        {
+            this.clips.clearDeathImpacts();
+        }
+
         if (!impulseEdit)
         {
             this.impulsePreview = null;
         }
-        else if (!this.stale && this.drawnTick == this.filmTick && this.cache.has(this.filmTick))
+        else if (this.filmTick >= this.takenBackFrom(tick) && !this.isStale() && this.drawnTick == this.filmTick && this.cache.has(this.filmTick))
         {
             this.impulsePreview = this.cache.copyFrame(this.filmTick);
             this.impulsePreviewTick = this.filmTick;
         }
-        this.stale = true;
+
+        if (tick <= 0)
+        {
+            this.stale = true;
+        }
+        else
+        {
+            this.staleFrom = Math.min(this.staleFrom, tick);
+        }
+
         this.calculationRequested = false;
         this.calculationComplete = false;
         this.editedAt = System.nanoTime();
+    }
+
+    /**
+     * The first tick of the recording an edit that changes the film from {@code tick} takes back —
+     * the one after the checkpoint it is picked up at — or {@link #FRESH} when it takes back nothing.
+     */
+    private int takenBackFrom(int tick)
+    {
+        if (tick <= 0)
+        {
+            return 0;
+        }
+
+        if (tick >= this.cache.getComputed())
+        {
+            return FRESH;
+        }
+
+        SceneCheckpoints.Checkpoint checkpoint = this.checkpoints.before(tick);
+
+        return checkpoint == null ? 0 : checkpoint.tick() + 1;
+    }
+
+    /** Whether an edit is waiting to take back part of the recording, or all of it. */
+    private boolean isStale()
+    {
+        return this.stale || this.staleFrom != FRESH;
+    }
+
+    /** Answers the edits since the last tick: starting over, or picking up at a checkpoint. */
+    private void catchUpWithEdits()
+    {
+        if (this.stale)
+        {
+            this.stale = false;
+            this.staleFrom = FRESH;
+
+            this.rewind();
+        }
+        else if (this.staleFrom != FRESH)
+        {
+            int from = this.staleFrom;
+
+            this.staleFrom = FRESH;
+
+            this.resume(from);
+        }
+    }
+
+    /**
+     * Picks the recording up again for an edit that changed the film from {@code from} on.
+     *
+     * <p>When nothing recorded yet reaches that far, there is nothing to take back: the world stands
+     * where the recording ends and goes on from there with the film as it is now. Otherwise the world
+     * and every rig go back to the last checkpoint before {@code from} and the recording after it is
+     * dropped. With no checkpoint early enough — or one that will not restore — it starts over.</p>
+     */
+    private void resume(int from)
+    {
+        if (from < this.cache.getComputed())
+        {
+            SceneCheckpoints.Checkpoint checkpoint = this.checkpoints.before(from);
+
+            if (checkpoint == null || !this.restore(checkpoint))
+            {
+                this.rewind();
+
+                return;
+            }
+        }
+
+        /* An edit may have hung an actor off another, or let one go. */
+        this.reach();
+    }
+
+    /** Puts the world and every rig back to {@code checkpoint}, and forgets what was recorded after it. */
+    private boolean restore(SceneCheckpoints.Checkpoint checkpoint)
+    {
+        if (!this.putBack(checkpoint))
+        {
+            return false;
+        }
+
+        int tick = checkpoint.tick();
+
+        this.cache.truncate(tick + 1);
+        this.checkpoints.dropAfter(tick);
+        this.clips.dropDeathImpactsAfter(tick);
+        this.full = false;
+
+        /* Everything was just moved back; whatever was drawn last is not a place anything travelled
+         * from. */
+        this.teleport = true;
+
+        return true;
+    }
+
+    /**
+     * Puts the world and every rig back to where they stood at {@code checkpoint} — the rigs first,
+     * with the parts of the world Jolt's snapshot does not carry, then the snapshot itself. The
+     * recording is left alone.
+     */
+    private boolean putBack(SceneCheckpoints.Checkpoint checkpoint)
+    {
+        RigMemory memory = checkpoint.rigs().rewind();
+
+        try
+        {
+            for (SceneActor actor : this.actors)
+            {
+                actor.recall(memory, this.world);
+            }
+
+            if (!memory.isDrained())
+            {
+                throw new IllegalStateException("A checkpoint was not read back to its end");
+            }
+        }
+        catch (RuntimeException e)
+        {
+            BBSPhysics.LOGGER.error("A physics checkpoint could not be read back; the recording starts over instead.", e);
+
+            return false;
+        }
+
+        if (!this.world.restoreState(checkpoint.world()))
+        {
+            BBSPhysics.LOGGER.warn("Jolt refused a physics checkpoint at tick {}; the recording starts over instead.", checkpoint.tick());
+
+            return false;
+        }
+
+        this.timeline.resume(checkpoint.tick());
+        this.lostAt = checkpoint.lostAt();
+
+        /* No walk from before is any walk of this run. */
+        this.step += 1;
+
+        return true;
+    }
+
+    /** Takes a checkpoint after recording {@code tick}. */
+    private void checkpoint(int tick)
+    {
+        RigMemory memory = new RigMemory();
+
+        for (SceneActor actor : this.actors)
+        {
+            actor.remember(memory);
+        }
+
+        this.checkpoints.add(new SceneCheckpoints.Checkpoint(tick, this.world.saveState(), memory.trim(), this.lostAt));
+
+        if (CHECK_RESUME)
+        {
+            this.verify(tick);
+        }
+    }
+
+    /**
+     * Development check: records the second before the checkpoint just taken a second time, picked
+     * up from the checkpoint before it, and compares the two bit for bit.
+     *
+     * <p>A difference means something a rig carries from tick to tick is missing from its memory
+     * (see {@link SceneRig#remember}), so picking up after an edit would come out differently from
+     * recording the film through — the editor and the video would disagree. Reported once per scene,
+     * with the tick and the channel it showed on first. Afterwards the world is put back where the
+     * first run left it, so the recording goes on as if nothing had been checked.</p>
+     */
+    private void verify(int tick)
+    {
+        SceneCheckpoints.Checkpoint earlier = this.checkpoints.before(tick);
+        SceneCheckpoints.Checkpoint latest = this.checkpoints.at(tick);
+
+        if (earlier == null || latest == null || this.verifyReported)
+        {
+            return;
+        }
+
+        PhysicsCache straight = this.cache;
+
+        this.verifying = true;
+
+        try
+        {
+            this.cache = straight.copyPrefix(earlier.tick() + 1);
+
+            if (!this.putBack(earlier))
+            {
+                return;
+            }
+
+            for (int at = earlier.tick() + 1; at <= tick; at++)
+            {
+                this.step();
+
+                int channel = straight.firstDifference(this.cache, at);
+
+                if (channel >= 0)
+                {
+                    this.verifyReported = true;
+
+                    BBSPhysics.LOGGER.warn("Physics checkpoint check: picked up at tick {}, the recording differs from the run that made it at tick {}, first on channel '{}'. Something a rig carries between ticks is not in its checkpoint.",
+                        earlier.tick(), at, this.channelName(channel));
+
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            this.cache = straight;
+            this.putBack(latest);
+            this.verifying = false;
+        }
+    }
+
+    /** A channel's name for a report — the key it was claimed under, or its number. */
+    private String channelName(int channel)
+    {
+        for (Map.Entry<String, Integer> entry : this.channelKeys.entrySet())
+        {
+            if (entry.getValue() == channel)
+            {
+                return entry.getKey();
+            }
+        }
+
+        return "#" + channel;
     }
 
     /**
@@ -1288,14 +1579,7 @@ public class FilmScene implements AutoCloseable
     private int ensureRecorded(int end)
     {
         this.applyWorldSettings();
-
-        if (this.stale)
-        {
-            this.stale = false;
-
-            this.rewind();
-        }
-
+        this.catchUpWithEdits();
         this.recordUntil(end, Long.MAX_VALUE);
 
         return this.cache.getComputed() - 1;
@@ -1335,6 +1619,7 @@ public class FilmScene implements AutoCloseable
              * before the edit is ever taken for a walk of this run. */
             this.step += 1;
             this.reach();
+            this.checkpoints.clear();
             this.cast.apply(0);
             this.clips.prepareDeaths(this.cast, 0);
 

@@ -16,6 +16,7 @@ import wemppy.bbs_physics.client.collision.JoltShapes;
 import wemppy.bbs_physics.engine.KinematicDrive;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.RigMemory;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -206,6 +207,19 @@ public class BoneRig implements SceneRig
      * The kinematic body standing at {@code path}, or null when the slot got none — for a ragdoll
      * that needs to hang a falling part off a bone the animation kept.
      */
+    /** Nothing to keep: the bones are the animation, and Jolt's snapshot has where they are. */
+    @Override
+    public void remember(RigMemory memory)
+    {
+        memory.mark("bones");
+    }
+
+    @Override
+    public void recall(RigMemory memory, PhysicsWorld physics)
+    {
+        memory.expect("bones");
+    }
+
     public Part find(String path)
     {
         for (Part part : this.parts)

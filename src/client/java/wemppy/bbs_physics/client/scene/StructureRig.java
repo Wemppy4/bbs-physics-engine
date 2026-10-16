@@ -167,6 +167,40 @@ public final class StructureRig implements SceneRig
         }
     }
 
+    /** Which blocks have broken off: each is a dynamic body on the moving layer from then on. */
+    @Override
+    public void remember(RigMemory memory)
+    {
+        memory.mark("structure/" + this.path);
+        memory.write(this.detached.length);
+
+        for (boolean detached : this.detached)
+        {
+            memory.write(detached);
+        }
+    }
+
+    @Override
+    public void recall(RigMemory memory, PhysicsWorld physics)
+    {
+        memory.expect("structure/" + this.path);
+
+        BodyInterface bodies = physics.getBodies();
+        int count = memory.readInt();
+
+        for (int i = 0; i < count; i++)
+        {
+            boolean detached = memory.readBoolean();
+
+            if (detached != this.detached[i])
+            {
+                this.detached[i] = detached;
+                bodies.setMotionType(this.bodies[i], detached ? EMotionType.Dynamic : EMotionType.Kinematic, EActivation.DontActivate);
+                bodies.setObjectLayer(this.bodies[i], detached ? PhysicsLayers.MOVING : PhysicsLayers.BONE);
+            }
+        }
+    }
+
     void reset(BodyInterface bodies)
     {
         for (int i = 0; i < this.bodies.length; i++)

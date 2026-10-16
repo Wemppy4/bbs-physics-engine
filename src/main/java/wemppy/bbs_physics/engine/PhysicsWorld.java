@@ -7,6 +7,7 @@ import com.github.stephengold.joltjni.JobSystemSingleThreaded;
 import com.github.stephengold.joltjni.ObjectLayerPairFilterTable;
 import com.github.stephengold.joltjni.ObjectVsBroadPhaseLayerFilterTable;
 import com.github.stephengold.joltjni.PhysicsSystem;
+import com.github.stephengold.joltjni.StateRecorderImpl;
 import com.github.stephengold.joltjni.TempAllocator;
 import com.github.stephengold.joltjni.TempAllocatorImpl;
 
@@ -161,6 +162,35 @@ public class PhysicsWorld implements AutoCloseable
     public void step()
     {
         this.system.update(this.getDeltaTime(), this.getIntegrationSteps(), this.temp, this.jobs);
+    }
+
+    /**
+     * Everything Jolt itself keeps between steps — where every body is and how it moves, which
+     * bodies sleep, the contacts it warm-starts from, the constraints' running state — as bytes.
+     * Restored bit for bit by {@link #restoreState}; measured in {@code stands/CheckpointSmoke}.
+     *
+     * <p>Not in it: what a body <em>is</em> rather than what it is doing — its motion type, object
+     * layer, shape and settings. Those belong to whoever set them, and are put back by them.</p>
+     */
+    public byte[] saveState()
+    {
+        try (StateRecorderImpl recorder = new StateRecorderImpl())
+        {
+            this.system.saveState(recorder);
+
+            return recorder.getData();
+        }
+    }
+
+    /** Puts the world back to what {@link #saveState} wrote; false when Jolt refuses it. */
+    public boolean restoreState(byte[] state)
+    {
+        try (StateRecorderImpl recorder = new StateRecorderImpl())
+        {
+            recorder.writeBytes(state);
+
+            return this.system.restoreState(recorder);
+        }
     }
 
     @Override

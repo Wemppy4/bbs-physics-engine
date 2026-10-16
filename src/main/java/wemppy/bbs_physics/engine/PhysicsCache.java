@@ -212,6 +212,66 @@ public class PhysicsCache
     }
 
     /**
+     * Keeps the first {@code ticks} of the recording and forgets the rest — an edit changed the film
+     * from there on, and the simulation picks up again at the last of what is kept.
+     */
+    public void truncate(int ticks)
+    {
+        if (ticks < this.computed)
+        {
+            this.computed = Math.max(ticks, 0);
+        }
+    }
+
+    /**
+     * A writable recording with this one's channels and its first {@code ticks} already in — for
+     * recording part of the film a second time beside the first, to compare the two.
+     */
+    public PhysicsCache copyPrefix(int ticks)
+    {
+        PhysicsCache copy = new PhysicsCache();
+
+        copy.channels = this.channels;
+        copy.offsets = Arrays.copyOf(this.offsets, this.offsets.length);
+        copy.widths = Arrays.copyOf(this.widths, this.widths.length);
+        copy.stride = this.stride;
+        copy.sealed = true;
+        copy.computed = Math.min(Math.max(ticks, 0), this.computed);
+        copy.capacity = copy.computed;
+        copy.data = Arrays.copyOf(this.data, copy.computed * this.stride);
+
+        return copy;
+    }
+
+    /**
+     * The first channel whose numbers differ between the two recordings on {@code tick}, bit for bit,
+     * or -1 when they agree — both must have the tick and the same channels.
+     */
+    public int firstDifference(PhysicsCache other, int tick)
+    {
+        for (int channel = 0; channel < this.channels; channel++)
+        {
+            int at = this.at(tick, channel);
+            int there = other.at(tick, channel);
+
+            if (at < 0 || there < 0)
+            {
+                return channel;
+            }
+
+            for (int i = 0; i < this.widths[channel]; i++)
+            {
+                if (Float.floatToRawIntBits(this.data[at + i]) != Float.floatToRawIntBits(other.data[there + i]))
+                {
+                    return channel;
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    /**
      * Whether {@code tick} can be recorded at all — within the ceiling, and the next tick in line.
      * Recording is strictly sequential: a gap would be a frame nobody could ever fill, since tick
      * {@code n} can only be produced by having simulated {@code n - 1}.

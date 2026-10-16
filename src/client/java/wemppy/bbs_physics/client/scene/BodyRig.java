@@ -26,6 +26,7 @@ import wemppy.bbs_physics.engine.PhysicsCache;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsMath;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.RigMemory;
 import wemppy.bbs_physics.engine.SwingWindow;
 import wemppy.bbs_physics.forms.FormBody;
 import wemppy.bbs_physics.forms.PhysicsBodyState;
@@ -148,6 +149,13 @@ public class BodyRig implements SceneRig
     /** The sub-step count the damping was converted for — the rate depends on it. */
     private int dampedSteps;
 
+    /**
+     * What the body's current shape was built from. A checkpoint keeps it, because a shape is what
+     * a body is rather than what it is doing, and Jolt's snapshot leaves it out — a body re-welded
+     * after the checkpoint would otherwise carry the later shape back into the earlier tick.
+     */
+    private List<CollisionShapes.SubShape> shapeSubs = List.of();
+
     private BodyRig(Form form, String path, int bodyId, int channel, List<CollisionCollector.Piece> pieces, boolean kinematic, SceneBody debug, FormBody settings)
     {
         this.form = form;
@@ -260,6 +268,7 @@ public class BodyRig implements SceneRig
         BodyRig rig = new BodyRig(form, path, id, scene.addChannel("body/" + path), ghost ? List.of() : pieces, kinematic, debug, body);
 
         rig.frames = new RecordedFrame(scene, "body/" + path, PhysicsForms.getState(form).frame);
+        rig.shapeSubs = ghost ? List.of() : subs;
 
         compose(rig.pieces, path, matrices, rig.inverse, rig.builtFrom);
 
@@ -536,6 +545,7 @@ public class BodyRig implements SceneRig
          * by one derived from the volume. They are set from the new shape just below. */
         bodies.setShape(this.bodyId, shape, false, EActivation.Activate);
 
+        this.shapeSubs = subs;
         this.builtFrom.clear();
         this.builtFrom.addAll(frames);
         this.debug.setShapes(subs);
@@ -735,6 +745,82 @@ public class BodyRig implements SceneRig
     }
 
     /** The recorded transform for {@code tick}, reported to the bake instead of the form. */
+    /**
+     * Whether the animation holds the body, what its shape was built from, and the swing it would
+     * be let go with.
+     */
+    @Override
+    public void remember(RigMemory memory)
+    {
+        memory.mark("body/" + this.path);
+        memory.write(this.kinematic);
+        memory.keep(this.shapeSubs);
+        memory.write(this.builtFrom.size());
+
+        for (Matrix4f frame : this.builtFrom)
+        {
+            memory.write(frame);
+        }
+
+        this.swing.remember(memory);
+    }
+
+    @Override
+    public void recall(RigMemory memory, PhysicsWorld physics)
+    {
+        memory.expect("body/" + this.path);
+
+        BodyInterface bodies = physics.getBodies();
+        boolean kinematic = memory.readBoolean();
+
+        if (kinematic != this.kinematic)
+        {
+            bodies.setMotionType(this.bodyId, kinematic ? EMotionType.Kinematic : EMotionType.Dynamic, EActivation.DontActivate);
+            this.kinematic = kinematic;
+        }
+
+        List<CollisionShapes.SubShape> subs = memory.kept();
+
+        if (subs != this.shapeSubs)
+        {
+            ConstShape shape = subs.isEmpty() ? JoltShapes.speck() : JoltShapes.build(subs);
+
+            if (shape != null)
+            {
+                bodies.setShape(this.bodyId, shape, false, EActivation.DontActivate);
+            }
+
+            this.shapeSubs = subs;
+
+            if (!subs.isEmpty())
+            {
+                this.debug.setShapes(subs);
+            }
+        }
+
+        int frames = memory.readInt();
+
+        this.builtFrom.clear();
+
+        for (int i = 0; i < frames; i++)
+        {
+            this.builtFrom.add(memory.read(new Matrix4f()));
+        }
+
+        this.swing.recall(memory);
+
+        /* Applied again on the next tick, whatever the later run left them at. */
+        this.lastMass = Float.NaN;
+        this.lastFriction = Float.NaN;
+        this.lastRestitution = Float.NaN;
+        this.lastLinearDamping = Float.NaN;
+        this.lastAngularDamping = Float.NaN;
+        this.lastGravity = Float.NaN;
+        this.lastLockMove = -1;
+        this.lastLockSpin = -1;
+        this.dampedSteps = -1;
+    }
+
     @Override
     public void bake(PhysicsCache cache, int tick, PhysicsBake bake)
     {

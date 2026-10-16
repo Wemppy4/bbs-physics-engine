@@ -8,6 +8,7 @@ import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.engine.PhysicsCache;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.RigMemory;
 import org.joml.Matrix4f;
 import wemppy.bbs_physics.forms.FormTreeWalk;
 import wemppy.bbs_physics.client.ragdoll.RagdollPoseApplier;
@@ -426,6 +427,24 @@ public final class SceneActor
         catch (Throwable e)
         {
             actor.failed(e);
+        }
+    }
+
+    /** Writes every rig's memory for a checkpoint, in the order {@link #recall} reads it back. */
+    public void remember(RigMemory memory)
+    {
+        for (SceneRig rig : this.rigs)
+        {
+            rig.remember(memory);
+        }
+    }
+
+    /** Puts every rig back to what {@link #remember} wrote, before the world itself is restored. */
+    public void recall(RigMemory memory, PhysicsWorld physics)
+    {
+        for (SceneRig rig : this.rigs)
+        {
+            rig.recall(memory, physics);
         }
     }
 

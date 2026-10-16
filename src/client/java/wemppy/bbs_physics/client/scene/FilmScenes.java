@@ -1,5 +1,6 @@
 package wemppy.bbs_physics.client.scene;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -66,6 +67,9 @@ public class FilmScenes
     private static long frameStarted;
     private static long frameSpent;
 
+    /** The films whose changes are followed as they happen — see {@link #watch}. */
+    private static final List<WeakReference<Film>> WATCHED = new ArrayList<>();
+
     /** A frame's length when there is no previous frame to measure it by. */
     private static final long FRAME = 16_666_667L;
 
@@ -123,6 +127,7 @@ public class FilmScenes
                 manual(controller) ? RETAINED.get(controller.film.getId()) : null);
 
             SCENES.put(controller, scene);
+            watch(controller.film);
 
             BBSPhysics.LOGGER.info("Physics scene is up for film \"{}\": {} bodies around ({}, {}, {}), on world collision from {} blocks.",
                 controller.film == null ? "?" : controller.film.getId(),
@@ -379,12 +384,7 @@ public class FilmScenes
         {
             if (value != film && !SceneEdits.matters(value.getPath().strings)) continue;
             significant = true;
-            boolean impulse = false;
-            for (BaseValue parent = value; parent != null && parent != film; parent = parent.getParent())
-            {
-                if (parent instanceof ImpulseActionClip) { impulse = true; break; }
-            }
-            impulseEdit &= impulse;
+            impulseEdit &= isImpulseEdit(film, value);
         }
         if (!significant) return;
 
@@ -404,12 +404,8 @@ public class FilmScenes
             {
                 if (manual(entry.getKey()) || hasSimulation(other))
                 {
-                    /* Only when the edit reaches what this scene reads: moving the keys of an
-                     * actor nothing simulated touches leaves the recording standing. */
-                    if (entry.getValue().reads(film, values))
-                    {
-                        entry.getValue().invalidate(impulseEdit);
-                    }
+                    /* Only as much of the recording as the edit changed is taken back. */
+                    entry.getValue().edited(film, values, impulseEdit);
                 }
                 else
                 {
@@ -418,6 +414,88 @@ public class FilmScenes
                     scenes.remove();
                     EMPTY.add(controller);
                 }
+            }
+        }
+    }
+
+    /** Whether {@code value} belongs to an impulse clip — see {@link FilmScene#invalidateFrom}. */
+    private static boolean isImpulseEdit(Film film, BaseValue value)
+    {
+        for (BaseValue parent = value; parent != null && parent != film; parent = parent.getParent())
+        {
+            if (parent instanceof ImpulseActionClip)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Follows every change to {@code film} as it happens, not only the finished edits BBS reports.
+     *
+     * <p>A key being dragged passes through every place between where it was and where it is let go,
+     * and BBS reports only the last one. A recording made meanwhile reads the in-between ones, and the
+     * finished edit, compared with what came before the drag, would leave standing the ticks recorded
+     * from them. Followed as it happens, each step of the drag takes back what it changed, the moment
+     * it changes it.</p>
+     *
+     * <p>Once per film object, held weakly: the listener stays on the film for as long as the film
+     * lives, and finds the scenes it concerns when it is called.</p>
+     */
+    private static void watch(Film film)
+    {
+        if (film == null)
+        {
+            return;
+        }
+
+        WATCHED.removeIf((reference) -> reference.get() == null);
+
+        for (WeakReference<Film> reference : WATCHED)
+        {
+            if (reference.get() == film)
+            {
+                return;
+            }
+        }
+
+        WATCHED.add(new WeakReference<>(film));
+        film.postCallback((value, flag) -> onLiveEdit(value));
+    }
+
+    /** One change to a watched film, as it happens — see {@link #watch}. */
+    private static void onLiveEdit(BaseValue value)
+    {
+        if (SCENES.isEmpty() || value == null)
+        {
+            return;
+        }
+
+        Film film = SceneEdits.filmOf(value);
+
+        if (film == null)
+        {
+            return;
+        }
+
+        for (Map.Entry<BaseFilmController, FilmScene> entry : new ArrayList<>(SCENES.entrySet()))
+        {
+            if (!sameFilm(entry.getKey().film, film))
+            {
+                continue;
+            }
+
+            try
+            {
+                entry.getValue().edited(film, List.of(value), isImpulseEdit(film, value));
+            }
+            catch (Throwable e)
+            {
+                BBSPhysics.LOGGER.error("A physics scene failed to follow an edit and was dropped.", e);
+
+                fail(entry.getKey());
             }
         }
     }

@@ -16,9 +16,10 @@ import java.util.function.IntConsumer;
  * it belongs to.</p>
  *
  * <p>Jolt's own {@code saveState} round-trips a whole world exactly — that was measured, and the
- * stand that measured it is still in {@code stands/} — but nothing here calls it any more, so the
- * wrapper went with the checkpoints. The day a scene needs to be <em>resumed</em> rather than
- * replayed, it is four lines to bring back.</p>
+ * stand that measured it is still in {@code stands/}. It came back for edits rather than for
+ * scrubbing: a scene keeps a checkpoint every second of the film, and an edit picks the recording up
+ * at the last one before the first tick it changes ({@link #resume}) instead of replaying the film
+ * from its opening frame. Scrubbing still only ever reads the recording.</p>
  */
 public class PhysicsTimeline
 {
@@ -44,6 +45,15 @@ public class PhysicsTimeline
     public void start()
     {
         this.tick = 0;
+    }
+
+    /**
+     * Declares the world, just put back to a checkpoint, to stand on {@code tick} — the recording
+     * picks up from there instead of from the opening frame.
+     */
+    public void resume(int tick)
+    {
+        this.tick = tick;
     }
 
     /**

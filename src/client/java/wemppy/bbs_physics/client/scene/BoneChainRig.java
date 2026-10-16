@@ -39,6 +39,7 @@ import wemppy.bbs_physics.engine.PhysicsJoints;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsMath;
 import wemppy.bbs_physics.engine.PhysicsWorld;
+import wemppy.bbs_physics.engine.RigMemory;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import wemppy.bbs_physics.ragdoll.RagdollState;
 import org.joml.Matrix4f;
@@ -674,6 +675,45 @@ public class BoneChainRig implements SceneRig
      * An impulse clip's push (Э5). A strand the animation owns outright takes nothing, the same
      * rule every other simulated thing follows.
      */
+    /** Whether the animation holds the strands, and whether one of them has left the world. */
+    @Override
+    public void remember(RigMemory memory)
+    {
+        memory.mark("bone_chain/" + this.formPath);
+        memory.write(this.kinematic);
+        memory.write(this.lost);
+    }
+
+    @Override
+    public void recall(RigMemory memory, PhysicsWorld physics)
+    {
+        memory.expect("bone_chain/" + this.formPath);
+
+        BodyInterface bodies = physics.getBodies();
+        boolean kinematic = memory.readBoolean();
+
+        if (kinematic != this.kinematic)
+        {
+            for (Segment segment : this.segments)
+            {
+                bodies.setMotionType(segment.id, kinematic ? EMotionType.Kinematic : EMotionType.Dynamic, EActivation.DontActivate);
+                bodies.setObjectLayer(segment.id, layer(segment.collides, kinematic));
+            }
+
+            this.kinematic = kinematic;
+        }
+
+        this.lost = memory.readBoolean();
+
+        /* Applied again on the next tick, whatever the later run left them at. */
+        this.lastStiffness = Float.NaN;
+        this.lastDamping = Float.NaN;
+        this.lastGravity = Float.NaN;
+        this.lastFalloff = Float.NaN;
+        this.lastBend = Float.NaN;
+        this.dampedSteps = -1;
+    }
+
     @Override
     public void impulse(PhysicsWorld physics, SceneImpulse push)
     {
