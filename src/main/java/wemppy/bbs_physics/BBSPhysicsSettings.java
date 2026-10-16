@@ -20,6 +20,13 @@ public class BBSPhysicsSettings
     public static ValueBoolean calculationShortcutMigrated;
 
     /**
+     * Whether a heavy scene may step on several threads. On by default: the result is the same to
+     * the bit either way (see {@link wemppy.bbs_physics.engine.PhysicsThreads}), so this is only
+     * the way out if the threads ever misbehave on someone's machine.
+     */
+    public static ValueBoolean threads;
+
+    /**
      * Whether the collision markup is drawn over the model it belongs to. Its own switch rather
      * than a share of the film's debug overlay: this one is for authoring, it belongs on while a
      * shape is being placed and off the rest of the time, and it is toggled straight from the
@@ -65,6 +72,7 @@ public class BBSPhysicsSettings
 
         enabled = builder.getBoolean("enabled", true);
         manualCalculation = builder.getBoolean("manual_calculation", false);
+        threads = builder.getBoolean("threads", true);
         calculationShortcutMigrated = builder.getBoolean("calculation_shortcut_migrated", false);
         calculationShortcutMigrated.invisible();
 

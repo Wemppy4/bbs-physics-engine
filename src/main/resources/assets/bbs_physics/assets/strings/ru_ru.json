@@ -87,6 +87,8 @@
     "bbs_physics.film_physics.world_above": "Вверх",
     "bbs_physics.config.general.enabled": "Включить физику",
     "bbs_physics.config.general.enabled-comment": "Главный выключатель движка. Когда выключен, ничего не считается и аддон не стоит ничего.",
+    "bbs_physics.config.general.threads": "Многопоточный расчёт",
+    "bbs_physics.config.general.threads-comment": "Тяжёлые сцены считаются на нескольких потоках процессора, в 2–3 раза быстрее. Лёгкие остаются на одном потоке — так им быстрее. Результат в обоих случаях одинаковый; выключать — только если что-то пошло не так.",
     "keybinds.config.bbs_physics.title": "Физика BBS",
     "keybinds.config.bbs_physics.tooltip": "Горячие клавиши физики BBS",
     "bbs_physics.config.display.debug": "Отладочный слой",

@@ -54,7 +54,7 @@ public class PhysicsWorld implements AutoCloseable
     private static final int MAX_BODY_PAIRS = 4096;
     private static final int MAX_CONTACTS = 2048;
     private static final int TEMP_ALLOCATOR_BYTES = 8 * 1024 * 1024;
-    private static final int JOB_QUEUE = 2048;
+    static final int JOB_QUEUE = 2048;
 
     private final ObjectLayerPairFilterTable pairFilter;
     private final BroadPhaseLayerInterfaceTable broadPhaseLayers;
@@ -64,6 +64,9 @@ public class PhysicsWorld implements AutoCloseable
     private final BodyInterface bodies;
     private final TempAllocator temp;
     private final JobSystem jobs;
+
+    /** Whether this world's steps go to the shared worker threads — see {@link PhysicsThreads}. */
+    private final PhysicsThreads.Choice threads = new PhysicsThreads.Choice();
 
     private boolean closed;
 
@@ -84,10 +87,8 @@ public class PhysicsWorld implements AutoCloseable
 
         this.temp = new TempAllocatorImpl(TEMP_ALLOCATOR_BYTES);
 
-        /* Single-threaded deliberately, for now. Jolt claims the same result whatever the thread
-         * count, but a film has to look identical on every machine that opens it, and that claim
-         * is not something to build on before it has been measured. A scene of a few hundred
-         * bodies costs nothing on one thread anyway. */
+        /* A light step is cheapest on the thread that asks for it; a heavy one goes to the shared
+         * pool instead — see PhysicsThreads. Either way to the same bit. */
         this.jobs = new JobSystemSingleThreaded(JOB_QUEUE);
     }
 
@@ -158,10 +159,55 @@ public class PhysicsWorld implements AutoCloseable
         return Math.max(this.collisionSteps, (int) Math.ceil(this.collisionSteps * this.speed));
     }
 
-    /** Advances physics for one film tick at the selected speed. */
+    /**
+     * Advances physics for one film tick at the selected speed, on one thread or on the shared
+     * workers, whichever this world's steps have shown to be cheaper.
+     */
     public void step()
     {
-        this.system.update(this.getDeltaTime(), this.getIntegrationSteps(), this.temp, this.jobs);
+        if (!PhysicsThreads.allowed())
+        {
+            this.threads.reset();
+            this.step(this.jobs);
+
+            return;
+        }
+
+        JobSystem jobs = this.jobs;
+
+        if (this.threads.pooled())
+        {
+            JobSystem pool = PhysicsThreads.pool();
+
+            if (pool == null)
+            {
+                this.threads.reset();
+            }
+            else
+            {
+                jobs = pool;
+            }
+        }
+
+        long start = System.nanoTime();
+
+        this.step(jobs);
+        this.threads.learn((System.nanoTime() - start) / 1_000_000D);
+    }
+
+    /** Whether this world's steps go to the shared worker threads now. */
+    public boolean isThreaded()
+    {
+        return this.threads.pooled();
+    }
+
+    /**
+     * Advances physics for one film tick at the selected speed, its work done by {@code jobs}
+     * whatever this world would have picked — for checks that pin it.
+     */
+    public void step(JobSystem jobs)
+    {
+        this.system.update(this.getDeltaTime(), this.getIntegrationSteps(), this.temp, jobs);
     }
 
     /**
