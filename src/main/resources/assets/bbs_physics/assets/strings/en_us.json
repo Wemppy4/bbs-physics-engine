@@ -88,7 +88,7 @@
     "bbs_physics.config.general.enabled": "Enable physics",
     "bbs_physics.config.general.enabled-comment": "The master switch of the physics engine. With it off, nothing is simulated and the addon costs nothing.",
     "bbs_physics.config.general.threads": "Multithreaded calculation",
-    "bbs_physics.config.general.threads-comment": "Heavy scenes are calculated on several processor threads, two to three times faster. Light scenes stay on one thread, where they are faster. The result is the same either way; turn it off only if something goes wrong.",
+    "bbs_physics.config.general.threads-comment": "Heavy scenes are calculated on several processor threads, two to three times faster, and a physics step finishes while the frame is drawn. Light scenes stay on one thread, where they are faster. The result is the same either way; turn it off only if something goes wrong.",
     "keybinds.config.bbs_physics.title": "BBS Physics",
     "keybinds.config.bbs_physics.tooltip": "BBS Physics shortcuts",
     "bbs_physics.config.display.debug": "Debug overlay",

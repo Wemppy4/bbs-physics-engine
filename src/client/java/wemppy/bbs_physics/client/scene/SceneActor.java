@@ -615,6 +615,22 @@ public final class SceneActor
         }
     }
 
+    /**
+     * Hands every rig with a form what the pass before the step published for it, once more — the
+     * last call that pass made on each of them (see {@link #record}). For a step whose physics ran in
+     * the background while a frame was drawn, which handed the drawn frame out in between.
+     */
+    void republish(PhysicsCache staging, int tick)
+    {
+        for (SceneRig rig : this.rigs)
+        {
+            if (rig.getForm() != null)
+            {
+                rig.readCache(staging, tick, true);
+            }
+        }
+    }
+
     /** Lets go of every form this actor's rigs claimed — the scene is closing. */
     public void release()
     {

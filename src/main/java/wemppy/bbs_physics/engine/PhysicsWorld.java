@@ -11,6 +11,9 @@ import com.github.stephengold.joltjni.StateRecorderImpl;
 import com.github.stephengold.joltjni.TempAllocator;
 import com.github.stephengold.joltjni.TempAllocatorImpl;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+
 /**
  * One Jolt world. Everything physical in a scene lives in a single one of these and is stepped
  * together — that is the whole point of bringing an engine in: a body can only push another body
@@ -24,6 +27,10 @@ import com.github.stephengold.joltjni.TempAllocatorImpl;
  * <p>The world owns native memory, so it must be {@link #close() closed}. It also keeps its layer
  * tables in fields for the same reason: Jolt holds them by raw pointer, and letting the Java
  * objects be collected while the system is still running would pull the ground out from under it.</p>
+ *
+ * <p>A step may run in the background while the caller gets on with something else — see
+ * {@link #beginStep}. Nothing may reach into Jolt meanwhile, so everything here that does waits for
+ * that step first: a caller that forgets to wait costs a pause, never a crash.</p>
  */
 public class PhysicsWorld implements AutoCloseable
 {
@@ -68,6 +75,19 @@ public class PhysicsWorld implements AutoCloseable
     /** Whether this world's steps go to the shared worker threads — see {@link PhysicsThreads}. */
     private final PhysicsThreads.Choice threads = new PhysicsThreads.Choice();
 
+    /** What a step has been costing lately, in milliseconds, whatever it ran on — see {@link #getStepCost}. */
+    private double cost;
+
+    /** The step running in the background, or null — see {@link #beginStep}. */
+    private Future<Long> running;
+
+    /** How many bodies there were when that step started; none come or go during one. */
+    private int runningBodies;
+
+    /** Whether the step being taken runs on what {@link #threads} picked, so its time teaches the choice. */
+    private boolean teaches;
+    private boolean runningTeaches;
+
     private boolean closed;
 
     /** Scene-wide knobs, which are Blender's scene properties rather than per-body settings (§7.4). */
@@ -94,17 +114,22 @@ public class PhysicsWorld implements AutoCloseable
 
     public PhysicsSystem getSystem()
     {
+        this.finishStep();
+
         return this.system;
     }
 
     public BodyInterface getBodies()
     {
+        this.finishStep();
+
         return this.bodies;
     }
 
+    /** Answered without waiting for a step in the background: none adds or takes away a body. */
     public int getBodyCount()
     {
-        return this.system.getNumBodies();
+        return this.running != null ? this.runningBodies : this.system.getNumBodies();
     }
 
     public int remainingBodyCapacity()
@@ -115,6 +140,7 @@ public class PhysicsWorld implements AutoCloseable
     /** Downwards, which is the only direction an author has ever asked for. */
     public void setGravity(float strength)
     {
+        this.finishStep();
         this.system.setGravity(0F, -strength, 0F);
     }
 
@@ -140,6 +166,7 @@ public class PhysicsWorld implements AutoCloseable
      */
     public void optimize()
     {
+        this.finishStep();
         this.system.optimizeBroadPhase();
     }
 
@@ -165,34 +192,153 @@ public class PhysicsWorld implements AutoCloseable
      */
     public void step()
     {
-        if (!PhysicsThreads.allowed())
+        this.finishStep();
+
+        JobSystem jobs = this.jobs();
+        long start = System.nanoTime();
+
+        this.step(jobs);
+        this.learn(System.nanoTime() - start, this.teaches);
+    }
+
+    /**
+     * Starts the step {@link #step} would take and returns at once, the step running on the
+     * background thread meanwhile — the caller draws a frame. {@link #finishStep} brings it in. The
+     * same step to the bit: it is the same call, made from another thread, on a world nobody touches
+     * until it is done. Taken on the spot when the background thread cannot be had.
+     */
+    public void beginStep()
+    {
+        this.finishStep();
+
+        ExecutorService background = PhysicsThreads.background();
+
+        if (background == null)
         {
-            this.threads.reset();
-            this.step(this.jobs);
+            this.step();
 
             return;
         }
 
-        JobSystem jobs = this.jobs;
+        JobSystem jobs = this.jobs();
+        float delta = this.getDeltaTime();
+        int steps = this.getIntegrationSteps();
+        boolean pooled = jobs != this.jobs;
+
+        this.runningBodies = this.system.getNumBodies();
+        this.runningTeaches = this.teaches;
+
+        if (pooled)
+        {
+            PhysicsThreads.poolToBackground();
+        }
+
+        try
+        {
+            this.running = background.submit(() ->
+            {
+                try
+                {
+                    long start = System.nanoTime();
+
+                    this.system.update(delta, steps, this.temp, jobs);
+
+                    return System.nanoTime() - start;
+                }
+                finally
+                {
+                    if (pooled)
+                    {
+                        PhysicsThreads.poolBack();
+                    }
+                }
+            });
+        }
+        catch (RuntimeException e)
+        {
+            if (pooled)
+            {
+                PhysicsThreads.poolBack();
+            }
+
+            throw e;
+        }
+    }
+
+    /** Waits for the step {@link #beginStep} started, when there is one. */
+    public void finishStep()
+    {
+        Future<Long> running = this.running;
+
+        if (running == null)
+        {
+            return;
+        }
+
+        try
+        {
+            this.learn(PhysicsThreads.await(running), this.runningTeaches);
+        }
+        finally
+        {
+            this.running = null;
+        }
+    }
+
+    /** Whether a step is running in the background — see {@link #beginStep}. */
+    public boolean isStepping()
+    {
+        return this.running != null;
+    }
+
+    /**
+     * What the next step runs on: the shared workers when this world's steps have shown them cheaper
+     * — unless another world's step has them in the background, in which case this one keeps to its
+     * own thread and says nothing about the workers.
+     */
+    private JobSystem jobs()
+    {
+        this.teaches = true;
+
+        if (!PhysicsThreads.allowed())
+        {
+            this.threads.reset();
+
+            return this.jobs;
+        }
 
         if (this.threads.pooled())
         {
+            if (PhysicsThreads.poolInBackground())
+            {
+                this.teaches = false;
+
+                return this.jobs;
+            }
+
             JobSystem pool = PhysicsThreads.pool();
 
-            if (pool == null)
+            if (pool != null)
             {
-                this.threads.reset();
+                return pool;
             }
-            else
-            {
-                jobs = pool;
-            }
+
+            this.threads.reset();
         }
 
-        long start = System.nanoTime();
+        return this.jobs;
+    }
 
-        this.step(jobs);
-        this.threads.learn((System.nanoTime() - start) / 1_000_000D);
+    private void learn(long nanoseconds, boolean teaches)
+    {
+        double milliseconds = nanoseconds / 1_000_000D;
+
+        this.cost = PhysicsThreads.average(this.cost, milliseconds);
+
+        if (teaches && PhysicsThreads.allowed())
+        {
+            this.threads.learn(milliseconds);
+        }
     }
 
     /** Whether this world's steps go to the shared worker threads now. */
@@ -201,12 +347,19 @@ public class PhysicsWorld implements AutoCloseable
         return this.threads.pooled();
     }
 
+    /** What Jolt's part of a step has been costing lately, in milliseconds; 0 before the first. */
+    public double getStepCost()
+    {
+        return this.cost;
+    }
+
     /**
      * Advances physics for one film tick at the selected speed, its work done by {@code jobs}
      * whatever this world would have picked — for checks that pin it.
      */
     public void step(JobSystem jobs)
     {
+        this.finishStep();
         this.system.update(this.getDeltaTime(), this.getIntegrationSteps(), this.temp, jobs);
     }
 
@@ -220,6 +373,8 @@ public class PhysicsWorld implements AutoCloseable
      */
     public byte[] saveState()
     {
+        this.finishStep();
+
         try (StateRecorderImpl recorder = new StateRecorderImpl())
         {
             this.system.saveState(recorder);
@@ -231,6 +386,8 @@ public class PhysicsWorld implements AutoCloseable
     /** Puts the world back to what {@link #saveState} wrote; false when Jolt refuses it. */
     public boolean restoreState(byte[] state)
     {
+        this.finishStep();
+
         try (StateRecorderImpl recorder = new StateRecorderImpl())
         {
             recorder.writeBytes(state);
@@ -248,6 +405,16 @@ public class PhysicsWorld implements AutoCloseable
         }
 
         this.closed = true;
+
+        /* Never out from under a step still running. What it threw matters no more; the wait does. */
+        try
+        {
+            this.finishStep();
+        }
+        catch (RuntimeException e)
+        {
+            /* Closing regardless. */
+        }
 
         /* Reverse order of construction: the system points at the filters, so it goes first. */
         this.system.close();

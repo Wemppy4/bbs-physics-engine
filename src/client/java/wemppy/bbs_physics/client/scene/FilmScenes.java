@@ -336,6 +336,9 @@ public class FilmScenes
 
                 if (demand == FilmScene.Demand.NONE)
                 {
+                    /* Nothing more to record, but a step may still be running beside the last frame. */
+                    scene.land();
+
                     continue;
                 }
 

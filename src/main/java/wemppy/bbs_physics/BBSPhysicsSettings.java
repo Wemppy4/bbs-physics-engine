@@ -20,9 +20,10 @@ public class BBSPhysicsSettings
     public static ValueBoolean calculationShortcutMigrated;
 
     /**
-     * Whether a heavy scene may step on several threads. On by default: the result is the same to
-     * the bit either way (see {@link wemppy.bbs_physics.engine.PhysicsThreads}), so this is only
-     * the way out if the threads ever misbehave on someone's machine.
+     * Whether a heavy scene may step on several threads, and finish a step beside the frame being
+     * drawn. On by default: the result is the same to the bit either way (see
+     * {@link wemppy.bbs_physics.engine.PhysicsThreads}), so this is only the way out if the threads
+     * ever misbehave on someone's machine.
      */
     public static ValueBoolean threads;
 

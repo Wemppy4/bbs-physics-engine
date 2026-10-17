@@ -75,4 +75,25 @@ public class PhysicsTimeline
 
         return this.tick;
     }
+
+    /**
+     * The first half of {@link #step}: stands the next tick and leaves its physics running in the
+     * background — see {@link PhysicsWorld#beginStep}. The clock does not move until {@link #finish}.
+     */
+    public void begin(IntConsumer pose)
+    {
+        pose.accept(this.tick + 1);
+
+        this.world.beginStep();
+    }
+
+    /** The second half: waits for the physics {@link #begin} left running, and returns the tick it simulated. */
+    public int finish()
+    {
+        this.world.finishStep();
+
+        this.tick += 1;
+
+        return this.tick;
+    }
 }

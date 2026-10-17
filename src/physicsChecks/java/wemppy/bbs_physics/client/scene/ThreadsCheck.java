@@ -29,12 +29,14 @@ import mchorse.bbs_mod.settings.values.numeric.ValueInt;
 import wemppy.bbs_physics.BBSPhysicsSettings;
 import wemppy.bbs_physics.engine.PhysicsLayers;
 import wemppy.bbs_physics.engine.PhysicsThreads;
+import wemppy.bbs_physics.engine.PhysicsTimeline;
 import wemppy.bbs_physics.engine.PhysicsWorld;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import java.util.function.Consumer;
 import java.util.function.IntPredicate;
 
 /**
@@ -44,6 +46,11 @@ import java.util.function.IntPredicate;
  * tick, bit for bit. On three workers and on seven, switched over halfway and back and forth, two
  * worlds taking turns on the same pool, and a world left to choose for itself. And the choice
  * itself, on made-up timings.
+ *
+ * <p>Then every step run in the background, brought in a moment later as a frame would: the same to
+ * the bit, whether the world is left alone meanwhile or reached into — which waits — and with two
+ * worlds in the background at once, or one there and another stepping on the spot. A world closed
+ * with a step still running waits for it rather than pulling the memory out from under it.</p>
  */
 public final class ThreadsCheck
 {
@@ -84,9 +91,25 @@ public final class ThreadsCheck
             same(one, run(null, null, null, threaded), "threads switched off");
             require(!threaded[0], "Switched off, a world never goes to the workers");
             BBSPhysicsSettings.threads = null;
+
+            same(one, background(null), "steps in the background, the world left alone meanwhile");
+            same(one, background((world) -> world.getBodies()), "steps in the background, the world reached into meanwhile");
+
+            List<double[]>[] pair = backgroundPair(false);
+
+            same(one, pair[0], "steps in the background, the first of two worlds there at once");
+            same(one, pair[1], "steps in the background, the second of two worlds there at once");
+
+            pair = backgroundPair(true);
+
+            same(one, pair[0], "steps in the background beside a world stepping on the spot");
+            same(one, pair[1], "steps on the spot beside a world stepping in the background");
+
+            timeline();
+            closedWhileRunning();
         }
 
-        System.out.println("ThreadsCheck passed: on any number of workers, switched over at any tick, a world steps to the very bit it does on one thread.");
+        System.out.println("ThreadsCheck passed: on any number of workers, switched over at any tick, in the background or on the spot, a world steps to the very bit it does on one thread.");
     }
 
     /** The choice between one thread and the pool, on made-up timings. */
@@ -184,6 +207,118 @@ public final class ThreadsCheck
         }
 
         return poses;
+    }
+
+    /**
+     * The scene with every step begun in the background and brought in a moment later, as a frame
+     * would — {@code meanwhile} done to the world in between, when given.
+     */
+    private static List<double[]> background(Consumer<PhysicsWorld> meanwhile)
+    {
+        List<double[]> poses = new ArrayList<>(TICKS);
+
+        try (PhysicsWorld world = new PhysicsWorld())
+        {
+            Scene scene = new Scene(world);
+            int bodies = world.getBodyCount();
+
+            for (int tick = 1; tick <= TICKS; tick++)
+            {
+                scene.drive(tick);
+                world.beginStep();
+
+                require(world.isStepping(), "A step begun is running until it is brought in");
+                require(world.getBodyCount() == bodies, "The bodies are counted without waiting for the step");
+
+                if (meanwhile != null)
+                {
+                    meanwhile.accept(world);
+                }
+
+                world.finishStep();
+                require(!world.isStepping(), "Brought in");
+                poses.add(scene.pose());
+            }
+        }
+
+        return poses;
+    }
+
+    /**
+     * Two copies of the scene, the first stepped in the background every tick and the second
+     * alongside it: in the background as well, or on the spot while the first is running.
+     */
+    @SuppressWarnings("unchecked")
+    private static List<double[]>[] backgroundPair(boolean secondOnTheSpot)
+    {
+        List<double[]>[] poses = new List[] {new ArrayList<>(TICKS), new ArrayList<>(TICKS)};
+
+        try (PhysicsWorld first = new PhysicsWorld(); PhysicsWorld second = new PhysicsWorld())
+        {
+            Scene a = new Scene(first);
+            Scene b = new Scene(second);
+
+            for (int tick = 1; tick <= TICKS; tick++)
+            {
+                a.drive(tick);
+                b.drive(tick);
+                first.beginStep();
+
+                if (secondOnTheSpot)
+                {
+                    second.step();
+                }
+                else
+                {
+                    second.beginStep();
+                }
+
+                first.finishStep();
+                second.finishStep();
+                poses[0].add(a.pose());
+                poses[1].add(b.pose());
+            }
+        }
+
+        return poses;
+    }
+
+    /** The clock in two halves: the pose stands the next tick, and the tick moves only once brought in. */
+    private static void timeline()
+    {
+        try (PhysicsWorld world = new PhysicsWorld())
+        {
+            new Scene(world);
+
+            PhysicsTimeline timeline = new PhysicsTimeline(world);
+            int[] posed = {-1};
+
+            timeline.start();
+            timeline.begin((tick) -> posed[0] = tick);
+
+            require(posed[0] == 1 && timeline.getTick() == 0 && world.isStepping(), "Begun: tick 1 stood, the clock still on 0");
+            require(timeline.finish() == 1 && timeline.getTick() == 1 && !world.isStepping(), "Brought in: the clock on 1");
+        }
+    }
+
+    /** A world closed with a step still running waits for it first — or this would bring the game down. */
+    private static void closedWhileRunning()
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            try (PhysicsWorld world = new PhysicsWorld())
+            {
+                Scene scene = new Scene(world);
+
+                for (int tick = 1; tick <= i * 10; tick++)
+                {
+                    scene.drive(tick);
+                    world.step();
+                }
+
+                world.beginStep();
+            }
+        }
     }
 
     /** Two copies of the scene stepped by turns on the same workers, as two scenes of a game are. */

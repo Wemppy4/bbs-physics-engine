@@ -19,6 +19,7 @@ import wemppy.bbs_physics.chain.ChainForm;
 import wemppy.bbs_physics.client.ragdoll.RagdollPoseApplier;
 import wemppy.bbs_physics.engine.FilmPhysics;
 import wemppy.bbs_physics.engine.PhysicsCache;
+import wemppy.bbs_physics.engine.PhysicsThreads;
 import wemppy.bbs_physics.engine.PhysicsTimeline;
 import wemppy.bbs_physics.engine.PhysicsWorld;
 import wemppy.bbs_physics.engine.RigMemory;
@@ -33,6 +34,7 @@ import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * The physics of one film: a single Jolt world, a recording of what it did on every tick, and the
@@ -111,6 +113,13 @@ public class FilmScene implements AutoCloseable
 
     /** What {@link #staleFrom} holds while nothing has been edited. */
     private static final int FRESH = Integer.MAX_VALUE;
+
+    /**
+     * How dear Jolt's part of a step must be, in milliseconds, before the last step of a frame's run
+     * is launched rather than taken — see {@link #launch}. Landing one stands the cast on its tick a
+     * second time, which is worth it only when what runs beside the frame is worth more.
+     */
+    private static final double LAUNCH_ABOVE = 1D;
 
     /**
      * Whether every checkpoint is checked by recording the second before it again from the one
@@ -250,6 +259,20 @@ public class FilmScene implements AutoCloseable
     /** When the last step finished, and what a step has been costing — see {@link #recordUntil}. */
     private long steppedAt;
     private long stepCost;
+
+    /**
+     * Whether the last step of a frame's run was launched rather than taken: its physics running in
+     * the background while the frame is drawn, the rest of it waiting for {@link #land}. What
+     * launching one costs the frame — the pose and the drives — is kept beside it.
+     */
+    private boolean launched;
+    private long launchCost;
+
+    /** What the pass before the step published, for as long as the step lasts — see {@link #land}. */
+    private PhysicsCache staging;
+
+    /** Whether the log has been told that this scene's steps run beside the frames. */
+    private boolean launchNoted;
 
     /** Counts the steps, so a pose walked for one step is never taken for the next one's. */
     private long step;
@@ -785,6 +808,10 @@ public class FilmScene implements AutoCloseable
 
         this.filmTick = tick;
 
+        /* A step left running beside the last frame comes in before anything else is done here:
+         * the knobs below and the answer to an edit both reach into the world. */
+        this.land();
+
         /* Before the rewind, not after it: these knobs invalidate the recording themselves when they
          * move, and answering them second meant a whole tick was recorded under the new gravity on
          * top of a recording made under the old one, only to be thrown away by the invalidation on
@@ -876,6 +903,8 @@ public class FilmScene implements AutoCloseable
 
         if (demand == Demand.NONE)
         {
+            this.land();
+
             return;
         }
 
@@ -897,6 +926,8 @@ public class FilmScene implements AutoCloseable
      */
     public void recordCursor()
     {
+        this.land();
+
         if (this.isStale() || (this.manualCalculation() && !this.calculationRequested) || this.cache.has(this.filmTick))
         {
             return;
@@ -1007,10 +1038,14 @@ public class FilmScene implements AutoCloseable
      * heavy scene — except that a recording which has gone {@link #MIN_PROGRESS} without a step takes
      * one regardless. That keeps the pace the per-tick schedule always had, one step a tick, under
      * any frame's budget.</p>
+     *
+     * <p>In a scene whose solver is the dear part of a step, the step that no longer fits is launched
+     * instead, its solver running while the frame is drawn — see {@link #launch}; one the frame
+     * before left running is brought in first.</p>
      */
     private void recordUntil(int end, long deadline)
     {
-        if (this.cache.getComputed() > end || !this.mayStep(deadline))
+        if (!this.launched && (this.cache.getComputed() > end || !this.mayStep(deadline) && !this.mayLaunch(deadline)))
         {
             return;
         }
@@ -1023,6 +1058,8 @@ public class FilmScene implements AutoCloseable
 
         try
         {
+            this.landBorrowed();
+
             while (this.cache.getComputed() <= end)
             {
                 if (!this.cache.canWrite(this.timeline.getTick() + 1))
@@ -1042,6 +1079,13 @@ public class FilmScene implements AutoCloseable
 
                 if (!this.mayStep(deadline))
                 {
+                    /* The step that no longer fits may still be started: what stays here of it is
+                     * the pose and the drives, and the solver runs while the frame is drawn. */
+                    if (this.mayLaunch(deadline))
+                    {
+                        this.launch();
+                    }
+
                     break;
                 }
 
@@ -1081,9 +1125,17 @@ public class FilmScene implements AutoCloseable
     /** Simulates the next tick of the film and writes it into the recording. */
     private void step()
     {
-        int tick = this.timeline.step(this::poseTick);
+        this.complete(this.timeline.step(this::poseTick));
+    }
 
+    /**
+     * The rest of a step once its physics is done: writes {@code tick} into the recording, and takes a
+     * checkpoint, or the recording kept on disk, when it is time.
+     */
+    private void complete(int tick)
+    {
         this.record(tick);
+        this.staging = null;
 
         if (!this.verifying && this.checkpoints.due(tick))
         {
@@ -1094,6 +1146,109 @@ public class FilmScene implements AutoCloseable
         {
             this.takeStored();
         }
+    }
+
+    /**
+     * Whether the step that no longer fits in a frame's budget may still be launched — see
+     * {@link #launch}: there is a budget at all (an export or a bake waits for every step), Jolt's part
+     * of a step is dear enough, the background is allowed, and what stays here of the step fits.
+     */
+    private boolean mayLaunch(long deadline)
+    {
+        return deadline != Long.MAX_VALUE && !this.verifying && PhysicsThreads.backgroundAllowed()
+            && this.world.getStepCost() >= LAUNCH_ABOVE && deadline - System.nanoTime() >= this.launchCost;
+    }
+
+    /**
+     * Starts the next step and leaves its physics running in the background while the frame is drawn
+     * — the last step of a frame's run, in a scene whose solver is the dear part of a step. Everything
+     * up to the solver happens here as in any step: the cast stood on the tick, the pass before the
+     * step, the drives, the clips. The rest waits for {@link #land}.
+     *
+     * <p>Only the solver can go. Everything else a step does reads and writes what BBS draws from — the
+     * actors, their forms, the poses of their models — and a frame drawn at the same time would find
+     * it half done.</p>
+     */
+    private void launch()
+    {
+        long started = System.nanoTime();
+
+        this.timeline.begin(this::poseTick);
+        this.launched = true;
+
+        long cost = System.nanoTime() - started;
+
+        this.launchCost = this.launchCost == 0 ? cost : (this.launchCost * 7 + cost) / 8;
+
+        if (!this.launchNoted)
+        {
+            this.launchNoted = true;
+
+            BBSPhysics.LOGGER.info("Physics scene for film \"{}\" is heavy, {} ms of solver a step: its steps finish beside the frames being drawn.",
+                this.film == null ? "?" : this.film.getId(), String.format(java.util.Locale.ROOT, "%.1f", this.world.getStepCost()));
+        }
+    }
+
+    /**
+     * Brings in a step left running in the background by {@link #launch}, when there is one — before
+     * anything else touches the scene. Its physics has usually long finished; the rest of the step is
+     * done here, and the drawn frame handed back after.
+     */
+    public void land()
+    {
+        if (!this.launched)
+        {
+            return;
+        }
+
+        this.cast.borrow();
+
+        try
+        {
+            this.landBorrowed();
+        }
+        finally
+        {
+            this.cast.restore(this.filmTick);
+        }
+
+        this.settle();
+        this.redisplay();
+    }
+
+    /**
+     * {@link #land}, with the cast already borrowed.
+     *
+     * <p>The frame drawn in between handed out its own pose: it stood the cast on the cursor and its
+     * own fraction of a tick, gave every form the frame it draws, walked the models it drew. So the
+     * step's tick is stood again first, as the step left it — the cast on the tick, its deaths
+     * prepared, every rig handed the tick before and then what the pass before the step published:
+     * the calls the step made, in the order it made them. The recording then walks whatever it walks
+     * afresh, as a step taken on the spot does, and comes out the same to the bit.</p>
+     */
+    private void landBorrowed()
+    {
+        if (!this.launched)
+        {
+            return;
+        }
+
+        this.launched = false;
+
+        int tick = this.timeline.finish();
+
+        this.cast.applyReached(tick);
+        this.clips.prepareDeaths(this.cast, tick);
+
+        for (SceneActor actor : this.actors)
+        {
+            actor.readCache(this.cache, tick - 1, true);
+        }
+
+        this.anchorsFirst((actor) -> actor.republish(this.staging, tick));
+        this.complete(tick);
+
+        this.steppedAt = System.nanoTime();
     }
 
     /**
@@ -1122,7 +1277,8 @@ public class FilmScene implements AutoCloseable
         /* Rebase the live Jolt pose onto this tick's animation before driving anything. Merely
          * reading last tick's local cache would carry a free parent along with its newly moved
          * actor/anchor. This is a private staging pass; the tick is still unreadable to playback. */
-        this.recordPoses(tick, this.cache.beginFrame(tick), true);
+        this.staging = this.cache.beginFrame(tick);
+        this.recordPoses(tick, this.staging, true);
 
         for (SceneActor actor : this.actors)
         {
@@ -1163,15 +1319,21 @@ public class FilmScene implements AutoCloseable
      * @param staging whether this is the pass before the step rather than the recording after it */
     private void recordPoses(int tick, PhysicsCache pending, boolean staging)
     {
+        this.anchorsFirst((actor) -> actor.record(this.world, this, this.cache, pending, tick, staging));
+    }
+
+    /** Every actor, the actors it hangs off before it — the order the passes around a step go in. */
+    private void anchorsFirst(Consumer<SceneActor> visit)
+    {
         Set<IEntity> visited = Collections.newSetFromMap(new IdentityHashMap<>());
 
         for (SceneActor actor : this.actors)
         {
-            this.recordActor(actor.getEntity(), pending, tick, visited, staging);
+            this.anchorsFirst(actor.getEntity(), visit, visited);
         }
     }
 
-    private void recordActor(IEntity entity, PhysicsCache pending, int tick, Set<IEntity> visited, boolean staging)
+    private void anchorsFirst(IEntity entity, Consumer<SceneActor> visit, Set<IEntity> visited)
     {
         if (entity == null || !visited.add(entity))
         {
@@ -1182,11 +1344,11 @@ public class FilmScene implements AutoCloseable
 
         if (anchor != null)
         {
-            this.recordActor(this.entities.get(anchor.replay), pending, tick, visited, staging);
+            this.anchorsFirst(this.entities.get(anchor.replay), visit, visited);
 
             if (anchor.previous != null)
             {
-                this.recordActor(this.entities.get(anchor.previous.replay), pending, tick, visited, staging);
+                this.anchorsFirst(this.entities.get(anchor.previous.replay), visit, visited);
             }
         }
 
@@ -1194,7 +1356,7 @@ public class FilmScene implements AutoCloseable
 
         if (actor != null)
         {
-            actor.record(this.world, this, this.cache, pending, tick, staging);
+            visit.accept(actor);
         }
     }
 
@@ -1327,6 +1489,7 @@ public class FilmScene implements AutoCloseable
 
     public void requestCalculation(int tick)
     {
+        this.land();
         this.filmTick = Math.max(0, tick);
         this.applyWorldSettings();
         this.invalidate();
@@ -1561,6 +1724,8 @@ public class FilmScene implements AutoCloseable
      */
     SceneHandover handOver()
     {
+        this.land();
+
         int tick = this.timeline.getTick();
         boolean standing = !this.stale && !this.verifying && this.cache.getComputed() == tick + 1;
 
@@ -1990,6 +2155,8 @@ public class FilmScene implements AutoCloseable
      */
     public PhysicsBake.Result bake(Replay replay, String formPath)
     {
+        this.land();
+
         SceneCast.Member member = this.cast.find(replay);
         SceneActor actor = member == null ? null : this.actorOf(member.entity);
 
@@ -2414,6 +2581,20 @@ public class FilmScene implements AutoCloseable
     @Override
     public void close()
     {
+        /* A step still running beside the last frame is brought in first — kept on disk with the rest,
+         * or at the very least waited for before the world goes. */
+        try
+        {
+            this.land();
+        }
+        catch (Throwable e)
+        {
+            this.launched = false;
+            this.built = false;
+
+            BBSPhysics.LOGGER.warn("A physics step left running beside the frames could not be brought in as the scene closed.", e);
+        }
+
         /* Kept on disk first, while the world and the rigs are still there to take a checkpoint of —
          * unless the recording went on to the scene after this one. */
         if (this.built && !this.groundHandedOver)

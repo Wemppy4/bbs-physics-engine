@@ -455,6 +455,13 @@ public abstract class SoftBodyRig implements SceneRig
             this.recordedCenter.set((float) (sumX / this.count), (float) (sumY / this.count), (float) (sumZ / this.count));
             this.centered = true;
         }
+        else
+        {
+            /* What the loop never reached would be whatever this buffer last held — another tick's
+             * answer, under the silence. Zeros instead, so that the same loss is recorded as the same
+             * numbers however the scene came to it, and two recordings compared bit for bit agree. */
+            java.util.Arrays.fill(this.record, 0, this.record.length - 1, 0F);
+        }
 
         this.lost = !sound;
         this.record[this.record.length - 1] = sound ? PhysicsForms.getAuthority(this.form) : PhysicsCache.SILENT;

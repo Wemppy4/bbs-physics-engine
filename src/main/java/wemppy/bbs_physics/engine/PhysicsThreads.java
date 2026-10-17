@@ -5,6 +5,12 @@ import com.github.stephengold.joltjni.JobSystemThreadPool;
 import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.BBSPhysicsSettings;
 
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
+
 /**
  * The worker threads a heavy scene's steps are shared out over: one pool for the whole game,
  * started the first time a scene is heavy enough to want it.
@@ -23,8 +29,12 @@ import wemppy.bbs_physics.BBSPhysicsSettings;
  * ragdolls' worth of joints, several sheets of cloth — step two and a half to three times faster on
  * four workers. Which is how {@link Choice} picks.</p>
  *
- * <p>Never closed. It lives as long as the game, like the game's own worker pools, and its threads
- * sleep while nothing is stepped; closing it on the way out would race a step still in flight.</p>
+ * <p>Beside the pool, one more thread: the one a heavy scene's step runs on while the frame is drawn
+ * — see {@link PhysicsWorld#beginStep}. The same switch lets both be used.</p>
+ *
+ * <p>Never closed, either of them. They live as long as the game, like the game's own worker pools,
+ * and sleep while nothing is stepped; closing them on the way out would race a step still in
+ * flight.</p>
  */
 public final class PhysicsThreads
 {
@@ -33,6 +43,16 @@ public final class PhysicsThreads
 
     private static JobSystemThreadPool pool;
     private static boolean unavailable;
+
+    private static ExecutorService background;
+    private static boolean backgroundUnavailable;
+
+    /**
+     * How many steps on the pool are running in the background right now. A step taken on the spot
+     * meanwhile — another scene's — keeps off the pool: two updates sharing one pool at once is not
+     * something to lean on, and the other scene is the light one more often than not.
+     */
+    private static final AtomicInteger POOL_IN_BACKGROUND = new AtomicInteger();
 
     private PhysicsThreads()
     {}
@@ -52,7 +72,21 @@ public final class PhysicsThreads
     /** Whether a step may go to the pool: the player has not switched it off, and there are threads to have. */
     public static boolean allowed()
     {
-        return !unavailable && (BBSPhysicsSettings.threads == null || BBSPhysicsSettings.threads.get()) && workers() > 0;
+        return !unavailable && switchedOn() && workers() > 0;
+    }
+
+    /**
+     * Whether a step may run in the background while the frame is drawn — see
+     * {@link PhysicsWorld#beginStep}: the same switch, and a machine with a core to spare for it.
+     */
+    public static boolean backgroundAllowed()
+    {
+        return !backgroundUnavailable && switchedOn() && Runtime.getRuntime().availableProcessors() > 2;
+    }
+
+    private static boolean switchedOn()
+    {
+        return BBSPhysicsSettings.threads == null || BBSPhysicsSettings.threads.get();
     }
 
     /** The pool, started on first use; null when it cannot be had, and then never asked for again. */
@@ -75,6 +109,109 @@ public final class PhysicsThreads
         }
 
         return pool;
+    }
+
+    /**
+     * The thread a step runs on while the frame is drawn, started on first use; null when it cannot
+     * be had, and then never asked for again.
+     */
+    static synchronized ExecutorService background()
+    {
+        if (background == null && !backgroundUnavailable)
+        {
+            try
+            {
+                background = Executors.newSingleThreadExecutor((task) ->
+                {
+                    Thread thread = new Thread(task, "BBS Physics step");
+
+                    thread.setDaemon(true);
+                    thread.setPriority(Thread.NORM_PRIORITY);
+
+                    return thread;
+                });
+            }
+            catch (Throwable e)
+            {
+                backgroundUnavailable = true;
+
+                BBSPhysics.LOGGER.warn("The physics background thread could not be started; every step is taken on the thread that asks for it.", e);
+            }
+        }
+
+        return background;
+    }
+
+    /** Notes a step on the pool going to the background; the step itself notes when it is done. */
+    static void poolToBackground()
+    {
+        POOL_IN_BACKGROUND.incrementAndGet();
+    }
+
+    static void poolBack()
+    {
+        POOL_IN_BACKGROUND.decrementAndGet();
+    }
+
+    /** Whether a step on the pool is running in the background, so a step taken on the spot keeps off it. */
+    static boolean poolInBackground()
+    {
+        return POOL_IN_BACKGROUND.get() > 0;
+    }
+
+    /**
+     * Waits for a step started in the background and answers how long its physics took, in
+     * nanoseconds. Waits it out whatever interrupts the wait — the world cannot be touched before
+     * the step is done — and passes on whatever the step threw.
+     */
+    static long await(Future<Long> step)
+    {
+        boolean interrupted = false;
+
+        try
+        {
+            while (true)
+            {
+                try
+                {
+                    return step.get();
+                }
+                catch (InterruptedException e)
+                {
+                    interrupted = true;
+                }
+                catch (ExecutionException e)
+                {
+                    if (e.getCause() instanceof RuntimeException cause)
+                    {
+                        throw cause;
+                    }
+
+                    if (e.getCause() instanceof Error cause)
+                    {
+                        throw cause;
+                    }
+
+                    throw new IllegalStateException("A physics step failed in the background", e.getCause());
+                }
+            }
+        }
+        finally
+        {
+            if (interrupted)
+            {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /**
+     * A running average of what steps cost, {@code sample} taken in: a quarter of the way towards it,
+     * a lone spike cut down to three times the average first. Starts at the first sample.
+     */
+    public static double average(double average, double sample)
+    {
+        return average <= 0D ? sample : average + (Math.min(sample, Math.max(average * 3D, 0.05D)) - average) / 4D;
     }
 
     /**
@@ -118,9 +255,7 @@ public final class PhysicsThreads
         /** Takes what a step on the current choice cost, in milliseconds. */
         public void learn(double milliseconds)
         {
-            double spike = Math.max(this.cost * 3D, 0.05D);
-
-            this.cost = this.steps == 0 ? milliseconds : this.cost + (Math.min(milliseconds, spike) - this.cost) / 4D;
+            this.cost = this.steps == 0 ? milliseconds : average(this.cost, milliseconds);
             this.steps += 1;
 
             if (this.steps < SETTLE)
