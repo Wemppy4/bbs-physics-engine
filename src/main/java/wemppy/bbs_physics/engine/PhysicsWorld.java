@@ -9,7 +9,7 @@ import com.github.stephengold.joltjni.ObjectVsBroadPhaseLayerFilterTable;
 import com.github.stephengold.joltjni.PhysicsSystem;
 import com.github.stephengold.joltjni.StateRecorderImpl;
 import com.github.stephengold.joltjni.TempAllocator;
-import com.github.stephengold.joltjni.TempAllocatorImpl;
+import com.github.stephengold.joltjni.TempAllocatorImplWithMallocFallback;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -57,9 +57,25 @@ public class PhysicsWorld implements AutoCloseable
     /** A film tick in seconds, before the physics speed multiplier. */
     public static final float TICK = 1F / 20F;
 
+    /** What an ordinary scene is sized for: actors, their ragdolls, ropes, sheets and props. */
     private static final int MAX_BODIES = 4096;
     private static final int MAX_BODY_PAIRS = 4096;
     private static final int MAX_CONTACTS = 2048;
+
+    /**
+     * Pairs and contacts on top of those for each piece of debris, which can all come loose at once
+     * and lie in one heap. A block in a solid lattice touches 26 others, 13 pairs of its own; the
+     * rest is the ground and whatever else it lands on. Measured in {@code stands/BigStructureSmoke}:
+     * a solid 21×21×10 cube released whole needs 12, a wall three blocks thick 8. Short of them,
+     * Jolt drops contacts and blocks fall through each other and through the floor.
+     */
+    private static final int CONTACTS_PER_DEBRIS = 16;
+
+    /**
+     * Jolt takes its whole contact buffer out of this on every step, so a large heap of debris needs
+     * more than this — it then comes from malloc rather than from here, which measured no slower. A
+     * plain allocator that runs out aborts the game outright.
+     */
     private static final int TEMP_ALLOCATOR_BYTES = 8 * 1024 * 1024;
     static final int JOB_QUEUE = 2048;
 
@@ -96,16 +112,27 @@ public class PhysicsWorld implements AutoCloseable
 
     public PhysicsWorld()
     {
+        this(0);
+    }
+
+    /**
+     * @param debris bodies on top of an ordinary scene that may all come loose and pile up — a
+     *               destructible structure's blocks. Jolt fixes how many bodies and contacts a world
+     *               holds when it is made, so they are counted before it is.
+     */
+    public PhysicsWorld(int debris)
+    {
         this.pairFilter = PhysicsLayers.newPairFilter();
         this.broadPhaseLayers = PhysicsLayers.newBroadPhaseLayers();
         this.broadPhaseFilter = PhysicsLayers.newBroadPhaseFilter(this.broadPhaseLayers, this.pairFilter);
 
         this.system = new PhysicsSystem();
-        this.system.init(MAX_BODIES, 0, MAX_BODY_PAIRS, MAX_CONTACTS, this.broadPhaseLayers, this.broadPhaseFilter, this.pairFilter);
+        this.system.init(MAX_BODIES + debris, 0, MAX_BODY_PAIRS + debris * CONTACTS_PER_DEBRIS,
+            MAX_CONTACTS + debris * CONTACTS_PER_DEBRIS, this.broadPhaseLayers, this.broadPhaseFilter, this.pairFilter);
         this.system.setGravity(0F, -EARTH_GRAVITY, 0F);
         this.bodies = this.system.getBodyInterface();
 
-        this.temp = new TempAllocatorImpl(TEMP_ALLOCATOR_BYTES);
+        this.temp = new TempAllocatorImplWithMallocFallback(TEMP_ALLOCATOR_BYTES);
 
         /* A light step is cheapest on the thread that asks for it; a heavy one goes to the shared
          * pool instead — see PhysicsThreads. Either way to the same bit. */
@@ -130,11 +157,6 @@ public class PhysicsWorld implements AutoCloseable
     public int getBodyCount()
     {
         return this.running != null ? this.runningBodies : this.system.getNumBodies();
-    }
-
-    public int remainingBodyCapacity()
-    {
-        return MAX_BODIES - this.getBodyCount();
     }
 
     /** Downwards, which is the only direction an author has ever asked for. */

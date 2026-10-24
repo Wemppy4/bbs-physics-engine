@@ -19,6 +19,7 @@ import wemppy.bbs_physics.structure.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -30,8 +31,59 @@ public final class StructureDestructionCheck
         BBSSettings.recordingTransformOverlays = new ValueInt("overlays", 0);
         loadJolt();
         nativeRelease();
+        bigHeap();
         playback();
-        System.out.println("StructureDestructionCheck passed: threshold, radius, release, falling, ground, slab, reset, scrub, moving/scaled parent and interpolation.");
+        System.out.println("StructureDestructionCheck passed: threshold, radius, release, falling, ground, slab, big heap, reset, scrub, moving/scaled parent and interpolation.");
+    }
+
+    /**
+     * A wall of 1131 blocks — one the first version refused outright, past its 1024 — blown apart
+     * whole into one heap. The world sized for it must keep every contact: short of them Jolt drops
+     * them, and blocks sink through each other and the floor.
+     */
+    private static void bigHeap()
+    {
+        int width = 13, height = 29, depth = 3, count = width * height * depth;
+
+        try (PhysicsWorld world = new PhysicsWorld(count);
+             TempAllocator temp = new TempAllocatorImplWithMallocFallback(8 * 1024 * 1024);
+             JobSystem jobs = new JobSystemSingleThreaded(2048))
+        {
+            var bodies = world.getBodies();
+            bodies.createAndAddBody(new BodyCreationSettings(new BoxShape(100F, 0.5F, 100F),
+                new RVec3(0, -0.5, 0), Quat.sIdentity(), EMotionType.Static, PhysicsLayers.STATIC), EActivation.DontActivate);
+            var shape = StructureRig.shape(List.of(new Box(0, 0, 0, 1, 1, 1)), new Vector3f(1));
+            PhysicsCache cache = new PhysicsCache();
+            List<BlockPos> blocks = new ArrayList<>(count);
+            int[] ids = new int[count];
+            int[] channels = new int[count];
+            for (int i = 0; i < count; i++)
+            {
+                BlockPos block = new BlockPos(i % width - width / 2, i / (width * depth), i / width % depth);
+                blocks.add(block);
+                ids[i] = bodies.createAndAddBody(new BodyCreationSettings(shape, new RVec3(block.getX() + 0.5, block.getY() + 0.5, block.getZ() + 0.5),
+                    Quat.sIdentity(), EMotionType.Kinematic, PhysicsLayers.BONE), EActivation.DontActivate);
+                require(ids[i] != -1, "World sized for the structure must take block " + i);
+                channels[i] = cache.addChannel();
+            }
+            cache.seal();
+            world.optimize();
+
+            StructureRig rig = new StructureRig(new TestForm(), "", new DestructionState("test", blocks, new Vector3f(), new Vector3f(1)), ids, channels);
+            rig.impulse(world, SceneImpulse.of(0, 1, -2, 100, 12, null));
+            for (int id : ids) require(bodies.getMotionType(id) == EMotionType.Dynamic, "Blast must release the whole wall");
+
+            for (int tick = 0; tick < 60; tick++)
+            {
+                int errors = world.getSystem().update(world.getDeltaTime(), world.getIntegrationSteps(), temp, jobs);
+                require(errors == EPhysicsUpdateError.None, "Heap must keep every contact, Jolt reports " + errors + " at tick " + tick);
+            }
+            for (int id : ids)
+            {
+                double y = bodies.getCenterOfMassPosition(id).yy();
+                require(y > 0.4, "Debris must not sink through the floor: " + y);
+            }
+        }
     }
 
     private static void nativeRelease()

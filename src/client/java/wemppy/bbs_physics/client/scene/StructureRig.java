@@ -19,7 +19,9 @@ import wemppy.bbs_physics.structure.*;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** One body per solid block. Intact blocks follow the form; a blast releases them permanently. */
 public final class StructureRig implements SceneRig
@@ -73,27 +75,10 @@ public final class StructureRig implements SceneRig
         }
 
         Vector3f offset = new Vector3f(-data.size.getX() / 2F, 0F, -data.size.getZ() / 2F).sub(form.origin.get());
-        StructureRenderWorld blockWorld = new StructureRenderWorld(data, form.biome.get());
-        List<BlockPos> positions = new ArrayList<>();
-        List<List<Box>> shapes = new ArrayList<>();
-        List<BlockPos> ordered = new ArrayList<>(data.getBlocks().keySet());
-        ordered.sort(Comparator.comparingInt(BlockPos::getY).thenComparingInt(BlockPos::getX).thenComparingInt(BlockPos::getZ));
-        for (BlockPos pos : ordered)
-        {
-            List<Box> boxes = data.getBlockState(pos).getCollisionShape(blockWorld, pos).getBoundingBoxes();
-            if (!boxes.isEmpty())
-            {
-                positions.add(pos);
-                shapes.add(boxes);
-            }
-        }
+        Map<BlockPos, List<Box>> solids = solids(data, form);
+        List<BlockPos> positions = new ArrayList<>(solids.keySet());
+        List<List<Box>> shapes = new ArrayList<>(solids.values());
         if (positions.isEmpty()) return null;
-        if (positions.size() > StructureDestruction.MAX_BLOCKS || positions.size() > physics.remainingBodyCapacity())
-        {
-            throw new IllegalArgumentException("Destructible structure has " + positions.size()
-                + " solid blocks; limit per structure is " + StructureDestruction.MAX_BLOCKS
-                + ", remaining scene capacity is " + physics.remainingBodyCapacity());
-        }
 
         int[] ids = new int[positions.size()];
         int[] channels = new int[positions.size()];
@@ -113,6 +98,28 @@ public final class StructureRig implements SceneRig
         DestructionState state = new DestructionState(form.structure.get(), positions, offset, scale);
         ((IStructurePhysicsForm) form).bbs_physics$setDestructionState(state);
         return new StructureRig(form, path, state, ids, channels);
+    }
+
+    /** How many bodies {@link #build} makes of {@code form}: one per block that collides. */
+    static int bodies(StructureForm form)
+    {
+        StructureRenderData data = StructureManager.get(form.structure.get());
+        return data == null ? 0 : solids(data, form).size();
+    }
+
+    /** Every block that collides, with its boxes, bottom layer first. */
+    private static Map<BlockPos, List<Box>> solids(StructureRenderData data, StructureForm form)
+    {
+        StructureRenderWorld blockWorld = new StructureRenderWorld(data, form.biome.get());
+        Map<BlockPos, List<Box>> solids = new LinkedHashMap<>();
+        List<BlockPos> ordered = new ArrayList<>(data.getBlocks().keySet());
+        ordered.sort(Comparator.comparingInt(BlockPos::getY).thenComparingInt(BlockPos::getX).thenComparingInt(BlockPos::getZ));
+        for (BlockPos pos : ordered)
+        {
+            List<Box> boxes = data.getBlockState(pos).getCollisionShape(blockWorld, pos).getBoundingBoxes();
+            if (!boxes.isEmpty()) solids.put(pos, boxes);
+        }
+        return solids;
     }
 
     /** Voxel collision, centred on the block cell rather than the shape's centre of mass. */

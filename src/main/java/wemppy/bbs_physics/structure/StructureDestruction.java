@@ -10,7 +10,6 @@ public final class StructureDestruction
 {
     public static final String KEY = "bbs_physics:destruction";
     public static final float DEFAULT_STRENGTH = 3F;
-    public static final int MAX_BLOCKS = 1024;
 
     private StructureDestruction() {}
 

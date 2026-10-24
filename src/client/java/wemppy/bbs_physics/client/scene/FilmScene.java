@@ -129,8 +129,9 @@ public class FilmScene implements AutoCloseable
     private static final boolean CHECK_RESUME = FabricLoader.getInstance().isDevelopmentEnvironment()
         || Boolean.getBoolean("bbs_physics.checkResume");
 
-    private final PhysicsWorld world;
-    private final PhysicsTimeline timeline;
+    /** Made as the scene is assembled, once the cast is counted — see {@link #assemble}. */
+    private PhysicsWorld world;
+    private PhysicsTimeline timeline;
 
     /**
      * The film as a recording: what every body was doing on every tick that has been simulated.
@@ -362,8 +363,6 @@ public class FilmScene implements AutoCloseable
 
         this.changes = handover != null ? handover.changes : new SceneChanges();
         this.editor = controller instanceof mchorse.bbs_mod.ui.film.controller.FilmEditorController;
-        this.world = new PhysicsWorld();
-        this.timeline = new PhysicsTimeline(this.world);
         this.entities = controller.getEntities();
         this.film = controller.film;
         this.poses = FilmScenes.posesFor(this.film);
@@ -434,6 +433,12 @@ public class FilmScene implements AutoCloseable
             this.posed = 0;
             this.cast.apply(0);
             this.pickOrigin();
+
+            /* Jolt fixes how many bodies and contacts a world holds when it is made, and a
+             * destructible structure is a body a block — so the world is made for this cast,
+             * counted as it stands on the same opening frame it is built from. */
+            this.world = new PhysicsWorld(SceneBuilder.debris(this.cast));
+            this.timeline = new PhysicsTimeline(this.world);
             this.takeWorldSettings();
 
             SceneBuilder builder = new SceneBuilder(this, this.world);
@@ -2621,7 +2626,12 @@ public class FilmScene implements AutoCloseable
         this.bodies.clear();
         this.actors.clear();
         this.cast.clear();
-        this.world.close();
+
+        /* None yet when the assembly failed before the cast was counted. */
+        if (this.world != null)
+        {
+            this.world.close();
+        }
 
         if (!this.groundHandedOver && this.window != null)
         {

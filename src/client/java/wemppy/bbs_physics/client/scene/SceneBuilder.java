@@ -85,6 +85,31 @@ final class SceneBuilder
     }
 
     /**
+     * How many bodies the cast's destructible structures make — what the world is sized for on top
+     * of an ordinary scene, see {@link PhysicsWorld#PhysicsWorld(int)}. Counted from the cast as it
+     * stands, before the world exists: a structure is a body a block, and can be thousands of them.
+     */
+    static int debris(SceneCast cast)
+    {
+        int[] count = {0};
+
+        for (SceneCast.Member member : cast)
+        {
+            FormTreeWalk.walk(member.entity.getForm(), (form, path, anchor) ->
+            {
+                if (form instanceof StructureForm structure && StructureDestruction.isEnabled(form))
+                {
+                    count[0] += StructureRig.bodies(structure);
+                }
+
+                return true;
+            });
+        }
+
+        return count[0];
+    }
+
+    /**
      * The ground the scene stands on. Everything else comes from the film's own forms.
      *
      * <p>Collected around the origin <em>and</em> around every actor whose tree carries any physics
