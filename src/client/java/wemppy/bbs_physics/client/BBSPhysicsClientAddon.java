@@ -99,8 +99,8 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
                 case MASS -> PhysicsKeys.MASS;
                 case FRICTION -> PhysicsKeys.FRICTION;
                 case RESTITUTION -> PhysicsKeys.RESTITUTION;
-                case LINEAR_DAMPING -> PhysicsKeys.BODY_DAMPING;
-                case ANGULAR_DAMPING -> PhysicsKeys.BODY_DAMPING;
+                case LINEAR_DAMPING -> PhysicsKeys.BODY_LINEAR_DAMPING;
+                case ANGULAR_DAMPING -> PhysicsKeys.BODY_ANGULAR_DAMPING;
                 case GRAVITY -> PhysicsKeys.BODY_GRAVITY;
             });
         }

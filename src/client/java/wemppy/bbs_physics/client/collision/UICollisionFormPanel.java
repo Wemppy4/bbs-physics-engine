@@ -931,12 +931,6 @@ public class UICollisionFormPanel extends UIFormPanel<Form> implements FormEdito
         context.batcher.box(x, mid, x + 4, mid + 4, Colors.A100 | PhysicsColors.markup(mode));
     }
 
-    @Override
-    protected float getDefaultOptionsWidth()
-    {
-        return 0.3F;
-    }
-
     /**
      * The mode switch, with the automatic option offered only where it means something.
      *

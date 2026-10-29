@@ -1,4 +1,7 @@
 {
+    "bbs_physics.tracks.disabled": "Physics · disabled",
+    "bbs_physics.tracks.linear_damping": "Linear damping",
+    "bbs_physics.tracks.angular_damping": "Angular damping",
     "bbs_physics.status.click_calculate": "Left click to recalculate physics",
     "bbs_physics.status.ready": "Physics · ready",
     "bbs_physics.status.warning": "Physics · needs attention",

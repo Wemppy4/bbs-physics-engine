@@ -70,6 +70,8 @@ public class PhysicsKeys
     public static final IKey FRICTION = L10n.lang("bbs_physics.forms.body.friction");
     public static final IKey RESTITUTION = L10n.lang("bbs_physics.forms.body.restitution");
     public static final IKey BODY_DAMPING = L10n.lang("bbs_physics.forms.body.damping");
+    public static final IKey BODY_LINEAR_DAMPING = L10n.lang("bbs_physics.tracks.linear_damping");
+    public static final IKey BODY_ANGULAR_DAMPING = L10n.lang("bbs_physics.tracks.angular_damping");
     public static final IKey BODY_LINEAR_DAMPING_TOOLTIP = L10n.lang("bbs_physics.forms.body.linear_damping_tooltip");
     public static final IKey BODY_ANGULAR_DAMPING_TOOLTIP = L10n.lang("bbs_physics.forms.body.angular_damping_tooltip");
     public static final IKey BODY_GRAVITY = L10n.lang("bbs_physics.forms.body.gravity");

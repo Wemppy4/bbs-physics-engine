@@ -3,6 +3,9 @@
     "package": "wemppy.bbs_physics.mixin.client",
     "compatibilityLevel": "JAVA_17",
     "client": [
+        "PhysicsTrackCatalogMixin",
+        "PhysicsTrackSheetsMixin",
+        "PhysicsTrackFoldsMixin",
         "UIClipsMixin",
         "UIFilmPanelMixin",
         "DeathActorMixin",

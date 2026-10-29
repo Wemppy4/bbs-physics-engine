@@ -1,4 +1,7 @@
 {
+    "bbs_physics.tracks.disabled": "Физика · выключена",
+    "bbs_physics.tracks.linear_damping": "Затухание движения",
+    "bbs_physics.tracks.angular_damping": "Затухание вращения",
     "bbs_physics.status.click_calculate": "ЛКМ — пересчитать физику",
     "bbs_physics.status.ready": "Физика · готово",
     "bbs_physics.status.warning": "Физика · есть проблемы",

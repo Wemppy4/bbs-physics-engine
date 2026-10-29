@@ -537,10 +537,4 @@ public class UIPhysicsFormPanel extends UIFormPanel<Form>
     {
         UIOverlay.addOverlay(this.getContext(), new UIMessageOverlayPanel(PhysicsKeys.BAKE_TITLE, message));
     }
-
-    @Override
-    protected float getDefaultOptionsWidth()
-    {
-        return 0.3F;
-    }
 }
