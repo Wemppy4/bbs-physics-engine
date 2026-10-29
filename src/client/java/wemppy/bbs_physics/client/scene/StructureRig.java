@@ -128,9 +128,10 @@ public final class StructureRig implements SceneRig
         StaticCompoundShapeSettings compound = new StaticCompoundShapeSettings();
         for (Box box : boxes)
         {
-            float x = Math.max(0.001F, (float) box.getLengthX() * scale.x * 0.5F);
-            float y = Math.max(0.001F, (float) box.getLengthY() * scale.y * 0.5F);
-            float z = Math.max(0.001F, (float) box.getLengthZ() * scale.z * 0.5F);
+            /* Sizes from the bounds: Yarn names the length getters differently on 1.20.1 and 1.20.4. */
+            float x = Math.max(0.001F, (float) (box.maxX - box.minX) * scale.x * 0.5F);
+            float y = Math.max(0.001F, (float) (box.maxY - box.minY) * scale.y * 0.5F);
+            float z = Math.max(0.001F, (float) (box.maxZ - box.minZ) * scale.z * 0.5F);
             BoxShape leaf = new BoxShape(new Vec3(x, y, z), Math.min(0.02F, Math.min(x, Math.min(y, z))));
             compound.addShape(new Vec3((float) ((box.minX + box.maxX) * 0.5 - 0.5) * scale.x,
                     (float) ((box.minY + box.maxY) * 0.5 - 0.5) * scale.y,
