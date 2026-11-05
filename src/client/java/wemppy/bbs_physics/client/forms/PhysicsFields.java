@@ -104,7 +104,7 @@ public final class PhysicsFields
             this.shading = new UIToggle(UIKeys.FORMS_EDITORS_BILLBOARD_SHADING, false, (b) -> form.get().getShading().set(b.getValue()));
             this.openCrop = new UIButton(UIKeys.FORMS_EDITORS_BILLBOARD_EDIT_CROP, (b) ->
             {
-                UIOverlay.addOverlay(context.get(), new UICropOverlayPanel(form.get().getTexture().get(), form.get().getCrop().get()), 0.5F, 0.5F);
+                UIOverlay.addOverlay(context.get(), new UICropOverlayPanel(form.get().getTexture().get(), form.get().getCrop().get()));
             });
         }
 

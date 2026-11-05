@@ -76,6 +76,8 @@ public class UIFilmPhysicsOverlayPanel extends UIOverlayPanel
     {
         super(PhysicsKeys.FILM_PHYSICS);
 
+        this.w(WIDTH);
+
         this.physics = FilmPhysics.of(film);
 
         this.gravity = choice(Gravity.values(), Icons.GLOBE, PhysicsKeys.FILM_PHYSICS_GRAVITY_TOOLTIP, (preset) ->
@@ -254,12 +256,6 @@ public class UIFilmPhysicsOverlayPanel extends UIOverlayPanel
         element.setVisible(visible);
 
         return true;
-    }
-
-    @Override
-    public int getPreferredWidth()
-    {
-        return WIDTH;
     }
 
     /** Hugs the visible rows, so opening "Custom" grows the panel instead of making it scroll. */
