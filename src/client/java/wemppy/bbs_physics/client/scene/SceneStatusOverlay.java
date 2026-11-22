@@ -65,8 +65,10 @@ public class SceneStatusOverlay extends UIElement
         this.area.set(0, 0, 0, 0);
         if (BBSPhysicsSettings.enabled == null || !BBSPhysicsSettings.enabled.get()) return;
         UIFilmPanel panel = this.getAncestor(UIFilmPanel.class);
-        FilmScene scene = panel == null ? null : FilmScenes.get(panel.getController().editorController);
-        SceneStatus status = panel == null ? null : FilmScenes.getStatus(panel.getController().editorController);
+        // The badge must not end up in an exported video.
+        if (panel == null || panel.recorder.isExporting()) return;
+        FilmScene scene = FilmScenes.get(panel.getController().editorController);
+        SceneStatus status = FilmScenes.getStatus(panel.getController().editorController);
         if (status == null) return;
         boolean debug = BBSPhysicsSettings.debug != null && BBSPhysicsSettings.debug.get();
         boolean warning = status.full() || status.lostAt() >= 0 || status.ghosts() > 0 || status.outside() > 0 || status.lost() > 0;
