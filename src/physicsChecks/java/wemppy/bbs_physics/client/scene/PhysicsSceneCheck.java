@@ -1,7 +1,6 @@
 package wemppy.bbs_physics.client.scene;
 
 import mchorse.bbs_mod.BBSSettings;
-import mchorse.bbs_mod.cubic.ModelInstance;
 import mchorse.bbs_mod.film.BaseFilmController;
 import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_mod.forms.forms.Form;
@@ -135,28 +134,29 @@ public final class PhysicsSceneCheck
         require(SceneActor.releaseAnchor(null) == null, "An absent replay anchor must stay absent");
     }
 
-    /** Catch-up ticks share a render frame and silent track writes keep the pose version. */
+    /**
+     * Catch-up ticks share a render frame and silent track writes keep the pose version. FS keys
+     * every pose it keeps for the frame (a model form's own pose, the form tree's matrices) by the
+     * frame's epoch, so a simulation step and a viewport restore have to move it.
+     */
     private static void checkPoseCache(Controller controller, Form form)
     {
         SceneCast cast = new SceneCast(controller);
-        ModelInstance model = new ModelInstance("physics-cache-check", null, null, null);
-        Object entity = new Object();
-        int version = form.getPoseVersion();
 
         for (int tick = 0; tick < 3; tick++)
         {
-            model.stampChannels(form, entity, 1F, RenderFrame.getEpoch(), version);
-            require(model.matchesChannels(form, entity, 1F, RenderFrame.getEpoch(), version),
-                "Repeated reads of the same pose should reuse channels");
+            long epoch = RenderFrame.getEpoch();
+
             cast.apply(tick);
-            require(!model.matchesChannels(form, entity, 1F, RenderFrame.getEpoch(), version),
-                "A simulation tick must not reuse the previous tick's channels");
+            require(RenderFrame.getEpoch() != epoch,
+                "A simulation tick must not reuse the previous tick's pose");
         }
 
-        model.stampChannels(form, entity, 1F, RenderFrame.getEpoch(), version);
+        long epoch = RenderFrame.getEpoch();
+
         cast.restore(20);
-        require(!model.matchesChannels(form, entity, 1F, RenderFrame.getEpoch(), version),
-            "Viewport restore must not reuse simulation channels");
+        require(RenderFrame.getEpoch() != epoch,
+            "Viewport restore must not reuse the simulation's pose");
     }
 
     private static Set<?> empty() throws Exception
