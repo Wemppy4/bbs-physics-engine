@@ -75,7 +75,7 @@ final class RecordingStore
 {
     /** What the file says it is, and which layout of it: a file of another layout is not read. */
     private static final int MAGIC = 0x42425052;
-    private static final int FORMAT = 1;
+    private static final int FORMAT = 2;
 
     /** Past this many films, the ones opened longest ago are let go of. */
     private static final int MAX_FILES = 64;
@@ -98,11 +98,15 @@ final class RecordingStore
     private RecordingStore()
     {}
 
-    /** A film's recording as kept, and everything it is checked against when read back. */
+    /**
+     * A film's recording as kept, and everything it is checked against when read back. A locked one
+     * ({@code locked}) is taken by a locked film as it is; one locked loose has no checkpoints and
+     * never passes the checks of a film opened unlocked.
+     */
     record Stored(String film, String world, byte[] environment, byte[] assets, byte[] filmData, byte[] ground,
         double originX, double originY, double originZ, float gravity, float speed, int collisionSteps,
         int bodies, Map<String, Integer> channels, int[] widths, int ticks, float[] floats, boolean full,
-        List<SceneCheckpoints.Checkpoint> checkpoints, int standing)
+        List<SceneCheckpoints.Checkpoint> checkpoints, int standing, boolean locked)
     {}
 
     /** Keeps {@code stored} on disk, off the game's thread. */
@@ -410,6 +414,7 @@ final class RecordingStore
             }
 
             out.writeInt(stored.standing());
+            out.writeBoolean(stored.locked());
             out.writeInt(MAGIC);
         }
         finally
@@ -492,6 +497,7 @@ final class RecordingStore
             }
 
             int standing = in.readInt();
+            boolean locked = in.readBoolean();
 
             if (in.readInt() != MAGIC)
             {
@@ -499,7 +505,7 @@ final class RecordingStore
             }
 
             return new Stored(film, world, environment, assets, filmData, ground, originX, originY, originZ,
-                gravity, speed, collisionSteps, bodies, channels, widths, ticks, floats, full, checkpoints, standing);
+                gravity, speed, collisionSteps, bodies, channels, widths, ticks, floats, full, checkpoints, standing, locked);
         }
     }
 

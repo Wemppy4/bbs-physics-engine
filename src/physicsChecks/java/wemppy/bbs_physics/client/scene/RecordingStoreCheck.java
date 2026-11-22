@@ -57,7 +57,8 @@ public final class RecordingStoreCheck
         require(back.gravity() == stored.gravity() && back.speed() == stored.speed() && back.collisionSteps() == stored.collisionSteps(), "The knobs");
         require(back.bodies() == stored.bodies() && back.channels().equals(stored.channels()) && Arrays.equals(back.widths(), stored.widths()), "The bodies and the channels");
         require(back.ticks() == stored.ticks() && Arrays.equals(back.floats(), stored.floats()), "The recording, float for float");
-        require(back.full() == stored.full() && back.standing() == stored.standing(), "Whether it is full, and where it stands");
+        require(back.full() == stored.full() && back.standing() == stored.standing() && back.locked() == stored.locked(),
+            "Whether it is full, where it stands, and whether it was locked");
         require(back.checkpoints().size() == stored.checkpoints().size(), "Every checkpoint");
 
         for (int i = 0; i < stored.checkpoints().size(); i++)
@@ -214,7 +215,7 @@ public final class RecordingStoreCheck
 
         return new RecordingStore.Stored("film/one", "local:/saves/world", bytes(random), bytes(random), bytes(random), bytes(random),
             12D, 64D, -30D, 9.81F, 1F, 2, 17, channels, new int[] {cache.getWidth(0), cache.getWidth(1)}, ticks, floats, false,
-            checkpoints, 29);
+            checkpoints, 29, true);
     }
 
     private static PhysicsCache layout()

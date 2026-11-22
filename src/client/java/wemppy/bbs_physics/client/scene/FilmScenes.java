@@ -12,7 +12,9 @@ import mchorse.bbs_mod.film.replays.Replay;
 import mchorse.bbs_mod.settings.values.base.BaseValue;
 import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.BBSPhysicsSettings;
+import wemppy.bbs_physics.engine.FilmPhysics;
 import wemppy.bbs_physics.engine.JoltEngine;
+import wemppy.bbs_physics.engine.PhysicsFilm;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import wemppy.bbs_physics.actions.ImpulseActionClip;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
@@ -39,6 +41,11 @@ import java.util.Set;
 public class FilmScenes
 {
     private static final Map<BaseFilmController, FilmScene> SCENES = new IdentityHashMap<>();
+    /**
+     * Locked recordings of films whose cast was rebuilt, by film id, until the scene of the new cast
+     * is built — taken channel by channel when the new cast does not take the whole of it (see
+     * {@link FilmScene#recording}).
+     */
     private static final Map<String, FilmScene.Recording> RETAINED = new java.util.HashMap<>();
 
     /** The kept poses of the one film whose scenes were built last — see {@link #posesFor}. */
@@ -50,12 +57,6 @@ public class FilmScenes
      * it is built — see {@link SceneHandover}.
      */
     private static SceneHandover handover;
-
-    private static boolean manual(BaseFilmController controller)
-    {
-        return controller instanceof mchorse.bbs_mod.ui.film.controller.FilmEditorController
-            && BBSPhysicsSettings.manualCalculation != null && BBSPhysicsSettings.manualCalculation.get();
-    }
 
     /** Films with no simulation: do not rescan their form trees on every tick. */
     private static final Set<BaseFilmController> EMPTY = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -100,24 +101,27 @@ public class FilmScenes
     /** The film's cast was assembled or rebuilt: the old simulation no longer describes it. */
     public static void onSetup(BaseFilmController controller)
     {
-        if (manual(controller) && controller.film != null)
-        {
-            for (var entry : SCENES.entrySet())
-            {
-                if (manual(entry.getKey()) && sameFilm(entry.getKey().film, controller.film))
-                    RETAINED.putIfAbsent(controller.film.getId(), entry.getValue().recording());
-            }
-        }
-        else if (controller.film != null)
+        if (controller.film != null)
         {
             /* The cast of a film was rebuilt — an undo, the form editor, a replay switched — and the
              * scene of the old one goes below. What it knows goes to the scene of the new one. The
              * very same film object only: the copies it hands over follow that object's values. */
             for (var entry : SCENES.entrySet())
             {
-                if (entry.getKey() != controller && entry.getKey().film == controller.film && !manual(entry.getKey()))
+                if (entry.getKey() != controller && entry.getKey().film == controller.film)
                 {
                     handOver(entry.getValue());
+                }
+            }
+
+            /* A locked recording outlives a cast that no longer builds into the same bodies. */
+            for (var entry : SCENES.entrySet())
+            {
+                FilmScene.Recording recording = sameFilm(entry.getKey().film, controller.film) ? entry.getValue().recording() : null;
+
+                if (recording != null)
+                {
+                    RETAINED.put(controller.film.getId(), recording);
                 }
             }
         }
@@ -166,9 +170,11 @@ public class FilmScenes
             handover = null;
         }
 
+        FilmScene.Recording retained = controller.film == null ? null : RETAINED.remove(controller.film.getId());
+
         try
         {
-            build(controller, manual(controller) ? null : given);
+            build(controller, given, FilmPhysics.of(controller.film).locked.get() ? retained : null);
         }
         finally
         {
@@ -180,7 +186,7 @@ public class FilmScenes
         }
     }
 
-    private static void build(BaseFilmController controller, SceneHandover given)
+    private static void build(BaseFilmController controller, SceneHandover given, FilmScene.Recording retained)
     {
         try
         {
@@ -198,8 +204,7 @@ public class FilmScenes
                 return;
             }
 
-            FilmScene scene = new FilmScene(controller,
-                manual(controller) ? RETAINED.get(controller.film.getId()) : null, given);
+            FilmScene scene = new FilmScene(controller, retained, given);
 
             SCENES.put(controller, scene);
             watch(controller.film);
@@ -221,9 +226,6 @@ public class FilmScenes
     /** The film reached {@code tick} and every actor is already updated to it. */
     public static void onTick(BaseFilmController controller, int tick)
     {
-        if (controller instanceof mchorse.bbs_mod.ui.film.controller.FilmEditorController
-            && !manual(controller) && controller.film != null)
-            RETAINED.remove(controller.film.getId());
         if (BBSPhysicsSettings.enabled == null || !BBSPhysicsSettings.enabled.get())
         {
             /* Switched off while a film was running. The scene goes now rather than at shutdown:
@@ -481,7 +483,7 @@ public class FilmScenes
              * same film object, but a controller rebuilt around a reloaded film would not. */
             if (sameFilm(other, film))
             {
-                if (manual(entry.getKey()) || hasSimulation(other))
+                if (entry.getValue().isHeld() || hasSimulation(other))
                 {
                     /* Only as much of the recording as the edit changed is taken back. */
                     entry.getValue().edited(film, values, impulseEdit);
@@ -680,16 +682,18 @@ public class FilmScenes
         }
     }
 
-    public static void requestCalculation(BaseFilmController controller)
+    /**
+     * Locks the film's physics, or unlocks it — see {@link FilmPhysics#locked}. An ordinary edit of
+     * the film, undone and saved with the rest; the scene picks it up on its next tick.
+     */
+    public static void toggleLock(BaseFilmController controller)
     {
-        if (controller == null || !isEnabled()) return;
-        // Only an explicit calculation replaces the retained recording.
-        if (controller.film != null) RETAINED.remove(controller.film.getId());
-        drop(controller);
-        dropOthersOf(controller);
-        create(controller);
-        FilmScene scene = SCENES.get(controller);
-        if (scene != null) scene.requestCalculation(controller.getTick());
+        if (controller == null || !(controller.film instanceof PhysicsFilm film) || !isEnabled())
+        {
+            return;
+        }
+
+        BaseValue.edit(film.bbs_physics$physics().locked, (locked) -> locked.set(!locked.get()));
     }
 
     /** The live scene of this controller, or null when it has none. */
@@ -754,7 +758,8 @@ public class FilmScenes
             handover = null;
         }
 
-        if (manual(controller) && controller.film != null) RETAINED.remove(controller.film.getId());
+        /* Kept on disk as the scene closes, and read back from there when the film is opened again. */
+        if (controller.film != null) RETAINED.remove(controller.film.getId());
         drop(controller);
     }
 

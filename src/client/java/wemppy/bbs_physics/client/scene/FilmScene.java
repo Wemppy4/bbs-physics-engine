@@ -14,7 +14,6 @@ import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.settings.values.base.BaseValue;
 import mchorse.bbs_mod.utils.Pair;
 import wemppy.bbs_physics.BBSPhysics;
-import wemppy.bbs_physics.BBSPhysicsSettings;
 import wemppy.bbs_physics.chain.ChainForm;
 import wemppy.bbs_physics.client.ragdoll.RagdollPoseApplier;
 import wemppy.bbs_physics.engine.FilmPhysics;
@@ -193,11 +192,26 @@ public class FilmScene implements AutoCloseable
      */
     private SceneCheckpoints.Checkpoint initial;
 
-    record Recording(PhysicsCache cache, Map<String, Integer> keys, double x, double y, double z, boolean complete, boolean full, int lostAt) {}
+    /**
+     * A locked recording, as a scene of the same film built around another cast takes it: channel by
+     * channel, by the keys they were claimed under — see {@link #holdLoose}.
+     */
+    record Recording(PhysicsCache cache, Map<String, Integer> keys, double x, double y, double z, boolean full, int lostAt,
+        Made made, boolean outdated) {}
 
+    /**
+     * What a locked recording was made from: the film, digested as {@link SceneChanges#fingerprint}
+     * digests it, and the files of its forms. Taken as the lock closes and kept with the recording
+     * whatever is edited after, so a recording kept on disk is checked against the film it was made
+     * from, not against the film it was locked in.
+     */
+    record Made(byte[] film, byte[] assets) {}
+
+    /** The locked recording as a scene around another cast takes it, or null when it is not locked. */
     Recording recording()
     {
-        return new Recording(this.cache, Map.copyOf(this.channelKeys), this.originX, this.originY, this.originZ, this.calculationComplete, this.full, this.lostAt);
+        return !this.held ? null : new Recording(this.cache, Map.copyOf(this.channelKeys), this.originX, this.originY, this.originZ,
+            this.full, this.lostAt, this.made, this.outdated);
     }
 
     void channelActor(String id) { this.channelActor = id; }
@@ -248,9 +262,36 @@ public class FilmScene implements AutoCloseable
      */
     private int staleFrom = FRESH;
     private final boolean editor;
-    private boolean calculationRequested;
-    private boolean calculationComplete;
-    private int requestedEnd;
+
+    /**
+     * Whether the recording is locked: the film's lock is on and the recording reached the film's
+     * end, so it is kept exactly as it is — nothing is recorded, an edit takes nothing back and only
+     * waits ({@link #stale}, {@link #staleFrom}) until the lock comes off. See {@link FilmPhysics#locked}.
+     */
+    private boolean held;
+
+    /**
+     * Whether the locked recording was taken channel by channel into a scene of another cast, or from
+     * a file that would not stand as it is: the world and the rigs stand on the opening frame, not
+     * where the recording ends, so nothing can be picked up from it — unlocked, it starts over.
+     */
+    private boolean loose;
+
+    /** Whether the film was edited after its physics was locked: what is shown is what was locked. */
+    private boolean outdated;
+
+    /** What the locked recording was made from — see {@link Made}. */
+    private Made made;
+
+    /**
+     * The file a locked recording was taken whole from before its first second was recorded afresh
+     * and compared — see {@link #takeStored}. Unlocked unedited, it goes through that check after all.
+     */
+    private RecordingStore.Stored unchecked;
+
+    /** The file the film's locked recording is read from while the scene is put up, or null. */
+    private RecordingStore.Stored lockedFile;
+
     private PhysicsCache impulsePreview;
     private int impulsePreviewTick = -1;
 
@@ -372,26 +413,38 @@ public class FilmScene implements AutoCloseable
 
         try
         {
+            /* A locked film with nothing to take over reads its recording from disk — before it is
+             * assembled, because the recording is around the origin it was made at. */
+            if (retained == null && handover == null && this.locked())
+            {
+                RecordingStore.Stored file = this.loadLocked();
+
+                /* Only a recording that was locked: one kept unlocked may stop halfway. */
+                this.lockedFile = file != null && file.locked() ? file : null;
+            }
+
             this.assemble(controller.getTick());
-            if (retained != null)
+
+            if (handover != null && this.adopt(handover))
             {
-                int[] channels = new int[this.cache.getChannelCount()];
-                java.util.Arrays.fill(channels, -1);
-                this.channelKeys.forEach((key, channel) -> channels[channel] = retained.keys().getOrDefault(key, -1));
-                this.cache.restore(retained.cache(), channels);
-                this.calculationComplete = retained.complete() && this.cache.getComputed() == retained.cache().getComputed();
-                this.full = retained.full();
-                this.lostAt = retained.lostAt();
-                this.stale = true;
+                /* Taken over whole, lock and all. */
             }
-            else if (handover != null)
+            else if (retained != null && this.holdLoose(retained.cache(), retained.keys(), retained.full(), retained.lostAt(),
+                retained.made(), retained.outdated()))
             {
-                this.adopt(handover);
+                BBSPhysics.LOGGER.info("Physics scene for film \"{}\" kept the locked recording of the one before it: {} ticks.",
+                    this.film.getId(), this.cache.getComputed());
             }
-            else if (!this.manualCalculation())
+            else if (this.lockedFile != null)
+            {
+                this.holdStored(this.lockedFile);
+            }
+            else if (handover == null && retained == null)
             {
                 this.stored = this.storedCandidate();
             }
+
+            this.lockedFile = null;
 
             built = true;
             this.built = true;
@@ -527,6 +580,16 @@ public class FilmScene implements AutoCloseable
             this.originZ = this.handover.originZ;
             return;
         }
+
+        if (this.lockedFile != null)
+        {
+            /* The locked recording on disk is around the origin it was made at. */
+            this.originX = this.lockedFile.originX();
+            this.originY = this.lockedFile.originY();
+            this.originZ = this.lockedFile.originZ();
+            return;
+        }
+
         IEntity first = this.cast.first();
 
         if (first != null)
@@ -739,15 +802,17 @@ public class FilmScene implements AutoCloseable
         return new SceneStatus(
             this.filmTick,
             this.cache.getComputed() - 1,
-            this.manualCalculation() && this.calculationComplete ? this.cache.getComputed() - 1 : this.recordingEnd(this.filmTick),
+            this.held ? this.cache.getComputed() - 1 : this.recordingEnd(this.filmTick),
             this.cache.has(this.filmTick),
-            this.manualCalculation() ? this.waitingForCalculation() : this.isStale() || !this.backgroundAllowed(),
+            !this.held && (this.isStale() || !this.backgroundAllowed()),
             this.full,
             this.lostAt,
             this.world.getBodyCount(),
             ghosts,
             outside,
-            lost);
+            lost,
+            this.held ? SceneStatus.Lock.LOCKED : this.locked() ? SceneStatus.Lock.LOCKING : SceneStatus.Lock.NONE,
+            this.held && this.outdated);
     }
 
     /** Whether a point in scene coordinates lies outside the world that was actually collected. */
@@ -821,11 +886,14 @@ public class FilmScene implements AutoCloseable
          * move, and answering them second meant a whole tick was recorded under the new gravity on
          * top of a recording made under the old one, only to be thrown away by the invalidation on
          * the tick after. */
+        this.followLock();
         this.applyWorldSettings();
 
-        if (this.manualCalculation() && !this.calculationRequested)
+        if (this.held)
         {
+            /* Locked: the recording is what is shown, whatever has been edited since. */
             this.distribute(tick);
+
             return;
         }
 
@@ -857,20 +925,19 @@ public class FilmScene implements AutoCloseable
      */
     public Demand demand()
     {
-        boolean manual = this.manualCalculation();
-
-        if (this.isStale() || this.full || (manual && !this.calculationRequested))
+        if (this.held || this.isStale() || this.full)
         {
             return Demand.NONE;
         }
 
-        if (this.cache.getComputed() > (manual ? this.requestedEnd : this.recordingEnd(this.filmTick)))
+        if (this.cache.getComputed() > this.recordingEnd(this.filmTick))
         {
             return Demand.NONE;
         }
 
-        if (manual)
+        if (this.editor && this.locked())
         {
+            /* The author locked the film and is waiting for the whole of it. */
             return Demand.REQUESTED;
         }
 
@@ -913,7 +980,7 @@ public class FilmScene implements AutoCloseable
             return;
         }
 
-        int end = this.manualCalculation() ? this.requestedEnd : this.recordingEnd(this.filmTick);
+        int end = this.recordingEnd(this.filmTick);
 
         if (demand == Demand.CATCH_UP)
         {
@@ -933,7 +1000,7 @@ public class FilmScene implements AutoCloseable
     {
         this.land();
 
-        if (this.isStale() || (this.manualCalculation() && !this.calculationRequested) || this.cache.has(this.filmTick))
+        if (this.held || this.isStale() || this.cache.has(this.filmTick))
         {
             return;
         }
@@ -943,16 +1010,249 @@ public class FilmScene implements AutoCloseable
         this.redisplay();
     }
 
-    /** Notes whether the recording now reaches as far as it was asked to. */
+    /** Locks the recording once a locked film's has reached the end — see {@link #hold}. */
     private void settle()
     {
-        this.calculationComplete = this.cache.getComputed()
-            > (this.manualCalculation() ? this.requestedEnd : this.recordingEnd(this.filmTick));
-
-        if (this.calculationRequested && (this.full || this.cache.getComputed() > this.requestedEnd))
+        if (!this.held && this.locked() && !this.isStale()
+            && (this.full || this.cache.getComputed() > this.recordingEnd(this.filmTick)))
         {
-            this.calculationRequested = false;
+            this.hold();
         }
+    }
+
+    /* The lock */
+
+    /** Whether the film's physics is locked — see {@link FilmPhysics#locked}. */
+    private boolean locked()
+    {
+        return FilmPhysics.of(this.film).locked.get();
+    }
+
+    /** Whether the recording is locked: kept as it is, whatever is edited — see {@link #held}. */
+    public boolean isHeld()
+    {
+        return this.held;
+    }
+
+    /**
+     * The recording of a locked film reached the film's end: from here it is kept as it is. What it
+     * was made from is taken now, while the film still says it.
+     */
+    private void hold()
+    {
+        this.held = true;
+        this.loose = false;
+        this.outdated = false;
+        this.unchecked = null;
+        this.stored = null;
+        this.made = new Made(this.filmFingerprint(), RecordingStore.assets(this.actorForms()));
+
+        BBSPhysics.LOGGER.info("Physics of film \"{}\" is locked: {} ticks.", this.film == null ? "?" : this.film.getId(), this.cache.getComputed());
+    }
+
+    /**
+     * Picks up the film's lock: a lock taken off lets the recording go back to following the film.
+     * A lock put on needs nothing here — the recording runs to the end first, and {@link #settle}
+     * locks it there.
+     *
+     * <p>What was edited while it was locked is answered as any edit is, from the first tick it
+     * changes — the world still stands where the recording ends. Not so for a recording taken loose
+     * (see {@link #loose}), which starts over; and a recording taken whole from disk without its first
+     * second checked goes through that check now, or starts over if something was edited since.</p>
+     */
+    private void followLock()
+    {
+        if (!this.held || this.locked())
+        {
+            return;
+        }
+
+        this.held = false;
+
+        if (this.loose)
+        {
+            this.stale = true;
+        }
+        else if (this.unchecked != null)
+        {
+            /* Recorded afresh from the opening frame, the first second is compared with the file
+             * again and the rest of it taken, exactly as a film opened unlocked is. Edited since, it
+             * is not the film's any more, and nothing is picked up from a recording never checked. */
+            if (!this.outdated && !this.isStale())
+            {
+                this.stored = this.unchecked;
+            }
+
+            this.stale = true;
+        }
+
+        this.loose = false;
+        this.outdated = false;
+        this.unchecked = null;
+        this.made = null;
+        this.editedAt = System.nanoTime();
+    }
+
+    /**
+     * Takes {@code source}, a locked recording laid out for another cast, channel by channel under
+     * the keys its channels were claimed by; a body this cast builds that the recording does not know
+     * is drawn as plain animation. Locked loose — see {@link #loose}.
+     *
+     * @return whether anything of it fits this cast at all
+     */
+    private boolean holdLoose(PhysicsCache source, Map<String, Integer> keys, boolean full, int lostAt, Made made, boolean outdated)
+    {
+        int[] channels = new int[this.cache.getChannelCount()];
+        boolean any = false;
+
+        java.util.Arrays.fill(channels, -1);
+
+        for (Map.Entry<String, Integer> entry : this.channelKeys.entrySet())
+        {
+            Integer from = keys.get(entry.getKey());
+
+            if (from != null)
+            {
+                channels[entry.getValue()] = from;
+                any = true;
+            }
+        }
+
+        if (!any)
+        {
+            return false;
+        }
+
+        this.cache.restore(source, channels);
+        this.full = full;
+        this.lostAt = lostAt;
+        this.held = true;
+        this.loose = true;
+        this.made = made;
+        this.outdated = outdated;
+        this.teleport = true;
+
+        return true;
+    }
+
+    /** The film's recording kept on disk, unchecked — for a locked film, which takes it as it is. */
+    private RecordingStore.Stored loadLocked()
+    {
+        if (this.film == null || this.film.getId() == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return RecordingStore.load(this.film.getId(), this.worldKey);
+        }
+        catch (Throwable e)
+        {
+            BBSPhysics.LOGGER.warn("The locked physics recording kept on disk could not be read; the film is recorded afresh.", e);
+
+            return null;
+        }
+    }
+
+    /**
+     * Locks the recording kept on disk for this locked film. Whole, with the world standing where it
+     * ends, when it passes every check {@link #storedCandidate} makes — all but the first second
+     * recorded afresh, which a locked film does not record (see {@link #unchecked}). Loose otherwise:
+     * the film it was made from is not this one, which is what a lock is for.
+     */
+    private void holdStored(RecordingStore.Stored stored)
+    {
+        Made made = new Made(stored.filmData(), stored.assets());
+
+        try
+        {
+            if (this.unlike(stored) == null && this.holdWhole(stored))
+            {
+                this.made = made;
+                this.unchecked = stored;
+
+                BBSPhysics.LOGGER.info("Physics scene for film \"{}\" took its locked recording kept on disk: {} ticks.",
+                    this.film.getId(), this.cache.getComputed());
+
+                return;
+            }
+
+            int[] widths = stored.widths();
+            PhysicsCache source = new PhysicsCache();
+            int stride = 0;
+
+            for (int width : widths)
+            {
+                source.addChannel(width);
+                stride += width;
+            }
+
+            source.seal();
+
+            if (stored.floats().length != stored.ticks() * stride)
+            {
+                return;
+            }
+
+            source = source.withRecorded(stored.floats(), stored.ticks());
+
+            if (this.holdLoose(source, stored.channels(), stored.full(), -1, made,
+                !RecordingStore.same(stored.filmData(), this.filmFingerprint())))
+            {
+                BBSPhysics.LOGGER.info("Physics scene for film \"{}\" took its locked recording kept on disk as it was: {} ticks.",
+                    this.film.getId(), this.cache.getComputed());
+            }
+        }
+        catch (Throwable e)
+        {
+            BBSPhysics.LOGGER.warn("The locked physics recording kept on disk could not be taken; the film is recorded afresh.", e);
+        }
+    }
+
+    /** Takes {@code stored} whole, the world put back where it ends — {@link #takeStored} without the check. */
+    private boolean holdWhole(RecordingStore.Stored stored)
+    {
+        SceneCheckpoints checkpoints = new SceneCheckpoints();
+        SceneCheckpoints.Checkpoint standing = null;
+
+        for (SceneCheckpoints.Checkpoint checkpoint : stored.checkpoints())
+        {
+            checkpoints.add(checkpoint);
+
+            if (checkpoint.tick() == stored.standing())
+            {
+                standing = checkpoint;
+            }
+        }
+
+        PhysicsCache built = this.cache;
+        SceneCheckpoints own = this.checkpoints;
+
+        this.cache = this.cache.withRecorded(stored.floats(), stored.ticks());
+        this.checkpoints = checkpoints;
+
+        if (standing == null || !this.putBack(standing))
+        {
+            this.cache = built;
+            this.checkpoints = own;
+
+            /* Rigs may have been put back halfway: stood on the opening frame again. */
+            if (this.initial != null)
+            {
+                this.putBack(this.initial);
+            }
+
+            return false;
+        }
+
+        this.full = stored.full();
+        this.held = true;
+        this.loose = false;
+        this.outdated = false;
+        this.teleport = true;
+
+        return true;
     }
 
     /**
@@ -1018,7 +1318,7 @@ public class FilmScene implements AutoCloseable
      */
     private void compute(int cursor)
     {
-        int end = this.manualCalculation() ? this.requestedEnd : this.recordingEnd(cursor);
+        int end = this.recordingEnd(cursor);
 
         if (this.cache.getComputed() > end)
         {
@@ -1481,28 +1781,6 @@ public class FilmScene implements AutoCloseable
         return Math.max(cursor, duration + LOOKAHEAD_PAST_END);
     }
 
-    private boolean manualCalculation()
-    {
-        return this.editor && BBSPhysicsSettings.manualCalculation != null && BBSPhysicsSettings.manualCalculation.get();
-    }
-
-    public boolean waitingForCalculation()
-    {
-        return this.manualCalculation() && !this.calculationComplete && !this.calculationRequested && !this.full
-            && (this.isStale() || this.cache.getComputed() <= this.recordingEnd(this.filmTick));
-    }
-
-    public void requestCalculation(int tick)
-    {
-        this.land();
-        this.filmTick = Math.max(0, tick);
-        this.applyWorldSettings();
-        this.invalidate();
-        this.calculationComplete = false;
-        this.requestedEnd = this.recordingEnd(this.filmTick);
-        this.calculationRequested = true;
-    }
-
     /**
      * Whether the recording may run ahead of the cursor right now. It may not for a moment after an
      * edit: the author is probably still dragging, and every batch of changes throws the recording
@@ -1535,8 +1813,8 @@ public class FilmScene implements AutoCloseable
 
     /**
      * The film changed from {@code tick} on: the recording from there is taken back on the next tick
-     * and everything before it stands. From the opening frame it is the old starting over; in manual
-     * calculation any edit only marks the recording as out of date, as it always did.
+     * and everything before it stands. From the opening frame it is the old starting over. A locked
+     * recording takes nothing back: the edit waits for the lock to come off.
      *
      * <p>An impulse edit keeps the frame on screen as a placeholder while its tick is being recorded
      * again — only when that frame is among what is taken back.</p>
@@ -1546,10 +1824,19 @@ public class FilmScene implements AutoCloseable
         /* The film is not what the recording kept on disk was checked against any more. */
         this.stored = null;
 
-        if (this.manualCalculation())
+        if (this.held)
         {
-            this.stale = true;
-            this.calculationRequested = false;
+            if (tick <= 0)
+            {
+                this.stale = true;
+            }
+            else
+            {
+                this.staleFrom = Math.min(this.staleFrom, tick);
+            }
+
+            this.outdated = true;
+
             return;
         }
 
@@ -1577,8 +1864,6 @@ public class FilmScene implements AutoCloseable
             this.staleFrom = Math.min(this.staleFrom, tick);
         }
 
-        this.calculationRequested = false;
-        this.calculationComplete = false;
         this.editedAt = System.nanoTime();
     }
 
@@ -1732,7 +2017,10 @@ public class FilmScene implements AutoCloseable
         this.land();
 
         int tick = this.timeline.getTick();
-        boolean standing = !this.stale && !this.verifying && this.cache.getComputed() == tick + 1;
+
+        /* A locked recording stands even with an edit waiting to start it over — unless it was
+         * taken loose, with the world standing on the opening frame instead of where it ends. */
+        boolean standing = (this.held ? !this.loose : !this.stale) && !this.verifying && this.cache.getComputed() == tick + 1;
 
         if (standing)
         {
@@ -1743,6 +2031,12 @@ public class FilmScene implements AutoCloseable
             this.cache, Map.copyOf(this.channelKeys), this.world.getBodyCount(), this.checkpoints, tick,
             this.changes, this.reach, this.clips.deathImpacts(), this.full, !standing, this.staleFrom,
             this.gravity, this.speed, this.collisionSteps);
+
+        handover.held = this.held;
+        handover.pending = this.held && this.stale;
+        handover.outdated = this.outdated;
+        handover.made = this.made;
+        handover.unchecked = this.unchecked;
 
         this.groundHandedOver = true;
 
@@ -1756,9 +2050,12 @@ public class FilmScene implements AutoCloseable
      * tick, as many bodies in the world — which a scene built from the same film comes to, body for
      * body, in the same order. The world and every rig are put back where the scene before stood, and
      * the edits it had not answered are this scene's to answer. Into anything else — or should
-     * putting back fail — this scene records the film from its opening frame, as built.</p>
+     * putting back fail — this scene records the film from its opening frame, as built. A locked
+     * recording is taken over locked.</p>
+     *
+     * @return whether it was taken over
      */
-    private void adopt(SceneHandover given)
+    private boolean adopt(SceneHandover given)
     {
         SceneCheckpoints.Checkpoint standing = given.stale ? null : given.checkpoints.at(given.tick);
 
@@ -1772,7 +2069,7 @@ public class FilmScene implements AutoCloseable
         if (standing == null || !sameGround || !sameKnobs || !given.channels.equals(this.channelKeys)
             || !given.cache.sameLayout(this.cache) || given.bodies != this.world.getBodyCount())
         {
-            return;
+            return false;
         }
 
         PhysicsCache built = this.cache;
@@ -1789,20 +2086,31 @@ public class FilmScene implements AutoCloseable
             this.checkpoints = none;
             this.stale = true;
 
-            return;
+            return false;
         }
 
         this.clips.adoptDeathImpacts(given.impacts);
         this.full = given.full;
         this.staleFrom = given.staleFrom;
 
+        if (given.held)
+        {
+            this.held = true;
+            this.stale = given.pending;
+            this.outdated = given.outdated;
+            this.made = given.made;
+            this.unchecked = given.unchecked;
+        }
+
         /* Everything was just moved to where the scene before had it; whatever is drawn next is a
          * cut, not a step from the opening frame this scene was built on. */
         this.teleport = true;
 
-        BBSPhysics.LOGGER.info("Physics scene for film \"{}\" took over the recording of the one before it: {} ticks, standing on tick {}{}.",
-            this.film == null ? "?" : this.film.getId(), this.cache.getComputed(), given.tick,
-            this.staleFrom == FRESH ? "" : ", recording again from tick " + this.staleFrom);
+        BBSPhysics.LOGGER.info("Physics scene for film \"{}\" took over the {}recording of the one before it: {} ticks, standing on tick {}{}.",
+            this.film == null ? "?" : this.film.getId(), this.held ? "locked " : "", this.cache.getComputed(), given.tick,
+            this.staleFrom == FRESH || this.held ? "" : ", recording again from tick " + this.staleFrom);
+
+        return true;
     }
 
     /**
@@ -2012,25 +2320,34 @@ public class FilmScene implements AutoCloseable
      * What this scene keeps on disk as it goes — see {@link RecordingStore} — or null when there is
      * nothing to keep that would stand: the recording waits on an edit, or holds no more than the
      * second every scene records to check a kept one by.
+     *
+     * <p>A locked recording is always kept, edited or not, and under what it was made from (see
+     * {@link Made}) rather than what the film says now: a film opened unlocked takes it only if it is
+     * that film again. One locked loose is kept without checkpoints — a locked film takes it as it
+     * is, an unlocked one never does.</p>
      */
     private RecordingStore.Stored storable()
     {
-        if (this.manualCalculation() || this.film == null || this.film.getId() == null || this.stale || this.staleFrom != FRESH
-            || this.verifying || this.window == null)
+        if (this.film == null || this.film.getId() == null || this.verifying || this.window == null)
         {
             return null;
         }
 
         int tick = this.timeline.getTick();
 
-        if (this.cache.getComputed() != tick + 1 || tick <= STORED_CHECK)
+        if (!this.held && (this.stale || this.staleFrom != FRESH || this.cache.getComputed() != tick + 1 || tick <= STORED_CHECK))
         {
             return null;
         }
 
         try
         {
-            this.checkpoints.add(this.standing(tick));
+            boolean standing = !this.loose && this.cache.getComputed() == tick + 1;
+
+            if (standing)
+            {
+                this.checkpoints.add(this.standing(tick));
+            }
 
             int[] widths = new int[this.cache.getChannelCount()];
 
@@ -2039,11 +2356,14 @@ public class FilmScene implements AutoCloseable
                 widths[i] = this.cache.getWidth(i);
             }
 
+            Made made = this.held && this.made != null ? this.made
+                : new Made(this.filmFingerprint(), RecordingStore.assets(this.actorForms()));
+
             return new RecordingStore.Stored(this.film.getId(), this.worldKey, RecordingStore.environment(),
-                RecordingStore.assets(this.actorForms()), this.filmFingerprint(), this.window.ground(),
+                made.assets(), made.film(), this.window.ground(),
                 this.originX, this.originY, this.originZ, this.gravity, this.speed, this.collisionSteps,
                 this.world.getBodyCount(), new java.util.LinkedHashMap<>(this.channelKeys), widths, this.cache.getComputed(),
-                this.cache.recorded(), this.full, this.checkpoints.all(), tick);
+                this.cache.recorded(), this.full, standing ? this.checkpoints.all() : List.of(), standing ? tick : -1, this.held);
         }
         catch (Throwable e)
         {
@@ -2254,6 +2574,12 @@ public class FilmScene implements AutoCloseable
      */
     private int ensureRecorded(int end)
     {
+        if (this.held)
+        {
+            /* Locked: what is baked is what is shown. */
+            return this.cache.getComputed() - 1;
+        }
+
         this.applyWorldSettings();
         this.catchUpWithEdits();
         this.recordUntil(end, Long.MAX_VALUE);
@@ -2552,7 +2878,7 @@ public class FilmScene implements AutoCloseable
      */
     public boolean needsRebuild()
     {
-        if (this.manualCalculation()) return false;
+        if (this.held) return false;
         FilmPhysics physics = FilmPhysics.of(this.film);
         return this.window == null
             || this.window.radius() != physics.worldRadius.get()

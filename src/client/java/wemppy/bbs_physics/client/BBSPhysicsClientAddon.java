@@ -161,10 +161,10 @@ public class BBSPhysicsClientAddon implements BBSAddonMod
         {
             BBSPhysicsSettings.debug.toggle();
         }).strict().active(() -> BBSPhysicsSettings.debug != null);
-        event.dashboard.overlay.keys().register(PhysicsKeybinds.CALCULATE, () ->
+        event.dashboard.overlay.keys().register(PhysicsKeybinds.LOCK, () ->
         {
             if (event.dashboard.getPanels().panel instanceof UIFilmPanel panel)
-                FilmScenes.requestCalculation(panel.getController().editorController);
+                FilmScenes.toggleLock(panel.getController().editorController);
         }).strict().active(() -> event.dashboard.getPanels().panel instanceof UIFilmPanel
             && BBSPhysicsSettings.enabled != null && BBSPhysicsSettings.enabled.get());
     }

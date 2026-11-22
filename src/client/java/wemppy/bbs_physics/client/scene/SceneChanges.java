@@ -313,7 +313,7 @@ final class SceneChanges
      */
     void fingerprint(Film film, Set<String> reach, Fingerprint into)
     {
-        into.put(FilmPhysics.of(film).toData());
+        into.put(FilmPhysics.of(film).knobs());
 
         List<String> reached = new ArrayList<>(reach);
 

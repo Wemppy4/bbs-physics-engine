@@ -16,7 +16,6 @@ public class BBSPhysicsSettings
 {
     public static ValueBoolean enabled;
     public static ValueBoolean debug;
-    public static ValueBoolean manualCalculation;
     public static ValueBoolean calculationShortcutMigrated;
 
     /**
@@ -72,7 +71,6 @@ public class BBSPhysicsSettings
         builder.category("general", Icons.PHYSICS);
 
         enabled = builder.getBoolean("enabled", true);
-        manualCalculation = builder.getBoolean("manual_calculation", false);
         threads = builder.getBoolean("threads", true);
         calculationShortcutMigrated = builder.getBoolean("calculation_shortcut_migrated", false);
         calculationShortcutMigrated.invisible();

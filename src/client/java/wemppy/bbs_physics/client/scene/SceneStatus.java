@@ -15,6 +15,8 @@ package wemppy.bbs_physics.client.scene;
  * @param ghosts   rigs with nothing marked up, which fall through everything
  * @param outside  rigs past the collected blocks, with no ground under them
  * @param lost     rigs the solver lost to an impossible push
+ * @param lock     whether the film's physics is locked, or being recorded to the end to be locked
+ * @param outdated whether the film was edited after its physics was locked
  */
 public record SceneStatus(
     int filmTick,
@@ -27,8 +29,16 @@ public record SceneStatus(
     int bodies,
     int ghosts,
     int outside,
-    int lost)
+    int lost,
+    Lock lock,
+    boolean outdated)
 {
+    /** The film's lock as the recording stands with it — see {@code FilmPhysics#locked}. */
+    public enum Lock
+    {
+        NONE, LOCKING, LOCKED
+    }
+
     public boolean hasWarnings()
     {
         return !this.ready || this.ghosts > 0 || this.outside > 0 || this.lost > 0;

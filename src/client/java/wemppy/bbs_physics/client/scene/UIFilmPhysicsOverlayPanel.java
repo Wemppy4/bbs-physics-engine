@@ -10,6 +10,7 @@ import mchorse.bbs_mod.ui.framework.elements.UIElement;
 import mchorse.bbs_mod.ui.framework.elements.UIScrollView;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIChoiceButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIIcon;
+import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
 import mchorse.bbs_mod.ui.framework.elements.input.UITrackpad;
 import mchorse.bbs_mod.ui.framework.elements.overlay.UIOverlayPanel;
 import mchorse.bbs_mod.ui.utils.UI;
@@ -60,6 +61,9 @@ public class UIFilmPhysicsOverlayPanel extends UIOverlayPanel
     private final UITrackpad worldBelow;
     private final UITrackpad worldAbove;
     private final List<UIElement> worldCustom;
+
+    /** The film's lock — see {@link FilmPhysics#locked}. */
+    private final UIToggle lock;
 
     /** Every row in order, the hidden ones included — what the panel's height is summed from. */
     private final List<UIElement> rows;
@@ -130,12 +134,17 @@ public class UIFilmPhysicsOverlayPanel extends UIOverlayPanel
             row(PhysicsKeys.FILM_PHYSICS_WORLD_BELOW, this.worldBelow),
             row(PhysicsKeys.FILM_PHYSICS_WORLD_ABOVE, this.worldAbove));
 
+        this.lock = new UIToggle(PhysicsKeys.FILM_PHYSICS_LOCK, (toggle) ->
+            BaseValue.edit(this.physics.locked, (locked) -> locked.set(toggle.getValue())));
+        this.lock.tooltip(PhysicsKeys.FILM_PHYSICS_LOCK_TOOLTIP);
+
         this.rows = List.of(
             row(PhysicsKeys.FILM_PHYSICS_GRAVITY, this.gravity), this.gravityCustom,
             row(PhysicsKeys.FILM_PHYSICS_SPEED, this.speed), this.speedCustom,
             row(PhysicsKeys.FILM_PHYSICS_PRECISION, this.precision),
             row(PhysicsKeys.FILM_PHYSICS_WORLD, this.world),
-            this.worldCustom.get(0), this.worldCustom.get(1), this.worldCustom.get(2));
+            this.worldCustom.get(0), this.worldCustom.get(1), this.worldCustom.get(2),
+            this.lock);
 
         UIScrollView editor = UI.scrollView(GAP, PADDING, this.rows.toArray(new UIElement[0]));
 
@@ -233,6 +242,7 @@ public class UIFilmPhysicsOverlayPanel extends UIOverlayPanel
         this.worldRadius.setValue(radius);
         this.worldBelow.setValue(below);
         this.worldAbove.setValue(above);
+        this.lock.setValue(this.physics.locked.get());
 
         boolean changed = show(this.gravityCustom, this.customGravity);
 

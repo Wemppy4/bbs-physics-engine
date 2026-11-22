@@ -49,7 +49,7 @@ public class SceneStatusOverlay extends UIElement
             UIFilmPanel panel = this.getAncestor(UIFilmPanel.class);
             if (panel != null && FilmScenes.get(panel.getController().editorController) != null)
             {
-                FilmScenes.requestCalculation(panel.getController().editorController);
+                FilmScenes.toggleLock(panel.getController().editorController);
                 mchorse.bbs_mod.ui.utils.UIUtils.playClick();
                 return true;
             }
@@ -72,10 +72,15 @@ public class SceneStatusOverlay extends UIElement
         boolean warning = status.full() || status.lostAt() >= 0 || status.ghosts() > 0 || status.outside() > 0 || status.lost() > 0;
         State state = warning ? State.WARNING : status.waiting() ? State.WAITING
             : status.computing() ? State.COMPUTING : status.ready() ? State.READY : State.WAITING;
+        boolean locked = status.lock() == SceneStatus.Lock.LOCKED;
+        boolean locking = status.lock() == SceneStatus.Lock.LOCKING;
 
         var viewport = this.preview.getViewport();
         String label = state == State.WARNING ? "!" : state == State.COMPUTING ? (int) (status.progress() * 100) + "%" : "";
-        int width = label.isEmpty() ? 20 : 25 + context.batcher.getFont().getWidth(label);
+        /* The lock sits after the physics icon: shut while locked, open while the film is recorded
+         * to the end to be locked. */
+        int lockWidth = locked || locking ? 14 : 0;
+        int width = (label.isEmpty() ? 20 : 25 + context.batcher.getFont().getWidth(label)) + lockWidth;
         if (viewport.w < width + 16 || viewport.h < 40) return;
         int x = viewport.x + 8;
         int y = viewport.y + 8;
@@ -84,11 +89,13 @@ public class SceneStatusOverlay extends UIElement
         this.details = mchorse.bbs_mod.l10n.L10n.lang("bbs_physics.status." + state.key)
             .format((int) (status.progress() * 100)).get()
             + "\n" + SceneStatusHUD.details(status, debug ? scene : null);
-        if (scene.waitingForCalculation())
-            this.details = mchorse.bbs_mod.l10n.L10n.lang("bbs_physics.status.manual").get()
-                + " (" + wemppy.bbs_physics.client.PhysicsKeybinds.CALCULATE.getKeyCombo() + ")\n" + this.details;
-        this.details = mchorse.bbs_mod.l10n.L10n.lang("bbs_physics.status.click_calculate").get()
-            + "\n" + this.details;
+        if (locked)
+            this.details = mchorse.bbs_mod.l10n.L10n.lang(status.outdated() ? "bbs_physics.status.locked_outdated" : "bbs_physics.status.locked").get()
+                + "\n" + this.details;
+        else if (locking)
+            this.details = mchorse.bbs_mod.l10n.L10n.lang("bbs_physics.status.locking").get() + "\n" + this.details;
+        this.details = mchorse.bbs_mod.l10n.L10n.lang(locked || locking ? "bbs_physics.status.click_unlock" : "bbs_physics.status.click_lock").get()
+            + " (" + wemppy.bbs_physics.client.PhysicsKeybinds.LOCK.getKeyCombo() + ")\n" + this.details;
         boolean hover = this.area.isInside(context);
         int background = hover ? 0xdd20272f : 0xb320272f;
         int accent = state.color;
@@ -99,6 +106,12 @@ public class SceneStatusOverlay extends UIElement
         context.batcher.icon(Icons.PHYSICS, accent, x + 10, y + 10, 0.5F, 0.5F);
         if (!label.isEmpty()) context.batcher.text(label, x + 23,
             y + (20 - context.batcher.getFont().getHeight()) / 2F, 0xffc3cdd3, false);
+        if (locked || locking)
+        {
+            /* Amber once the film was edited after the lock: what is shown is no longer what it says. */
+            int color = locking ? 0xff8a959c : status.outdated() ? 0xffe6bc62 : 0xffc3cdd3;
+            context.batcher.icon(locked ? Icons.LOCKED : Icons.UNLOCKED, color, x + width - 9, y + 10, 0.5F, 0.5F);
+        }
         super.render(context);
     }
 }

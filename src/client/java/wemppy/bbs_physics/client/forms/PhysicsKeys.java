@@ -259,6 +259,8 @@ public class PhysicsKeys
 
     public static final IKey FILM_PHYSICS = L10n.lang("bbs_physics.film_physics.title");
     public static final IKey FILM_PHYSICS_RESET = L10n.lang("bbs_physics.film_physics.reset");
+    public static final IKey FILM_PHYSICS_LOCK = L10n.lang("bbs_physics.film_physics.lock");
+    public static final IKey FILM_PHYSICS_LOCK_TOOLTIP = L10n.lang("bbs_physics.film_physics.lock_tooltip");
     public static final IKey FILM_PHYSICS_GRAVITY = L10n.lang("bbs_physics.film_physics.gravity");
     public static final IKey FILM_PHYSICS_GRAVITY_TOOLTIP = L10n.lang("bbs_physics.film_physics.gravity_tooltip");
     public static final IKey FILM_PHYSICS_SPEED = L10n.lang("bbs_physics.film_physics.speed");

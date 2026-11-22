@@ -1,7 +1,9 @@
 package wemppy.bbs_physics.engine;
 
+import mchorse.bbs_mod.data.types.MapType;
 import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_mod.settings.values.core.ValueGroup;
+import mchorse.bbs_mod.settings.values.numeric.ValueBoolean;
 import mchorse.bbs_mod.settings.values.numeric.ValueFloat;
 import mchorse.bbs_mod.settings.values.numeric.ValueInt;
 
@@ -63,6 +65,17 @@ public class FilmPhysics extends ValueGroup
     /** How high over the scene ceilings and overhangs are collected. */
     public final ValueInt worldAbove = new ValueInt("world_above", 24, 4, 128);
 
+    /** The id of {@link #locked}, which is not a knob: edits of it change nothing physics computes. */
+    public static final String LOCKED = "locked";
+
+    /**
+     * Whether the film's physics is locked: recorded through the whole film once, then kept as it is
+     * whatever is edited, until the author unlocks it. Not a knob of the arithmetic — it says when a
+     * recording is made, not what it comes out as — so it is left out of what an edit is judged by and
+     * of what a kept recording is checked against, and a reset leaves it alone.
+     */
+    public final ValueBoolean locked = new ValueBoolean(LOCKED, false);
+
     public FilmPhysics()
     {
         super(KEY);
@@ -73,6 +86,17 @@ public class FilmPhysics extends ValueGroup
         this.add(this.worldRadius);
         this.add(this.worldBelow);
         this.add(this.worldAbove);
+        this.add(this.locked);
+    }
+
+    /** The knobs as data, without {@link #locked} — what a recording is made from. */
+    public MapType knobs()
+    {
+        MapType data = (MapType) this.toData();
+
+        data.remove(LOCKED);
+
+        return data;
     }
 
     /** The film's physics knobs; the defaults for a film that carries none. */

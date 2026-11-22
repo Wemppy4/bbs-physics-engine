@@ -11,8 +11,9 @@ public final class PhysicsKeybinds
         L10n.lang("bbs_physics.config.display.debug"), GLFW.GLFW_KEY_F5, GLFW.GLFW_KEY_LEFT_SHIFT)
         .categoryKey("bbs_physics").category(L10n.lang("keybinds.config.bbs_physics.title"));
 
-    public static final KeyCombo CALCULATE = new KeyCombo("calculate",
-        L10n.lang("bbs_physics.calculate"), GLFW.GLFW_KEY_R, GLFW.GLFW_KEY_LEFT_CONTROL, GLFW.GLFW_KEY_LEFT_SHIFT)
+    /** Locks the film's physics or unlocks it. The id of the old "Calculate physics" it replaces, so a key set for that stays. */
+    public static final KeyCombo LOCK = new KeyCombo("calculate",
+        L10n.lang("bbs_physics.lock"), GLFW.GLFW_KEY_R, GLFW.GLFW_KEY_LEFT_CONTROL, GLFW.GLFW_KEY_LEFT_SHIFT)
         .categoryKey("bbs_physics").category(L10n.lang("keybinds.config.bbs_physics.title"));
 
     /** Move only the previous default, once; preserve custom assignments. */
@@ -24,10 +25,10 @@ public final class PhysicsKeybinds
         var keys = settings.get("keybinds");
         var physics = settings.get(wemppy.bbs_physics.BBSPhysics.MOD_ID);
         if (keys == null || physics == null) return;
-        if (CALCULATE.keys.equals(java.util.List.of(GLFW.GLFW_KEY_F5,
+        if (LOCK.keys.equals(java.util.List.of(GLFW.GLFW_KEY_F5,
             GLFW.GLFW_KEY_LEFT_CONTROL, GLFW.GLFW_KEY_LEFT_SHIFT)))
         {
-            CALCULATE.keys.set(0, GLFW.GLFW_KEY_R);
+            LOCK.keys.set(0, GLFW.GLFW_KEY_R);
             keys.save();
         }
         migrated.set(true);

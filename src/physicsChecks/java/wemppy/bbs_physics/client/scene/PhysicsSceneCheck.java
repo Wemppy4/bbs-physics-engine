@@ -91,6 +91,18 @@ public final class PhysicsSceneCheck
         require(loaded.gravity.get() == PhysicsWorld.EARTH_GRAVITY && loaded.collisionSteps.get() == PhysicsWorld.COLLISION_STEPS
             && loaded.worldBelow.get() == 32, "Reset must restore the defaults");
 
+        /* The lock travels with the film, but is not a knob: no edit of it takes a recording back,
+         * a kept recording is not checked against it, and a reset leaves it alone. */
+        physics.locked.set(true);
+        loaded.fromData(physics.toData());
+        require(loaded.locked.get(), "The physics lock must survive saving");
+        require(!physics.knobs().has(FilmPhysics.LOCKED) && physics.knobs().has("gravity"),
+            "What a recording is made from must leave the lock out");
+        loaded.resetAll();
+        require(loaded.locked.get(), "Reset must leave the lock alone");
+        require(!SceneEdits.matters(List.of(FilmPhysics.KEY, FilmPhysics.LOCKED)) && SceneEdits.matters(List.of(FilmPhysics.KEY, "gravity")),
+            "Locking must not count as a physics edit");
+
         FilmPhysics absent = FilmPhysics.of(null);
         require(absent.gravity.get() == PhysicsWorld.EARTH_GRAVITY && absent.speed.get() == 1F && absent.worldRadius.get() == 32,
             "A film without knobs must read the defaults");

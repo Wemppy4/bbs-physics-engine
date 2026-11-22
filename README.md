@@ -119,13 +119,18 @@ point, or the client half of this addon will not load.
 ### Settings
 
 Under **Physics** in BBS's settings, only what is personal to whoever is editing. **General**: the
-master switch — off, and the addon costs nothing — and manual calculation. **Display**: the markup
+master switch — off, and the addon costs nothing. **Display**: the markup
 in the form editor and a debug overlay that draws the shapes the simulation actually works with.
 
 What the simulation computes belongs to the film, so a film comes out the same on every machine:
 **gear menu → Film physics** in the film editor. Gravity — where half of Earth's reads as slow motion
 without touching a single keyframe — speed, precision and how much of the world around the scene
 takes part, each a named preset with a custom value one step further.
+
+The same panel locks the film's physics — so does a click on the physics badge in the preview, or
+Ctrl+Shift+R: it is recorded to the end of the film and kept exactly as it is, whatever is edited,
+until it is unlocked. A locked recording is kept on disk and is what the editor, the world and an
+exported video all show.
 
 ### Structure destruction
 

@@ -67,8 +67,9 @@ public final class SceneEdits
     {
         if (path.contains(FilmPhysics.KEY))
         {
-            /* The film's own physics knobs: gravity, speed, precision, the world around. */
-            return true;
+            /* The film's own physics knobs: gravity, speed, precision, the world around. The lock
+             * is not one of them: it says when the recording is made, not what it comes out as. */
+            return !FilmPhysics.LOCKED.equals(path.get(path.size() - 1));
         }
 
         int replays = path.indexOf("replays");

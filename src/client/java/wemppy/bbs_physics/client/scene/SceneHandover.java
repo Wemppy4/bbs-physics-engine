@@ -67,6 +67,17 @@ final class SceneHandover
     boolean stale;
     int staleFrom;
 
+    /**
+     * Whether the recording was locked, and what the lock carries — see {@link FilmScene#isHeld}. A
+     * locked recording stands whatever is edited, so an edit that would start it over only waits
+     * ({@code pending}) for the lock to come off.
+     */
+    boolean held;
+    boolean pending;
+    boolean outdated;
+    FilmScene.Made made;
+    RecordingStore.Stored unchecked;
+
     /** Whether a scene took this handover on, which makes the ground its own to keep or let go of. */
     boolean taken;
 
@@ -120,11 +131,23 @@ final class SceneHandover
 
         if (tick <= 0)
         {
-            this.stale = true;
+            if (this.held)
+            {
+                this.pending = true;
+            }
+            else
+            {
+                this.stale = true;
+            }
         }
         else if (tick != SceneChanges.NONE)
         {
             this.staleFrom = Math.min(this.staleFrom, tick);
+        }
+
+        if (this.held && tick != SceneChanges.NONE)
+        {
+            this.outdated = true;
         }
 
         return change;
