@@ -283,12 +283,6 @@ public class FilmScene implements AutoCloseable
     /** What the locked recording was made from — see {@link Made}. */
     private Made made;
 
-    /**
-     * The file a locked recording was taken whole from before its first second was recorded afresh
-     * and compared — see {@link #takeStored}. Unlocked unedited, it goes through that check after all.
-     */
-    private RecordingStore.Stored unchecked;
-
     /** The file the film's locked recording is read from while the scene is put up, or null. */
     private RecordingStore.Stored lockedFile;
 
@@ -1043,7 +1037,6 @@ public class FilmScene implements AutoCloseable
         this.held = true;
         this.loose = false;
         this.outdated = false;
-        this.unchecked = null;
         this.stored = null;
         this.made = new Made(this.filmFingerprint(), RecordingStore.assets(this.actorForms()));
 
@@ -1051,14 +1044,10 @@ public class FilmScene implements AutoCloseable
     }
 
     /**
-     * Picks up the film's lock: a lock taken off lets the recording go back to following the film.
-     * A lock put on needs nothing here — the recording runs to the end first, and {@link #settle}
-     * locks it there.
-     *
-     * <p>What was edited while it was locked is answered as any edit is, from the first tick it
-     * changes — the world still stands where the recording ends. Not so for a recording taken loose
-     * (see {@link #loose}), which starts over; and a recording taken whole from disk without its first
-     * second checked goes through that check now, or starts over if something was edited since.</p>
+     * Picks up the film's lock: a lock taken off is the author asking for the physics again, so the
+     * recording starts over from the opening frame with the film as it is now — edited since or not,
+     * and never from a file on disk, which would only hand the same recording back. A lock put on
+     * needs nothing here — the recording runs to the end first, and {@link #settle} locks it there.
      */
     private void followLock()
     {
@@ -1068,27 +1057,10 @@ public class FilmScene implements AutoCloseable
         }
 
         this.held = false;
-
-        if (this.loose)
-        {
-            this.stale = true;
-        }
-        else if (this.unchecked != null)
-        {
-            /* Recorded afresh from the opening frame, the first second is compared with the file
-             * again and the rest of it taken, exactly as a film opened unlocked is. Edited since, it
-             * is not the film's any more, and nothing is picked up from a recording never checked. */
-            if (!this.outdated && !this.isStale())
-            {
-                this.stored = this.unchecked;
-            }
-
-            this.stale = true;
-        }
-
+        this.stale = true;
+        this.stored = null;
         this.loose = false;
         this.outdated = false;
-        this.unchecked = null;
         this.made = null;
         this.editedAt = System.nanoTime();
     }
@@ -1158,7 +1130,7 @@ public class FilmScene implements AutoCloseable
     /**
      * Locks the recording kept on disk for this locked film. Whole, with the world standing where it
      * ends, when it passes every check {@link #storedCandidate} makes — all but the first second
-     * recorded afresh, which a locked film does not record (see {@link #unchecked}). Loose otherwise:
+     * recorded afresh, which a locked film does not record. Loose otherwise:
      * the film it was made from is not this one, which is what a lock is for.
      */
     private void holdStored(RecordingStore.Stored stored)
@@ -1170,7 +1142,6 @@ public class FilmScene implements AutoCloseable
             if (this.unlike(stored) == null && this.holdWhole(stored))
             {
                 this.made = made;
-                this.unchecked = stored;
 
                 BBSPhysics.LOGGER.info("Physics scene for film \"{}\" took its locked recording kept on disk: {} ticks.",
                     this.film.getId(), this.cache.getComputed());
@@ -2036,7 +2007,6 @@ public class FilmScene implements AutoCloseable
         handover.pending = this.held && this.stale;
         handover.outdated = this.outdated;
         handover.made = this.made;
-        handover.unchecked = this.unchecked;
 
         this.groundHandedOver = true;
 
@@ -2099,7 +2069,6 @@ public class FilmScene implements AutoCloseable
             this.stale = given.pending;
             this.outdated = given.outdated;
             this.made = given.made;
-            this.unchecked = given.unchecked;
         }
 
         /* Everything was just moved to where the scene before had it; whatever is drawn next is a

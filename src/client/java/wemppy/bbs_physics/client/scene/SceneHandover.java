@@ -76,7 +76,6 @@ final class SceneHandover
     boolean pending;
     boolean outdated;
     FilmScene.Made made;
-    RecordingStore.Stored unchecked;
 
     /** Whether a scene took this handover on, which makes the ground its own to keep or let go of. */
     boolean taken;
