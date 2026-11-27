@@ -6,11 +6,12 @@ import com.github.stephengold.joltjni.RVec3;
 import com.github.stephengold.joltjni.SwingTwistConstraintSettings;
 import com.github.stephengold.joltjni.TwoBodyConstraintSettings;
 import com.github.stephengold.joltjni.Vec3;
-import mchorse.bbs_mod.cubic.data.model.ModelGroup;
+import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import mchorse.bbs_mod.utils.StringUtils;
 import wemppy.bbs_physics.client.scene.FilmScene;
+import wemppy.bbs_physics.client.scene.ModelBones;
 import wemppy.bbs_physics.engine.PhysicsMath;
 import wemppy.bbs_physics.ragdoll.RagdollJoint;
 import wemppy.bbs_physics.ragdoll.RagdollJointKind;
@@ -19,7 +20,6 @@ import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
-import java.util.Map;
 
 /**
  * Describing one joint of a ragdoll to Jolt: where it sits, which way it bends, and how far.
@@ -61,7 +61,7 @@ public final class RagdollJoints
      * @param scene      the scene, for the origin every point handed to Jolt is measured from
      */
     public static Built build(RagdollJoint joint, String bone, String bonePath, String parentBone, String parentPath,
-        String formPath, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, float friction)
+        String formPath, IModel model, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, float friction)
     {
         MatrixCacheEntry entry = matrices.get(bonePath);
 
@@ -83,7 +83,7 @@ public final class RagdollJoints
         {
             case FIXED -> new Built(weld(world, parentPath, matrices, actorWorld), null);
             case HINGE -> new Built(hinge(joint, world, point, friction), null);
-            default -> cone(joint, bone, parentBone, pivot, point, formPath, groups, matrices, actorWorld, friction);
+            default -> cone(joint, bone, parentBone, pivot, point, formPath, model, matrices, actorWorld, friction);
         };
     }
 
@@ -153,10 +153,10 @@ public final class RagdollJoints
      * direction — see {@link #boneDirection}.
      */
     private static Built cone(RagdollJoint joint, String bone, String parentBone, Vector3f pivot, RVec3 point,
-        String formPath, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld, float friction)
+        String formPath, IModel model, MatrixCache matrices, Matrix4f actorWorld, float friction)
     {
         SwingTwistConstraintSettings cone = new SwingTwistConstraintSettings();
-        Vector3f axis = boneDirection(bone, parentBone, pivot, formPath, groups, matrices, actorWorld);
+        Vector3f axis = boneDirection(bone, parentBone, pivot, formPath, model, matrices, actorWorld);
         Vector3f plane = PhysicsMath.perpendicular(axis);
 
         cone.setPosition1(point);
@@ -202,21 +202,17 @@ public final class RagdollJoints
      * world up, which at least never crashes a build.
      */
     private static Vector3f boneDirection(String bone, String parentBone, Vector3f pivot,
-        String formPath, Map<String, ModelGroup> groups, MatrixCache matrices, Matrix4f actorWorld)
+        String formPath, IModel model, MatrixCache matrices, Matrix4f actorWorld)
     {
         Vector3f from = new Vector3f(pivot);
-        ModelGroup group = groups.get(bone);
 
-        if (group != null)
+        for (String child : ModelBones.children(model, bone))
         {
-            for (ModelGroup child : group.children)
-            {
-                Vector3f to = pivotOf(child.id, formPath, matrices, actorWorld);
+            Vector3f to = pivotOf(child, formPath, matrices, actorWorld);
 
-                if (to != null && to.distanceSquared(from) > 1.0e-6F)
-                {
-                    return to.sub(from).normalize();
-                }
+            if (to != null && to.distanceSquared(from) > 1.0e-6F)
+            {
+                return to.sub(from).normalize();
             }
         }
 

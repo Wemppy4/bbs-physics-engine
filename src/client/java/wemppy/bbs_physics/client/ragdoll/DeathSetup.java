@@ -1,6 +1,6 @@
 package wemppy.bbs_physics.client.ragdoll;
 
-import mchorse.bbs_mod.cubic.data.model.Model;
+import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.film.replays.Replay;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
@@ -16,6 +16,7 @@ import mchorse.bbs_mod.ui.framework.elements.overlay.UIMessageOverlayPanel;
 import mchorse.bbs_mod.ui.framework.elements.overlay.UIOverlay;
 import wemppy.bbs_physics.client.collision.ChainBones;
 import wemppy.bbs_physics.client.collision.CollisionShapes;
+import wemppy.bbs_physics.client.scene.ModelBones;
 import wemppy.bbs_physics.collision.*;
 import wemppy.bbs_physics.forms.PhysicsForms;
 import wemppy.bbs_physics.forms.PhysicsType;
@@ -107,16 +108,17 @@ public final class DeathSetup
     {
         if (!(form instanceof ModelForm model)) return false;
         var instance = ModelFormRenderer.getModel(model);
-        if (instance == null || !(instance.model instanceof Model cubic)) return false;
+        IModel bones = instance == null ? null : instance.model;
+        if (!ModelBones.isPosable(bones)) return false;
         FormCollision collision = FormCollisions.get(model);
         if (collision.isEmpty())
         {
             // Known player models get the same geometry-based markup as the collision editor.
             if (!model.model.get().startsWith("player/")) return false;
-            var chains = ChainBones.of(model, cubic);
-            for (String bone : cubic.getAllGroupKeys())
+            var chains = ChainBones.of(model, bones);
+            for (String bone : bones.getAllGroupKeys())
             {
-                if (!chains.contains(bone) && CollisionShapes.boneSize(cubic, bone, instance.getScale()) > 0.1F)
+                if (!chains.contains(bone) && CollisionShapes.boneSize(bones, bone, instance.getScale()) > 0.1F)
                     collision = collision.with(bone, CollisionSlot.AUTO);
             }
             if (collision.isEmpty()) return false;
@@ -137,9 +139,9 @@ public final class DeathSetup
         boolean hasBone = false;
         for (String bone : collision.slots().keySet())
         {
-            if (!bone.isEmpty() && configured.isPart(bone) && cubic.getAllGroupKeys().contains(bone)
+            if (!bone.isEmpty() && configured.isPart(bone) && bones.getAllGroupKeys().contains(bone)
                 && !collision.get(bone).isEmpty()
-                && (collision.get(bone).mode() == CollisionMode.SHAPES || CollisionShapes.boneSize(cubic, bone, instance.getScale()) > 0F))
+                && (collision.get(bone).mode() == CollisionMode.SHAPES || CollisionShapes.boneSize(bones, bone, instance.getScale()) > 0F))
             {
                 hasBone = true;
                 break;

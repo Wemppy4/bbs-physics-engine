@@ -1,14 +1,12 @@
 package wemppy.bbs_physics.client.ragdoll;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import mchorse.bbs_mod.cubic.ModelInstance;
-import mchorse.bbs_mod.cubic.data.model.Model;
+import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.forms.FormUtils;
 import mchorse.bbs_mod.forms.FormUtilsClient;
 import mchorse.bbs_mod.forms.entities.IEntity;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
-import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import wemppy.bbs_physics.BBSPhysics;
 import wemppy.bbs_physics.BBSPhysicsSettings;
@@ -20,6 +18,7 @@ import wemppy.bbs_physics.ragdoll.FormRagdoll;
 import wemppy.bbs_physics.ragdoll.FormRagdolls;
 import wemppy.bbs_physics.ragdoll.RagdollJoint;
 import wemppy.bbs_physics.ragdoll.RagdollJointKind;
+import wemppy.bbs_physics.client.scene.ModelBones;
 import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -86,10 +85,9 @@ public final class RagdollPreview
             return;
         }
 
-        ModelInstance instance = ModelFormRenderer.getModel(modelForm);
-        Model model = instance != null && instance.model instanceof Model cubic ? cubic : null;
+        IModel model = ModelBones.of(modelForm);
 
-        if (model == null)
+        if (!ModelBones.isPosable(model))
         {
             return;
         }
@@ -247,7 +245,7 @@ public final class RagdollPreview
      * built. A bone that ends up in neither list draws nothing, and correctly so: it stays a
      * kinematic body riding the animation, with no joint and nothing to be welded into.
      */
-    private static List<CollisionCollector.Piece> bonePieces(Form form, MatrixCache matrices, Model model, String prefix, FormChain chains)
+    private static List<CollisionCollector.Piece> bonePieces(Form form, MatrixCache matrices, IModel model, String prefix, FormChain chains)
     {
         List<CollisionCollector.Piece> pieces = new ArrayList<>();
 
@@ -257,7 +255,7 @@ public final class RagdollPreview
              * the form's shape, not a bone, and it never becomes a ragdoll part. A bone the chain
              * modifier claims is not one either — the scene hands those to the strands before the
              * ragdoll gets to choose, and a preview that showed a joint there would lie. */
-            if (RagdollWelds.isBonePiece(piece, prefix) && model.getGroup(piece.label()) != null && !chains.claims(piece.label()))
+            if (RagdollWelds.isBonePiece(piece, prefix) && ModelBones.has(model, piece.label()) && !chains.claims(piece.label()))
             {
                 pieces.add(piece);
             }

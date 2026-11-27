@@ -1,8 +1,12 @@
 package wemppy.bbs_physics.client.ragdoll;
 
+import mchorse.bbs_mod.bobj.BOBJArmature;
+import mchorse.bbs_mod.bobj.BOBJBone;
+import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.cubic.ModelInstance;
 import mchorse.bbs_mod.cubic.data.model.Model;
 import mchorse.bbs_mod.cubic.data.model.ModelGroup;
+import mchorse.bbs_mod.cubic.model.bobj.BOBJModel;
 import mchorse.bbs_mod.forms.forms.Form;
 import wemppy.bbs_physics.chain.FormChains;
 import wemppy.bbs_physics.client.scene.PoseEvaluation;
@@ -11,6 +15,9 @@ import wemppy.bbs_physics.ragdoll.RagdollState;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Substitutes the ragdoll's simulated pose into a model at draw time.
@@ -87,7 +94,9 @@ public final class RagdollPoseApplier
     {
         chainStretch = false;
 
-        if (evaluating || form == null || instance == null || !(instance.model instanceof Model cubic))
+        IModel model = instance == null ? null : instance.model;
+
+        if (evaluating || form == null || !(model instanceof Model || model instanceof BOBJModel))
         {
             return;
         }
@@ -102,17 +111,17 @@ public final class RagdollPoseApplier
          * modifier claims bones the ragdoll does not have shapes for). */
         if (PoseEvaluation.allows(form, PoseEvaluation.Kind.RAGDOLL))
         {
-            walk(cubic, FormRagdolls.getState(form), transition);
+            walk(model, FormRagdolls.getState(form), transition);
         }
 
         if (PoseEvaluation.allows(form, PoseEvaluation.Kind.CHAIN))
         {
-            walk(cubic, FormChains.getState(form), transition);
+            walk(model, FormChains.getState(form), transition);
         }
     }
 
     /** One state's substitution pass, when it has anything to say about this frame. */
-    private static void walk(Model cubic, RagdollState state, float transition)
+    private static void walk(IModel model, RagdollState state, float transition)
     {
         if (state == null || !state.isActive() || state.getWeight(transition) <= 0F)
         {
@@ -125,9 +134,16 @@ public final class RagdollPoseApplier
         chainStretch = true;
         PoseEvaluation.noteTakenIn();
 
+        if (model instanceof BOBJModel bobj)
+        {
+            new BobjWalker(state, transition).walk(bobj.getArmature());
+
+            return;
+        }
+
         Walker walker = new Walker(state, transition);
 
-        for (ModelGroup group : cubic.topGroups)
+        for (ModelGroup group : ((Model) model).topGroups)
         {
             walker.walk(group, new Matrix4f());
         }
@@ -244,6 +260,129 @@ public final class RagdollPoseApplier
             /* Along the shorter arc, so a bone half a turn from its keyframes fades the near way
              * round rather than through the character. */
             group.orient = group.evaluatedRotation().slerp(this.simulated, this.weight);
+        }
+
+        private static float mix(float animated, float simulated, float weight)
+        {
+            return animated + (simulated - animated) * weight;
+        }
+    }
+
+    /**
+     * The same substitution for a BOBJ armature, mirroring {@code BOBJBone.computeMatrix} instead of
+     * the cubic walk.
+     *
+     * <p>Two things differ from the cubic bones, and both are BBS's. <b>The frame:</b> the recording
+     * holds every bone's frame behind the model's half turn (the rig's base carries it, and a BOBJ
+     * bone's cache frame has none on its right to take off), so the turn is put back here and the
+     * walk runs in the armature's own space. <b>The shift:</b> a BOBJ bone's {@code offset} is not a
+     * move in its parent's frame but the bone's whole shift in armature space, applied to its skin
+     * alone — the skeleton frames stay where the channels put them, so a child never inherits its
+     * parent's shift by itself. The walk hands it down instead: every bone below a shifted one is
+     * moved by what its parent was moved by, which is what keeps a hand on an arm that fell
+     * somewhere the animation never had it.</p>
+     */
+    static class BobjWalker
+    {
+        private final RagdollState state;
+        private final float transition;
+
+        /** Each bone's frame as the renderer is about to compose it, substitutions included. */
+        private final Map<BOBJBone, Matrix4f> frames = new HashMap<>();
+
+        /** What this walk added to each bone's shift — handed down to the bones below it. */
+        private final Map<BOBJBone, Vector3f> moved = new HashMap<>();
+
+        private final Vector3f position = new Vector3f();
+        private final Quaternionf rotation = new Quaternionf();
+        private final Quaternionf parentRotation = new Quaternionf();
+        private final Quaternionf simulated = new Quaternionf();
+        private final Vector3f nominal = new Vector3f();
+
+        BobjWalker(RagdollState state, float transition)
+        {
+            this.state = state;
+            this.transition = transition;
+        }
+
+        /** Parents before children: the armature keeps its bones in the order it computes them. */
+        void walk(BOBJArmature armature)
+        {
+            for (BOBJBone bone : armature.orderedBones)
+            {
+                if (bone == null)
+                {
+                    continue;
+                }
+
+                Matrix4f parent = bone.parentBone == null ? null : this.frames.get(bone.parentBone);
+                Vector3f inherited = bone.parentBone == null ? null : this.moved.get(bone.parentBone);
+
+                /* computeMatrix's order: the parent's frame, the rest offset from it, the channel
+                 * translate — then the rotation and scale, which are what this walk may replace. */
+                Matrix4f frame = parent == null ? new Matrix4f() : new Matrix4f(parent);
+
+                frame.mul(bone.relBoneMat).translate(bone.transform.translate);
+
+                Vector3f before = bone.offset == null ? new Vector3f() : new Vector3f(bone.offset);
+                Vector3f animated = new Vector3f(before);
+
+                if (inherited != null)
+                {
+                    animated.add(inherited);
+                }
+
+                float weight = this.state.get(bone.name, this.transition, this.position, this.rotation)
+                    ? this.state.getWeight(bone.name, this.transition) : 0F;
+
+                if (weight > 0F)
+                {
+                    this.substitute(bone, frame, animated, weight);
+                }
+                else if (inherited != null)
+                {
+                    bone.offset = animated;
+                }
+
+                if (bone.offset != null && !bone.offset.equals(before))
+                {
+                    this.moved.put(bone, new Vector3f(bone.offset).sub(before));
+                }
+
+                frame.rotate(bone.evaluatedRotation()).scale(bone.transform.scale);
+                this.frames.put(bone, frame);
+            }
+        }
+
+        /**
+         * Solves the local rotation and the armature-space shift that land the bone where the
+         * simulation has it, blended into what the pipeline had by the weight — the cubic walk's
+         * {@code substitute}, in BOBJ's terms.
+         *
+         * @param frame    the bone's frame before its own rotation: where its head is, and what the
+         *                 rotation it is given is composed onto
+         * @param animated the shift the bone has with no substitution of its own — the IK stretch's,
+         *                 plus whatever was handed down from above
+         */
+        private void substitute(BOBJBone bone, Matrix4f frame, Vector3f animated, float weight)
+        {
+            /* Into the armature's space: the half turn about Y negates X and Z, and is composed onto
+             * the rotation from the left. */
+            this.position.set(-this.position.x, this.position.y, -this.position.z);
+            this.rotation.premul(new Quaternionf(0F, 1F, 0F, 0F)).normalize();
+
+            frame.getTranslation(this.nominal);
+
+            bone.offset = new Vector3f(
+                mix(animated.x, this.position.x - this.nominal.x, weight),
+                mix(animated.y, this.position.y - this.nominal.y, weight),
+                mix(animated.z, this.position.z - this.nominal.z, weight));
+
+            /* Unnormalized read because ancestor scale rides the frame, as in the cubic walk. */
+            frame.getUnnormalizedRotation(this.parentRotation);
+            this.parentRotation.conjugate().mul(this.rotation, this.simulated).normalize();
+
+            bone.orient = bone.evaluatedRotation().slerp(this.simulated, weight);
         }
 
         private static float mix(float animated, float simulated, float weight)

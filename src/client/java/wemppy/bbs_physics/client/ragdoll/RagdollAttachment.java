@@ -1,13 +1,13 @@
 package wemppy.bbs_physics.client.ragdoll;
 
-import mchorse.bbs_mod.cubic.data.model.Model;
-import mchorse.bbs_mod.cubic.data.model.ModelGroup;
+import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import wemppy.bbs_physics.client.collision.CollisionCollector;
 import wemppy.bbs_physics.client.collision.CollisionShapes;
 import wemppy.bbs_physics.collision.CollisionKind;
 import wemppy.bbs_physics.ragdoll.FormRagdoll;
+import wemppy.bbs_physics.client.scene.ModelBones;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -56,7 +56,7 @@ public final class RagdollAttachment
      * @return bone name → parent bone name. A bone missing from the map is the trunk: it hangs off
      *         nothing, which is correct for exactly one part per ragdoll
      */
-    public static Map<String, String> resolve(FormRagdoll config, List<CollisionCollector.Piece> pieces, Model model, MatrixCache matrices, Matrix4f actorWorld)
+    public static Map<String, String> resolve(FormRagdoll config, List<CollisionCollector.Piece> pieces, IModel model, MatrixCache matrices, Matrix4f actorWorld)
     {
         Map<String, CollisionCollector.Piece> byBone = new LinkedHashMap<>();
 
@@ -75,7 +75,7 @@ public final class RagdollAttachment
 
             if (chosen == null)
             {
-                chosen = nearestMarkedAncestor(model == null ? null : model.getGroup(bone), byBone);
+                chosen = nearestMarkedAncestor(model, bone, byBone);
             }
 
             if (chosen != null)
@@ -233,18 +233,18 @@ public final class RagdollAttachment
     }
 
     /** Walks up the model's bone tree to the first ancestor that is itself a marked part. */
-    private static String nearestMarkedAncestor(ModelGroup group, Map<String, CollisionCollector.Piece> byBone)
+    private static String nearestMarkedAncestor(IModel model, String bone, Map<String, CollisionCollector.Piece> byBone)
     {
-        ModelGroup parent = group == null ? null : group.parent;
+        String parent = ModelBones.parent(model, bone);
 
         while (parent != null)
         {
-            if (byBone.containsKey(parent.id))
+            if (byBone.containsKey(parent))
             {
-                return parent.id;
+                return parent;
             }
 
-            parent = parent.parent;
+            parent = ModelBones.parent(model, parent);
         }
 
         return null;

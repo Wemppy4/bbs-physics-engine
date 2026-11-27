@@ -1,13 +1,11 @@
 package wemppy.bbs_physics.client.ragdoll;
 
-import mchorse.bbs_mod.cubic.ModelInstance;
-import mchorse.bbs_mod.cubic.data.model.Model;
-import mchorse.bbs_mod.cubic.data.model.ModelGroup;
+import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.forms.forms.ModelForm;
-import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.utils.StringUtils;
 import wemppy.bbs_physics.client.collision.CollisionCollector;
 import wemppy.bbs_physics.ragdoll.FormRagdoll;
+import wemppy.bbs_physics.client.scene.ModelBones;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -60,12 +58,10 @@ public final class RagdollWelds
         return !piece.path().equals(formPath) && piece.path().equals(StringUtils.combinePaths(formPath, piece.label()));
     }
 
-    /** As {@link #resolve(FormRagdoll, List, String, Model)}, for callers holding the form. */
+    /** As {@link #resolve(FormRagdoll, List, String, IModel)}, for callers holding the form. */
     public static Map<String, String> resolve(FormRagdoll config, List<CollisionCollector.Piece> pieces, String formPath, ModelForm form)
     {
-        ModelInstance instance = form == null ? null : ModelFormRenderer.getModel(form);
-
-        return resolve(config, pieces, formPath, instance != null && instance.model instanceof Model cubic ? cubic : null);
+        return resolve(config, pieces, formPath, ModelBones.of(form));
     }
 
     /**
@@ -74,7 +70,7 @@ public final class RagdollWelds
      * @return welded bone name → owning part's bone name. A bone absent from the map is either a
      *         falling part itself or a kinematic bone; both are somebody else's business
      */
-    public static Map<String, String> resolve(FormRagdoll config, List<CollisionCollector.Piece> pieces, String formPath, Model model)
+    public static Map<String, String> resolve(FormRagdoll config, List<CollisionCollector.Piece> pieces, String formPath, IModel model)
     {
         if (model == null || pieces == null || pieces.isEmpty())
         {
@@ -100,7 +96,7 @@ public final class RagdollWelds
                 continue;
             }
 
-            String owner = nearestPart(model.getGroup(bone), marked, config);
+            String owner = nearestPart(model, bone, marked, config);
 
             if (owner != null)
             {
@@ -116,18 +112,18 @@ public final class RagdollWelds
      * the ragdoll. Ancestors that are neither — unmarked bones, and welded ones, which are about to
      * end up in this same body — are walked straight through.
      */
-    private static String nearestPart(ModelGroup group, Set<String> marked, FormRagdoll config)
+    private static String nearestPart(IModel model, String bone, Set<String> marked, FormRagdoll config)
     {
-        ModelGroup parent = group == null ? null : group.parent;
+        String parent = ModelBones.parent(model, bone);
 
         while (parent != null)
         {
-            if (marked.contains(parent.id) && config.isPart(parent.id))
+            if (marked.contains(parent) && config.isPart(parent))
             {
-                return parent.id;
+                return parent;
             }
 
-            parent = parent.parent;
+            parent = ModelBones.parent(model, parent);
         }
 
         return null;

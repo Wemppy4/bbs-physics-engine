@@ -242,6 +242,16 @@ tasks.named('check') {
 	dependsOn physicsThreadsCheck
 }
 
+tasks.register('physicsBobjPoseCheck', JavaExec) {
+	dependsOn physicsChecksClasses
+	classpath = sourceSets.physicsChecks.runtimeClasspath
+	mainClass = 'wemppy.bbs_physics.client.ragdoll.BobjPoseCheck'
+}
+
+tasks.named('check') {
+	dependsOn physicsBobjPoseCheck
+}
+
 publishing {
 	publications {
 		mavenJava(MavenPublication) {

@@ -1,8 +1,10 @@
 package wemppy.bbs_physics.client.scene;
 
+import mchorse.bbs_mod.bobj.BOBJBone;
+import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.cubic.ModelInstance;
-import mchorse.bbs_mod.cubic.data.model.Model;
-import mchorse.bbs_mod.cubic.data.model.ModelGroup;
+import mchorse.bbs_mod.cubic.RigBone;
+import mchorse.bbs_mod.cubic.model.bobj.BOBJModel;
 import mchorse.bbs_mod.film.Film;
 import mchorse.bbs_mod.film.replays.tracks.TrackId;
 import mchorse.bbs_mod.film.replays.Replay;
@@ -253,7 +255,9 @@ public final class PhysicsBake
             ModelForm form = entry.getKey();
             ModelInstance instance = ModelFormRenderer.getModel(form);
 
-            if (instance == null || !(instance.model instanceof Model cubic) || !(FormUtilsClient.getRenderer(form) instanceof ModelFormRenderer renderer))
+            IModel model = instance == null ? null : instance.model;
+
+            if (!ModelBones.isPosable(model) || !(FormUtilsClient.getRenderer(form) instanceof ModelFormRenderer renderer))
             {
                 continue;
             }
@@ -261,34 +265,42 @@ public final class PhysicsBake
             RagdollState ragdoll = FormRagdolls.getState(form);
             RagdollState chain = FormChains.getState(form);
             Pose combined = renderer.getPose();
-            Map<ModelGroup, Vector3f> shifts = new HashMap<>();
+            Map<RigBone, Vector3f> shifts = new LinkedHashMap<>();
 
             /* The shift each bone had before the substitution — the IK stretch's, where there was
              * one. The substitution blends on top of it, and the key has to carry only the
              * difference, since the stretch is applied again at draw time. */
-            for (String id : cubic.getAllGroupKeys())
+            for (String id : model.getAllGroupKeys())
             {
-                ModelGroup group = cubic.getGroup(id);
+                RigBone bone = model.getBone(id);
 
-                if (group != null)
+                if (bone != null)
                 {
-                    shifts.put(group, group.offset == null ? new Vector3f() : new Vector3f(group.offset));
+                    shifts.put(bone, bone.getOffset() == null ? new Vector3f() : new Vector3f(bone.getOffset()));
                 }
             }
 
             RagdollPoseApplier.apply(form, instance, 1F);
 
-            for (Map.Entry<ModelGroup, Vector3f> bone : shifts.entrySet())
+            /* A BOBJ shift is read against the skeleton the substitution left, so it is computed
+             * once, with the new rotations in it — see bobjShift. */
+            if (model instanceof BOBJModel bobj)
             {
-                ModelGroup group = bone.getKey();
-                float weight = Math.max(weight(ragdoll, group.id), weight(chain, group.id));
+                bobj.getArmature().setupMatrices();
+            }
 
-                if (!has(ragdoll, group.id) && !has(chain, group.id))
+            for (Map.Entry<RigBone, Vector3f> bone : shifts.entrySet())
+            {
+                RigBone group = bone.getKey();
+                String id = group.getBoneName();
+                float weight = Math.max(weight(ragdoll, id), weight(chain, id));
+
+                if (!has(ragdoll, id) && !has(chain, id))
                 {
                     continue;
                 }
 
-                String key = TrackId.bone(entry.getValue(), group.id).toKey();
+                String key = TrackId.bone(entry.getValue(), id).toKey();
                 PoseTransform old = this.existing(key);
                 PoseTransform value = new PoseTransform();
 
@@ -299,7 +311,7 @@ public final class PhysicsBake
 
                 if (weight > 0F)
                 {
-                    this.solve(group, combined.get(group.id), old, bone.getValue(), value);
+                    this.solve(group, combined.get(id), old, bone.getValue(), value, shifts);
                 }
 
                 this.stage(key, KeyframeFactories.POSE_TRANSFORM, value, weight > 0F);
@@ -317,16 +329,21 @@ public final class PhysicsBake
      * @param old      the track's current value, or null when the track is empty
      * @param before   the bone's shift before the substitution
      * @param value    the key to fill, already holding the old value's colour and the like
+     * @param shifts   every bone's shift before the substitution, for a BOBJ bone's parent
      */
-    private void solve(ModelGroup group, PoseTransform combined, PoseTransform old, Vector3f before, PoseTransform value)
+    private void solve(RigBone group, PoseTransform combined, PoseTransform old, Vector3f before, PoseTransform value, Map<RigBone, Vector3f> shifts)
     {
         /* The animation channels alone: applyPose added the pose's Euler readback onto the
-         * channels, so it is subtracted back out. */
+         * channels, so it is subtracted back out — in the skeleton's own unit, degrees for a cubic
+         * bone and radians for a BOBJ one, which is what applyPose added it in. */
         Vector3f readback = combined == null ? new Vector3f() : combined.getEulerRotation(new Vector3f());
 
-        readback.set((float) Math.toDegrees(readback.x), (float) Math.toDegrees(readback.y), (float) Math.toDegrees(readback.z));
+        if (group.isRotationInDegrees())
+        {
+            readback.set((float) Math.toDegrees(readback.x), (float) Math.toDegrees(readback.y), (float) Math.toDegrees(readback.z));
+        }
 
-        Quaternionf channels = Matrices.toLocalRotationZYXDegrees(new Vector3f(group.current.rotate).sub(readback));
+        Quaternionf channels = group.orientFromEuler(new Vector3f(group.getBoneTransform().rotate).sub(readback));
 
         /* The pose the track is composed onto — the combined pose with the track's own value
          * taken back out. Two Euler poses were added angle by angle, so they are separated the
@@ -358,15 +375,52 @@ public final class PhysicsBake
         value.quat.set(key);
         value.rotate.set(0F, 0F, 0F);
 
+        if (group instanceof BOBJBone bobj)
+        {
+            value.translate.add(bobjShift(bobj, before, shifts));
+
+            return;
+        }
+
         /* The shift, in the parent frame, is applied by the renderer as a translate of the pose
          * channels — sixteenths, with the cubic X flip — so the difference the substitution made
          * goes into the translate on top of whatever the track already moved the bone by. */
-        Vector3f after = group.offset == null ? new Vector3f() : group.offset;
+        Vector3f after = group.getOffset() == null ? new Vector3f() : group.getOffset();
 
         value.translate.add(
             -(after.x - before.x) * 16F,
             (after.y - before.y) * 16F,
             (after.z - before.z) * 16F);
+    }
+
+    /**
+     * The translate a BOBJ bone's key needs to stand where the substitution's shift put it.
+     *
+     * <p>The substitution moves a BOBJ bone by an armature-space shift on its skin, handed down to
+     * every bone below; a key moves it by a translate in its rest frame, which its children follow by
+     * themselves. So the bone's own key carries only what it moved beyond its parent, expressed in
+     * the frame BBS applies the translate in: the parent's frame, as the substitution left it, times
+     * the bone's rest offset ({@code BOBJBone.computeMatrix}). Plain BBS units — blocks, no flip.</p>
+     */
+    private static Vector3f bobjShift(BOBJBone bone, Vector3f before, Map<RigBone, Vector3f> shifts)
+    {
+        Vector3f moved = bone.offset == null ? new Vector3f() : new Vector3f(bone.offset);
+
+        moved.sub(before);
+
+        if (bone.parentBone != null)
+        {
+            Vector3f parentBefore = shifts.getOrDefault(bone.parentBone, new Vector3f());
+            Vector3f parentAfter = bone.parentBone.offset == null ? new Vector3f() : bone.parentBone.offset;
+
+            moved.sub(parentAfter).add(parentBefore);
+        }
+
+        Matrix4f frame = bone.parentBone == null ? new Matrix4f() : new Matrix4f(bone.parentBone.mat);
+
+        frame.mul(bone.relBoneMat).invert();
+
+        return frame.transformDirection(moved);
     }
 
     /**

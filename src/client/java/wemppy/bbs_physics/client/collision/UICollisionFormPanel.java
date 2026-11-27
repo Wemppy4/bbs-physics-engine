@@ -603,7 +603,7 @@ public class UICollisionFormPanel extends UIFormPanel<Form> implements FormEdito
             return;
         }
 
-        Set<String> chains = ChainBones.of(this.form, model instanceof Model cubic ? cubic : null);
+        Set<String> chains = ChainBones.of(this.form, model);
         Vector3f scale = this.model.getScale();
         FormCollision collision = this.collision;
 

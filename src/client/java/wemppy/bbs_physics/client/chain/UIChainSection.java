@@ -1,6 +1,5 @@
 package wemppy.bbs_physics.client.chain;
 
-import mchorse.bbs_mod.cubic.data.model.Model;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIButton;
 import mchorse.bbs_mod.ui.framework.elements.buttons.UIToggle;
@@ -106,14 +105,14 @@ public class UIChainSection extends UIBoneSection
      */
     private void takeFromModel()
     {
-        if (this.form == null || this.model == null || !(this.model.model instanceof Model cubic))
+        if (this.form == null || this.model == null || this.model.model == null)
         {
             return;
         }
 
         Set<String> bones = new LinkedHashSet<>(this.chain.bones());
 
-        bones.addAll(ChainBones.of(this.form, cubic));
+        bones.addAll(ChainBones.of(this.form, this.model.model));
 
         this.editComposition((chain) -> chain.withBones(bones));
     }

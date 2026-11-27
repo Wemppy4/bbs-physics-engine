@@ -16,12 +16,9 @@ import com.github.stephengold.joltjni.enumerate.EMotionQuality;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
 import com.github.stephengold.joltjni.enumerate.EOverrideMassProperties;
 import com.github.stephengold.joltjni.readonly.ConstShape;
-import mchorse.bbs_mod.cubic.ModelInstance;
-import mchorse.bbs_mod.cubic.data.model.Model;
-import mchorse.bbs_mod.cubic.data.model.ModelGroup;
+import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.forms.Form;
-import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import mchorse.bbs_mod.utils.MathUtils;
@@ -67,8 +64,8 @@ import java.util.Map;
  * tick the hair, it swings" true without any collision setup at all.</p>
  *
  * <p><b>The pose comes back exactly the way the ragdoll's does</b>: recorded in the model's flipped
- * group space and substituted into {@code ModelGroup.orient}/{@code offset} between IK and the old
- * chain solver, through the very same applier. Which is also why the old solver has to be silenced
+ * group space and substituted into the bones' {@code orient}/{@code offset} between IK and the old
+ * chain solver, through the very same applier — for cubic and BOBJ models alike. Which is also why the old solver has to be silenced
  * on these bones — see {@code ChainMute}: two owners for one strand is one strand doing neither
  * thing convincingly.</p>
  *
@@ -96,6 +93,20 @@ public class BoneChainRig implements SceneRig
     private final ModelForm form;
     private final String formPath;
     private final RagdollState state = new RagdollState();
+
+    /**
+     * Whether a bone's cache frame carries the cubic half turn on its right, which the recorded
+     * pose takes back off (see {@link #record}). A BOBJ bone's frame does not.
+     */
+    private boolean flipped = true;
+
+    /**
+     * Which way a bone runs in its own frame, for a strand bone with no child to point at and for
+     * the cone the joint leans around. A cubic bone's frame is turned half a circle from the model
+     * (§10.1), so hair hanging down the model hangs along its local down; a BOBJ bone runs along its
+     * local Y from head to tail, as Blender authors it.
+     */
+    private Vector3f along = new Vector3f(0F, -1F, 0F);
 
     private final List<Segment> segments = new ArrayList<>();
     private final List<Joint> joints = new ArrayList<>();
@@ -170,41 +181,36 @@ public class BoneChainRig implements SceneRig
             marked.put(piece.label(), piece);
         }
 
-        ModelInstance instance = ModelFormRenderer.getModel(form);
+        IModel model = ModelBones.of(form);
 
-        if (instance == null)
+        if (model == null)
         {
             BBSPhysics.LOGGER.info("A chain modifier is on '{}', whose model has not finished loading; the scene will be built again when it has.", form.getDisplayName());
 
             return null;
         }
 
-        if (!(instance.model instanceof Model model))
+        if (!ModelBones.isPosable(model))
         {
-            BBSPhysics.LOGGER.warn("A chain modifier is on '{}', but only cubic models can hand the simulated pose back to the renderer; its bones stay animated.", form.getDisplayName());
+            BBSPhysics.LOGGER.warn("A chain modifier is on '{}', but only cubic and BOBJ models can hand the simulated pose back to the renderer; its bones stay animated.", form.getDisplayName());
 
             return null;
         }
 
-        Map<String, ModelGroup> groups = new HashMap<>();
-
-        for (ModelGroup modelGroup : model.getAllGroups())
-        {
-            groups.put(modelGroup.id, modelGroup);
-        }
-
         BoneChainRig chain = new BoneChainRig(form, formPath);
+
+        chain.flipped = ModelBones.flipsBoneFrames(model);
+        chain.along = chain.flipped ? new Vector3f(0F, -1F, 0F) : new Vector3f(0F, 1F, 0F);
         BodyInterface bodies = physics.getBodies();
         Map<String, Segment> byBone = new HashMap<>();
 
         /* The bodies first, every claimed bone that the model actually has and the pose can place. */
         for (String bone : config.bones())
         {
-            ModelGroup boneGroup = groups.get(bone);
             String path = StringUtils.combinePaths(formPath, bone);
             MatrixCacheEntry entry = matrices == null ? null : matrices.get(path);
 
-            if (boneGroup == null || entry == null || entry.matrix() == null)
+            if (!ModelBones.has(model, bone) || entry == null || entry.matrix() == null)
             {
                 continue;
             }
@@ -224,7 +230,7 @@ public class BoneChainRig implements SceneRig
             List<CollisionShapes.SubShape> shapes = piece == null ? null : piece.shapes();
             boolean collides = shapes != null && !shapes.isEmpty();
 
-            Vector3f towards = childDirection(boneGroup, formPath, matrices, entry);
+            Vector3f towards = childDirection(model, bone, chain.along, formPath, matrices, entry);
             float length = Math.max(towards.length(), MIN_LENGTH);
 
             towards.normalize();
@@ -341,17 +347,15 @@ public class BoneChainRig implements SceneRig
 
         for (Segment segment : chain.segments)
         {
-            ModelGroup above = groups.get(segment.bone);
+            String above = ModelBones.parent(model, segment.bone);
             String root = segment.bone;
             int depth = 0;
 
-            above = above == null ? null : above.parent;
-
-            while (above != null && byBone.containsKey(above.id))
+            while (above != null && byBone.containsKey(above))
             {
-                root = above.id;
+                root = above;
                 depth += 1;
-                above = above.parent;
+                above = ModelBones.parent(model, above);
             }
 
             depths.put(segment.bone, depth);
@@ -363,9 +367,8 @@ public class BoneChainRig implements SceneRig
          * kinematic body, or a pin of our own following that bone. */
         for (Segment segment : chain.segments)
         {
-            ModelGroup boneGroup = groups.get(segment.bone);
-            ModelGroup parentGroup = boneGroup == null ? null : boneGroup.parent;
-            Segment parent = parentGroup == null ? null : byBone.get(parentGroup.id);
+            String parentBone = ModelBones.parent(model, segment.bone);
+            Segment parent = parentBone == null ? null : byBone.get(parentBone);
 
             Body anchorBody;
             int anchorSub;
@@ -377,7 +380,7 @@ public class BoneChainRig implements SceneRig
             }
             else
             {
-                Anchor made = chain.anchorFor(physics, parentGroup, formPath, rig, matrices, actorWorld, scene, group);
+                Anchor made = chain.anchorFor(physics, parentBone, formPath, rig, matrices, actorWorld, scene, group);
 
                 if (made == null)
                 {
@@ -410,16 +413,16 @@ public class BoneChainRig implements SceneRig
 
     /**
      * Where this bone's capsule points, in the bone's own frame: towards its first child's pivot.
-     * A leaf — the last bone of a strand — has nothing to point at, so it continues straight down
-     * the bone's own axis, which is where a strand of hair goes anyway.
+     * A leaf — the last bone of a strand — has nothing to point at, so it continues straight along
+     * the bone's own axis ({@code along}), which is where a strand of hair goes anyway.
      */
-    private static Vector3f childDirection(ModelGroup group, String formPath, MatrixCache matrices, MatrixCacheEntry entry)
+    private static Vector3f childDirection(IModel model, String bone, Vector3f along, String formPath, MatrixCache matrices, MatrixCacheEntry entry)
     {
         Matrix4f inverse = new Matrix4f(entry.matrix()).invert();
 
-        for (ModelGroup child : group.children)
+        for (String child : ModelBones.children(model, bone))
         {
-            MatrixCacheEntry childEntry = matrices.get(StringUtils.combinePaths(formPath, child.id));
+            MatrixCacheEntry childEntry = matrices.get(StringUtils.combinePaths(formPath, child));
 
             if (childEntry == null || childEntry.matrix() == null)
             {
@@ -434,7 +437,7 @@ public class BoneChainRig implements SceneRig
             }
         }
 
-        return new Vector3f(0F, -0.15F, 0F);
+        return new Vector3f(along).mul(0.15F);
     }
 
     /**
@@ -446,14 +449,14 @@ public class BoneChainRig implements SceneRig
      * thing anyone marks up, so without it the common case — tick the hair, nothing else — would
      * leave every strand hanging from nothing.</p>
      */
-    private Anchor anchorFor(PhysicsWorld physics, ModelGroup parentGroup, String formPath, BoneRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
+    private Anchor anchorFor(PhysicsWorld physics, String parentBone, String formPath, BoneRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
     {
-        if (parentGroup == null)
+        if (parentBone == null)
         {
             return null;
         }
 
-        String path = StringUtils.combinePaths(formPath, parentGroup.id);
+        String path = StringUtils.combinePaths(formPath, parentBone);
         MatrixCacheEntry entry = matrices == null ? null : matrices.get(path);
 
         if (entry == null || entry.matrix() == null)
@@ -531,9 +534,9 @@ public class BoneChainRig implements SceneRig
             this.translation.y - scene.getOriginY(),
             this.translation.z - scene.getOriginZ());
 
-        /* The cone leans around the strand's own direction at rest — the bone's local down carried
-         * into the world, so a strand keeps whatever way the author combed it. */
-        Vector3f axis = this.orientation.transform(new Vector3f(0F, -1F, 0F)).normalize();
+        /* The cone leans around the strand's own direction at rest — the way the bone runs in its
+         * own frame carried into the world, so a strand keeps whatever way the author combed it. */
+        Vector3f axis = this.orientation.transform(new Vector3f(this.along)).normalize();
         Vector3f plane = PhysicsMath.perpendicular(axis);
 
         SwingTwistConstraintSettings settings = new SwingTwistConstraintSettings();
@@ -899,8 +902,13 @@ public class BoneChainRig implements SceneRig
                 this.orientation);
 
             /* The cubic flip back off the right, the actor and the form off the left — what is left
-             * is the bone's pivot frame in the model's flipped group space (§10.1). */
-            this.poseFrame.rotateY(MathUtils.PI);
+             * is the bone's pivot frame in the model's flipped group space (§10.1). A BOBJ bone's
+             * cache frame has no flip on its right, so nothing comes off it. */
+            if (this.flipped)
+            {
+                this.poseFrame.rotateY(MathUtils.PI);
+            }
+
             this.baseInverse.mul(this.poseFrame, this.poseFrame);
 
             this.poseFrame.getTranslation(this.translation);

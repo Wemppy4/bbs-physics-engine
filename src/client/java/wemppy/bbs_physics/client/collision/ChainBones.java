@@ -1,11 +1,11 @@
 package wemppy.bbs_physics.client.collision;
 
-import mchorse.bbs_mod.cubic.data.model.Model;
-import mchorse.bbs_mod.cubic.data.model.ModelGroup;
+import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.forms.forms.Form;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.forms.utils.FormBone;
 import mchorse.bbs_mod.settings.values.base.BaseValue;
+import wemppy.bbs_physics.client.scene.ModelBones;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -30,7 +30,7 @@ public final class ChainBones
     private ChainBones()
     {}
 
-    public static Set<String> of(Form form, Model model)
+    public static Set<String> of(Form form, IModel model)
     {
         if (!(form instanceof ModelForm modelForm) || model == null)
         {
@@ -61,25 +61,25 @@ public final class ChainBones
      * that works, since a bone knows its parent and a start does not know which of its children the
      * chain went down.
      */
-    private static void collectChain(Model model, String start, String end, Set<String> bones)
+    private static void collectChain(IModel model, String start, String end, Set<String> bones)
     {
         if (end == null || end.isEmpty())
         {
             return;
         }
 
-        ModelGroup group = model.getGroup(end);
+        String bone = ModelBones.has(model, end) ? end : null;
 
-        while (group != null)
+        while (bone != null)
         {
-            bones.add(group.id);
+            bones.add(bone);
 
-            if (group.id.equals(start))
+            if (bone.equals(start))
             {
                 return;
             }
 
-            group = group.parent;
+            bone = ModelBones.parent(model, bone);
         }
     }
 }

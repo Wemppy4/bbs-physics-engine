@@ -16,12 +16,9 @@ import com.github.stephengold.joltjni.enumerate.EAllowedDofs;
 import com.github.stephengold.joltjni.enumerate.EMotionQuality;
 import com.github.stephengold.joltjni.enumerate.EMotionType;
 import com.github.stephengold.joltjni.readonly.ConstShape;
-import mchorse.bbs_mod.cubic.ModelInstance;
-import mchorse.bbs_mod.cubic.data.model.Model;
-import mchorse.bbs_mod.cubic.data.model.ModelGroup;
+import mchorse.bbs_mod.cubic.IModel;
 import mchorse.bbs_mod.forms.forms.ModelForm;
 import mchorse.bbs_mod.forms.forms.Form;
-import mchorse.bbs_mod.forms.renderers.ModelFormRenderer;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCache;
 import mchorse.bbs_mod.forms.renderers.utils.MatrixCacheEntry;
 import mchorse.bbs_mod.utils.MathUtils;
@@ -99,9 +96,10 @@ import java.util.Set;
  * on a ragdolled bone for free: it is faded out with everything else instead of being muted, and
  * the pose the parts are pulled towards includes it either way.</p>
  *
- * <p><b>Cubic models only, for now.</b> The simulated pose is handed back through the model's
- * group frames ({@code orient}/{@code offset}), which BOBJ models do not have — a BOBJ model would
- * fall invisibly, so it does not get a ragdoll at all and its bones stay kinematic.</p>
+ * <p><b>Cubic and BOBJ models alike.</b> The simulated pose is handed back through the bones'
+ * {@code orient}/{@code offset}, which both skeletons carry; the two only differ in how a bone's
+ * frame sits in the matrix cache (the cubic half turn, §10.1), which {@link #record} accounts for,
+ * and in how the renderer composes them, which {@code RagdollPoseApplier} mirrors for each.</p>
  */
 public class RagdollRig implements SceneRig
 {
@@ -207,7 +205,13 @@ public class RagdollRig implements SceneRig
      * The model's bone tree, kept for one question a tear asks: is this neighbour a descendant of
      * the torn bone — hair on a head, riding along — or the rest of the character, being left.
      */
-    private Map<String, ModelGroup> groups = Map.of();
+    private IModel model;
+
+    /**
+     * Whether a bone's cache frame carries the cubic half turn on its right, which the recorded
+     * pose has to take back off (see {@link #record}). A BOBJ bone's frame does not.
+     */
+    private boolean flipped = true;
 
     /** Whether the parts are currently kinematic — the cached side of the motion type switch. */
     private boolean kinematic = true;
@@ -281,9 +285,9 @@ public class RagdollRig implements SceneRig
      */
     public static boolean supports(ModelForm form)
     {
-        ModelInstance instance = ModelFormRenderer.getModel(form);
+        IModel model = ModelBones.of(form);
 
-        if (instance == null)
+        if (model == null)
         {
             /* Not "this model cannot have a ragdoll" — "this model is not here yet". BBS loads
              * models on a thread of its own and hands back null until one arrives, so a scene
@@ -297,9 +301,9 @@ public class RagdollRig implements SceneRig
             return false;
         }
 
-        if (!(instance.model instanceof Model))
+        if (!ModelBones.isPosable(model))
         {
-            BBSPhysics.LOGGER.warn("A ragdoll is enabled on '{}', but only cubic models can hand the simulated pose back to the renderer yet; its bones stay kinematic.", form.getDisplayName());
+            BBSPhysics.LOGGER.warn("A ragdoll is enabled on '{}', but only cubic and BOBJ models can hand the simulated pose back to the renderer; its bones stay kinematic.", form.getDisplayName());
 
             return false;
         }
@@ -325,19 +329,11 @@ public class RagdollRig implements SceneRig
      */
     public static RagdollRig build(PhysicsWorld physics, ModelForm form, String formPath, List<CollisionCollector.Piece> pieces, Map<String, String> welds, List<CollisionCollector.Piece> kinematic, BoneRig rig, MatrixCache matrices, Matrix4f actorWorld, FilmScene scene, ActorCollisionGroup group)
     {
-        ModelInstance instance = ModelFormRenderer.getModel(form);
-        Model model = instance != null && instance.model instanceof Model cubic ? cubic : null;
+        IModel model = ModelBones.of(form);
 
-        if (model == null || pieces.isEmpty())
+        if (!ModelBones.isPosable(model) || pieces.isEmpty())
         {
             return null;
-        }
-
-        Map<String, ModelGroup> groups = new HashMap<>();
-
-        for (ModelGroup modelGroup : model.getAllGroups())
-        {
-            groups.put(modelGroup.id, modelGroup);
         }
 
         FormRagdoll config = FormRagdolls.get(form);
@@ -346,7 +342,8 @@ public class RagdollRig implements SceneRig
         ragdoll.frames = new RecordedFrame(scene, "ragdoll/" + formPath, ragdoll.state.frame);
         Map<String, Part> byBone = new HashMap<>();
 
-        ragdoll.groups = groups;
+        ragdoll.model = model;
+        ragdoll.flipped = ModelBones.flipsBoneFrames(model);
 
         /* The welded bones, gathered under the part each of them belongs to, and the parts on their
          * own — the joint search must not see a welded bone, which has no body to be jointed to. */
@@ -371,7 +368,7 @@ public class RagdollRig implements SceneRig
         {
             MatrixCacheEntry entry = matrices.get(piece.path());
 
-            if (entry == null || entry.matrix() == null || !groups.containsKey(piece.label()))
+            if (entry == null || entry.matrix() == null || !ModelBones.has(model, piece.label()))
             {
                 continue;
             }
@@ -527,7 +524,7 @@ public class RagdollRig implements SceneRig
             RagdollJoint joint = config.get(part.bone);
             String parentPath = parent != null ? parent.path : kinematicParent.path();
             RagdollJoints.Built built = RagdollJoints.build(joint, part.bone, part.path, parentBone, parentPath,
-                formPath, groups, matrices, actorWorld, scene, config.friction());
+                formPath, model, matrices, actorWorld, scene, config.friction());
 
             if (built == null || built.settings() == null)
             {
@@ -1152,20 +1149,7 @@ public class RagdollRig implements SceneRig
      */
     private boolean isTreeDescendant(String bone, String ancestor)
     {
-        ModelGroup group = this.groups.get(bone);
-        ModelGroup parent = group == null ? null : group.parent;
-
-        while (parent != null)
-        {
-            if (parent.id.equals(ancestor))
-            {
-                return true;
-            }
-
-            parent = parent.parent;
-        }
-
-        return false;
+        return ModelBones.isDescendant(this.model, bone, ancestor);
     }
 
     /**
@@ -1321,12 +1305,18 @@ public class RagdollRig implements SceneRig
                 (float) (this.scratchPosition.zz() + scene.getOriginZ()),
                 this.orientation);
 
-            /* The body follows the bone's cache frame, which carries the cubic flip on its right
-             * (§10.1: frame = G × T(pivot/16) × Ry(π)) — multiplying the flip back on undoes it,
-             * and the base inverse then peels the actor and the form off the left. What is left is
-             * the bone's pivot frame in the model's flipped group space: exactly the thing the
-             * render walk composes, so the renderer can solve for its local rotation and shift. */
-            this.poseFrame.rotateY(MathUtils.PI);
+            /* The body follows the bone's cache frame, which for a cubic bone carries the flip on
+             * its right (§10.1: frame = G × T(pivot/16) × Ry(π)) — multiplying the flip back on
+             * undoes it, and the base inverse then peels the actor and the form off the left. What
+             * is left is the bone's pivot frame in the model's flipped group space: exactly the
+             * thing the render walk composes, so the renderer can solve for its local rotation and
+             * shift. A BOBJ bone's cache frame is its skeleton frame with nothing on the right, so
+             * nothing comes off; what is left is that frame behind the same half turn. */
+            if (this.flipped)
+            {
+                this.poseFrame.rotateY(MathUtils.PI);
+            }
+
             this.baseInverse.mul(this.poseFrame, this.poseFrame);
 
             this.poseFrame.getTranslation(this.translation);
